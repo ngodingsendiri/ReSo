@@ -33,34 +33,38 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return;
         }
 
-        // Sync user to Firestore
-        const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
-        
-        if (!userSnap.exists()) {
-          await setDoc(userRef, {
-            uid: user.uid,
-            email: user.email,
-            displayName: user.displayName,
-            photoURL: user.photoURL,
-            role: 'user', // Default role
-            createdAt: serverTimestamp(),
-            lastLogin: serverTimestamp()
-          });
-        } else {
-          await setDoc(userRef, {
-            lastLogin: serverTimestamp(),
-            displayName: user.displayName,
-            photoURL: user.photoURL
-          }, { merge: true });
-        }
         setUser(user);
         setError(null);
+        setLoading(false); // Make sure app proceeds
+
+        // Sync user to Firestore lazily
+        getDoc(doc(db, 'users', user.uid)).then(async (userSnap) => {
+          const userRef = doc(db, 'users', user.uid);
+          if (!userSnap.exists()) {
+            await setDoc(userRef, {
+              uid: user.uid,
+              email: user.email,
+              displayName: user.displayName,
+              photoURL: user.photoURL,
+              role: 'user', // Default role
+              createdAt: serverTimestamp(),
+              lastLogin: serverTimestamp()
+            }).catch(console.error);
+          } else {
+            await setDoc(userRef, {
+              lastLogin: serverTimestamp(),
+              displayName: user.displayName,
+              photoURL: user.photoURL
+            }, { merge: true }).catch(console.error);
+          }
+        }).catch(err => {
+          console.error("Failed to sync user:", err);
+        });
       } else {
         setUser(null);
         setError(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
     return unsubscribe;
   }, []);

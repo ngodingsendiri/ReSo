@@ -149,7 +149,9 @@ const containerVariants = {
   }
 };
 
-const itemVariants = {
+import { Variants } from 'motion/react';
+
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 15 },
   visible: { 
     opacity: 1, 

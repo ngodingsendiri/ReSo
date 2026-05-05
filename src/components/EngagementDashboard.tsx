@@ -42,7 +42,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Toaster } from './ui/sonner';
 import { toast } from 'sonner';
 import { DailyEngagement, Employee } from '../types';
-import EmployeeManager from './EmployeeManager';
 import { useAuth } from './FirebaseProvider';
 import { db, signIn, logout } from '../lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, limit } from 'firebase/firestore';
@@ -50,6 +49,7 @@ import { cn, getBidangColor } from '@/lib/utils';
 import { ErrorBoundary } from './ErrorBoundary';
 
 const EngagementChart = React.lazy(() => import('./EngagementChart'));
+const EmployeeManager = React.lazy(() => import('./EmployeeManager'));
 
 const getLocalISODate = (date: Date) => {
   const y = date.getFullYear();
@@ -58,7 +58,7 @@ const getLocalISODate = (date: Date) => {
   return `${y}-${m}-${d}`;
 };
 
-const containerVariants = {
+const containerVariants: import('motion/react').Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -69,7 +69,7 @@ const containerVariants = {
   }
 };
 
-const itemVariants = {
+const itemVariants: import('motion/react').Variants = {
   hidden: { opacity: 0, y: 20 },
   visible: { 
     opacity: 1, 
@@ -1930,7 +1930,9 @@ export default function EngagementDashboard() {
                 animate="visible"
                 exit="hidden"
               >
-                <EmployeeManager />
+                <React.Suspense fallback={<div className="w-full h-full flex mt-20 items-center justify-center text-slate-400 text-xs font-bold">Memuat Modul Data Pegawai...</div>}>
+                  <EmployeeManager />
+                </React.Suspense>
               </motion.div>
             )}
 
@@ -2018,7 +2020,7 @@ const BottomNavItem = React.memo(function BottomNavItem({ active, onClick, icon,
         "transition-transform duration-200",
         active ? "scale-110 -translate-y-0.5" : "scale-100"
       )}>
-        {React.cloneElement(icon as React.ReactElement, { size: active ? 22 : 20 })}
+        {React.cloneElement(icon as React.ReactElement<any>, { size: active ? 22 : 20 })}
       </div>
       <span className={cn("text-[9px] font-bold uppercase tracking-widest line-clamp-1 leading-none text-center px-1", active ? "opacity-100" : "opacity-70")}>{label}</span>
       {active && (
@@ -2052,7 +2054,7 @@ const StatCard = React.memo(function StatCard({ title, value, icon, color }: { t
               className={`p-2 md:p-2.5 rounded-xl ${colorMap[color]} border shrink-0 shadow-sm`}
               whileHover={{ rotate: [0, -10, 10, 0] }}
             >
-              {React.cloneElement(icon as React.ReactElement, { size: 18 })}
+              {React.cloneElement(icon as React.ReactElement<any>, { size: 18 })}
             </motion.div>
             <div className="w-1.5 h-1.5 rounded-full bg-slate-200 absolute top-4 right-4" />
           </div>
