@@ -797,14 +797,14 @@ export default function EmployeeManager() {
                     animate={{ opacity: 1 }}
                     className="p-5 space-y-4"
                   >
-                    <div className="flex justify-between items-start">
-                      <div className="flex gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold text-xs shrink-0">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="flex gap-3 flex-1 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold text-xs shrink-0 tracking-tighter">
                           {index + 1}
                         </div>
-                        <div className="min-w-0">
-                          <h4 className="font-bold text-slate-900 text-sm truncate">{emp.name}</h4>
-                          <code className="text-[10px] text-slate-400 font-mono mt-0.5 block">{emp.nip}</code>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-bold text-slate-900 text-sm whitespace-normal line-clamp-2 leading-tight">{emp.name}</h4>
+                          <code className="text-[10px] text-slate-400 font-mono mt-1 block truncate">{emp.nip}</code>
                         </div>
                       </div>
                       <div className="flex gap-1 shrink-0">

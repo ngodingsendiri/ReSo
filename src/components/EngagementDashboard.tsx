@@ -26,7 +26,8 @@ import {
   Menu,
   Link as LinkIcon,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  PieChart
 } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
 import { motion, AnimatePresence } from 'motion/react';
@@ -97,6 +98,7 @@ export default function EngagementDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [currentWeekDate, setCurrentWeekDate] = useState(new Date());
+  const [currentMonthlyReportDate, setCurrentMonthlyReportDate] = useState(new Date());
   const [currentDailyDate, setCurrentDailyDate] = useState(new Date());
   const [weeklySortMode, setWeeklySortMode] = useState<'name' | 'bidang'>('bidang');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -141,6 +143,7 @@ export default function EngagementDashboard() {
   const fbInputRef = useRef<HTMLTextAreaElement>(null);
   const tiktokInputRef = useRef<HTMLTextAreaElement>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const printMonthlyRef = useRef<HTMLDivElement>(null);
   const printDailyRef = useRef<HTMLDivElement>(null);
 
   // Load employees from Firestore
@@ -165,7 +168,14 @@ export default function EngagementDashboard() {
       return;
     }
 
-    const q = query(collection(db, 'dailyEngagement'), orderBy('date', 'desc'));
+    // Optimization: Only fetch the last 60 days to prevent excessive payload size
+    // The previous setup fetched ALL time history, including massive raw texts, 
+    // which exponentially bloated initial load times.
+    const q = query(
+      collection(db, 'dailyEngagement'), 
+      orderBy('date', 'desc'),
+      limit(60) 
+    );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyEngagement));
       setDailyEngagements(data);
@@ -688,6 +698,76 @@ export default function EngagementDashboard() {
     setCurrentWeekDate(newDate);
   };
 
+  const monthlyReports = useMemo(() => {
+    if (employees.length === 0) return [];
+    
+    const year = currentMonthlyReportDate.getFullYear();
+    const month = currentMonthlyReportDate.getMonth();
+    
+    // Get all days in the current month
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const monthDates: string[] = [];
+    for (let i = 1; i <= daysInMonth; i++) {
+        monthDates.push(getLocalISODate(new Date(year, month, i)));
+    }
+    
+    const monthName = currentMonthlyReportDate.toLocaleDateString('id-ID', { month: 'long' });
+    const todayStr = getLocalISODate(new Date());
+
+    return [{
+       monthName,
+       year,
+       monthRange: `${new Date(monthDates[0]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${new Date(monthDates[monthDates.length - 1]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+       dates: monthDates,
+       isCurrentMonth: monthDates.includes(todayStr)
+    }];
+  }, [employees, currentMonthlyReportDate]);
+
+  const monthlyStats = useMemo(() => {
+    if (monthlyReports.length === 0) return { employeeTotals: {} as Record<string, number>, maxEngagements: 3 };
+    
+    const monthDates = monthlyReports[0].dates;
+    const todayStr = getLocalISODate(new Date());
+    
+    let daysPassed = 0;
+    monthDates.forEach(date => {
+      if (date <= todayStr) daysPassed++;
+    });
+    if (daysPassed === 0) daysPassed = 1; // Prevent division by zero
+
+    const maxEngagements = daysPassed * 3;
+    
+    const employeeTotals: Record<string, number> = {};
+
+    employees.forEach(emp => {
+      let totalEngagements = 0;
+      monthDates.forEach(date => {
+        if (date > todayStr) return;
+        const engagement = dailyEngagementsMap[date];
+        const hasIg = engagement?.igEngagedEmployeeIds?.includes(emp.id) ? 1 : 0;
+        const hasFb = engagement?.fbEngagedEmployeeIds?.includes(emp.id) ? 1 : 0;
+        const hasTiktok = engagement?.tiktokEngagedEmployeeIds?.includes(emp.id) ? 1 : 0;
+        totalEngagements += (hasIg + hasFb + hasTiktok);
+      });
+      employeeTotals[emp.id] = totalEngagements;
+    });
+
+    const uniqueScores = Array.from(new Set(Object.values(employeeTotals))).sort((a, b) => b - a);
+    const top3Scores = uniqueScores.slice(0, 3);
+    const bottom3Scores = [...uniqueScores].reverse().slice(0, 3);
+
+    const top3Ids = employees.filter(e => top3Scores.includes(employeeTotals[e.id])).map(e => e.id);
+    const bottom3Ids = employees.filter(e => bottom3Scores.includes(employeeTotals[e.id]) && !top3Ids.includes(e.id)).map(e => e.id);
+
+    return { employeeTotals, maxEngagements, top3Ids, bottom3Ids };
+  }, [monthlyReports, employees, dailyEngagementsMap]);
+
+  const changeMonthlyReportDate = (offset: number) => {
+    const newDate = new Date(currentMonthlyReportDate);
+    newDate.setMonth(newDate.getMonth() + offset);
+    setCurrentMonthlyReportDate(newDate);
+  };
+
   const changeDailyDate = (offset: number) => {
     const newDate = new Date(currentDailyDate);
     newDate.setDate(newDate.getDate() + offset);
@@ -772,6 +852,12 @@ export default function EngagementDashboard() {
               label="Laporan Mingguan" 
             />
             <NavItem 
+              active={activeTab === 'monthly-reports'} 
+              onClick={() => { setActiveTab('monthly-reports'); setIsSidebarOpen(false); }} 
+              icon={<PieChart size={20} />} 
+              label="Laporan Bulanan" 
+            />
+            <NavItem 
               active={activeTab === 'employees'} 
               onClick={() => { setActiveTab('employees'); setIsSidebarOpen(false); }} 
               icon={<Users2 size={20} />} 
@@ -835,6 +921,7 @@ export default function EngagementDashboard() {
                 {activeTab === 'overview' && 'Input Rekap'}
                 {activeTab === 'daily-report' && 'Laporan Harian'}
                 {activeTab === 'reports' && 'Laporan Mingguan'}
+                {activeTab === 'monthly-reports' && 'Laporan Bulanan'}
                 {activeTab === 'employees' && 'Data Pegawai'}
                 {activeTab === 'settings' && 'Pengaturan'}
               </h2>
@@ -897,7 +984,7 @@ export default function EngagementDashboard() {
                       color="emerald" 
                     />
                     <StatCard 
-                      title="Total Engagement" 
+                      title="Total Interaksi (2 Bln)" 
                       value={stats.totalEngagements.toString()} 
                       icon={<TrendingUp size={20} />} 
                       color="sky" 
@@ -1601,17 +1688,17 @@ export default function EngagementDashboard() {
                                     <div className="flex items-center gap-2 ml-2">
                                       {emp.igUsername && (
                                         <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium whitespace-nowrap">
-                                          <Instagram size={10} className="text-pink-500" /> {emp.igUsername}
+                                          <Instagram size={10} className="text-pink-500" /> {emp.igUsername.length > 8 ? emp.igUsername.substring(0, 8) + '...' : emp.igUsername}
                                         </div>
                                       )}
                                       {emp.fbName && (
                                         <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium whitespace-nowrap">
-                                          <Facebook size={10} className="text-blue-500" /> {emp.fbName}
+                                          <Facebook size={10} className="text-blue-500" /> {emp.fbName.length > 8 ? emp.fbName.substring(0, 8) + '...' : emp.fbName}
                                         </div>
                                       )}
                                       {emp.tiktokName && (
                                         <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium whitespace-nowrap">
-                                          <TiktokIcon size={10} className="text-slate-800" /> {emp.tiktokName}
+                                          <TiktokIcon size={10} className="text-slate-800" /> {emp.tiktokName.length > 8 ? emp.tiktokName.substring(0, 8) + '...' : emp.tiktokName}
                                         </div>
                                       )}
                                     </div>
@@ -1665,6 +1752,168 @@ export default function EngagementDashboard() {
                                 </TableCell>
                               </TableRow>
                             ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+
+              {activeTab === 'monthly-reports' && (
+                <motion.div 
+                  key="monthly-reports"
+                  variants={containerVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="hidden"
+                  className="space-y-6 md:space-y-8"
+                >
+                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <div className="lg:hidden space-y-0.5">
+                      <h2 className="text-xl font-bold tracking-tight text-slate-900">Laporan Bulanan</h2>
+                      <p className="text-slate-500 text-xs">Unduh dan lihat rekapitulasi engagement bulanan</p>
+                    </div>
+                    
+                    <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4 w-full lg:w-auto lg:ml-auto">
+                      <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-100 w-full xl:w-auto justify-between">
+                        <Button variant="ghost" size="icon" onClick={() => changeMonthlyReportDate(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                          <ChevronLeft size={16} />
+                        </Button>
+                        <div className="text-center px-2 md:px-4 min-w-[160px] md:min-w-[200px]">
+                          <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
+                            <h2 className="text-xs sm:text-sm font-bold text-slate-900">{monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</h2>
+                            {monthlyReports[0]?.isCurrentMonth && (
+                              <Badge variant="outline" className="bg-indigo-50 text-indigo-600 border-indigo-200 text-[9px] px-1.5 py-0">Bulan Ini</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => changeMonthlyReportDate(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                          <ChevronRight size={16} />
+                        </Button>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto">
+                        <div className="flex bg-slate-100 p-1.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
+                          <button 
+                            onClick={() => setWeeklySortMode('bidang')}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                          >
+                            Bidang
+                          </button>
+                          <button 
+                            onClick={() => setWeeklySortMode('name')}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                          >
+                            Nama
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
+                          <Button onClick={() => handleExportPDF(printMonthlyRef, `recaplink-bulanan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-12 shadow-lg shadow-indigo-100 font-bold text-[10px] uppercase tracking-widest border-none">
+                            <FileText size={14} />
+                            PDF
+                          </Button>
+                          <Button onClick={() => handleExportImage(printMonthlyRef, `recaplink-bulanan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-12 font-bold text-[10px] uppercase tracking-widest">
+                            <ImageIcon size={14} />
+                            IMG
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  <motion.div variants={itemVariants} ref={printMonthlyRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-4 md:p-6 w-max" : "p-4 sm:p-6 md:p-10")}>
+                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-center mb-3 pb-3" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
+                      <div className="space-y-0.5">
+                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-lg" : "text-2xl")}>Laporan Bulanan</h3>
+                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[10px]" : "text-sm")}>Rekapitulasi Engagement • {monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</p>
+                      </div>
+                      <div className={cn("bg-slate-50 rounded-xl border border-slate-100", isExporting ? "text-right p-2" : "text-left md:text-right p-3")}>
+                        <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">RecapLink</p>
+                        <p className="text-[8px] text-slate-500">Generated: {new Date().toLocaleDateString('id-ID')}</p>
+                      </div>
+                    </div>
+
+                    <div className={cn("flex-1 rounded-xl border border-slate-100", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
+                      <div className="min-w-max">
+                        <Table id="engagement-monthly-table" className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
+                          <TableHeader>
+                            <TableRow className="bg-slate-50/50 border-b border-slate-100">
+                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-100 px-3 py-3 font-bold text-slate-900 whitespace-nowrap text-xs uppercase tracking-wider">
+                                Nama Pegawai
+                              </TableHead>
+                              <TableHead className="text-center px-4 py-3 text-xs font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[10%] whitespace-nowrap">
+                                % ENG
+                              </TableHead>
+                              <TableHead className="border-l border-slate-100 text-center px-4 py-3 text-xs font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[10%] whitespace-nowrap">
+                                TOTAL
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {sortedEmployees.map((emp) => {
+                              const isTop = monthlyStats.top3Ids?.includes(emp.id);
+                              const isBottom = monthlyStats.bottom3Ids?.includes(emp.id);
+                              const rowClass = isTop 
+                                ? "bg-emerald-50/80 border-b border-emerald-100" 
+                                : isBottom 
+                                  ? "bg-red-50/80 border-b border-red-100" 
+                                  : "hover:bg-slate-50/30 transition-colors border-b border-slate-50";
+                                  
+                              return (
+                              <TableRow key={emp.id} className={rowClass}>
+                                <TableCell className={cn("sticky left-0 z-10 border-r px-4 py-3 whitespace-nowrap",
+                                  isTop ? "bg-emerald-50/80 border-emerald-100" : isBottom ? "bg-red-50/80 border-red-100" : "bg-white border-slate-100"
+                                )}>
+                                  <div className="flex items-center gap-3">
+                                    <span className={cn("text-[10px] font-mono font-bold px-2 py-1 rounded uppercase tracking-wider shrink-0", 
+                                      isTop ? "bg-emerald-100 text-emerald-700" : isBottom ? "bg-red-100 text-red-700" : getBidangColor(emp.bidang)
+                                    )}>
+                                      {emp.bidang ? emp.bidang.substring(0, 3) : '---'}
+                                    </span>
+                                    <p className={cn("font-bold text-sm whitespace-nowrap shrink-0",
+                                      isTop ? "text-emerald-900" : isBottom ? "text-red-900" : "text-slate-800"
+                                    )}>{emp.name}</p>
+                                    <div className="flex items-center gap-2 ml-2">
+                                      {emp.igUsername && (
+                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
+                                          <Instagram size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-pink-500"} /> {emp.igUsername.length > 8 ? emp.igUsername.substring(0, 8) + '...' : emp.igUsername}
+                                        </div>
+                                      )}
+                                      {emp.fbName && (
+                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
+                                          <Facebook size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-blue-500"} /> {emp.fbName.length > 8 ? emp.fbName.substring(0, 8) + '...' : emp.fbName}
+                                        </div>
+                                      )}
+                                      {emp.tiktokName && (
+                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
+                                          <TiktokIcon size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-slate-800"} /> {emp.tiktokName.length > 8 ? emp.tiktokName.substring(0, 8) + '...' : emp.tiktokName}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center px-4 py-3 whitespace-nowrap">
+                                  <div className="flex flex-col items-center justify-center">
+                                    <span className={cn("font-bold text-sm",
+                                      isTop ? "text-emerald-700" : isBottom ? "text-red-700" : "text-slate-600"
+                                    )}>
+                                      {Math.round(((monthlyStats.employeeTotals[emp.id] || 0) / monthlyStats.maxEngagements) * 100)}%
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className={cn("border-l text-center px-4 py-3 whitespace-nowrap",
+                                  isTop ? "border-emerald-100" : isBottom ? "border-red-100" : "border-slate-100 bg-slate-50/30"
+                                )}>
+                                  <div className="flex flex-col items-center justify-center">
+                                    <span className={cn("font-black text-base",
+                                      isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-slate-900"
+                                    )}>
+                                      {monthlyStats.employeeTotals[emp.id] || 0}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )})}
                           </TableBody>
                         </Table>
                       </div>
@@ -1743,6 +1992,12 @@ export default function EngagementDashboard() {
           icon={<History size={22} />} 
           label="Mingguan" 
         />
+        <BottomNavItem 
+          active={activeTab === 'monthly-reports'} 
+          onClick={() => setActiveTab('monthly-reports')} 
+          icon={<PieChart size={22} />} 
+          label="Bulanan" 
+        />
       </motion.nav>
 
       <Toaster position="bottom-center" duration={2000} />
@@ -1763,13 +2018,13 @@ const BottomNavItem = React.memo(function BottomNavItem({ active, onClick, icon,
         "transition-transform duration-200",
         active ? "scale-110 -translate-y-0.5" : "scale-100"
       )}>
-        {icon}
+        {React.cloneElement(icon as React.ReactElement, { size: active ? 22 : 20 })}
       </div>
-      <span className={cn("text-[10px] font-bold uppercase tracking-widest", active ? "opacity-100" : "opacity-70")}>{label}</span>
+      <span className={cn("text-[9px] font-bold uppercase tracking-widest line-clamp-1 leading-none text-center px-1", active ? "opacity-100" : "opacity-70")}>{label}</span>
       {active && (
         <motion.div 
           layoutId="bottom-nav-indicator"
-          className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-10 h-1 bg-indigo-600 rounded-b-full shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
+          className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-8 h-1 bg-indigo-600 rounded-b-full shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
         />
       )}
     </button>
