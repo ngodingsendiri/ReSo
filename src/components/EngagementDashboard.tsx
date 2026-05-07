@@ -520,57 +520,54 @@ export default function EngagementDashboard() {
     setIsLoading(true);
     try {
       const processInput = (input: string, platform: 'ig' | 'fb' | 'tiktok') => {
-        const lowerInput = input.toLowerCase();
+        // Normalize whitespace and newlines for robust matching
+        const normalize = (str: string) => str.toLowerCase().replace(/\s+/g, ' ').trim();
+        const lowerInput = normalize(input);
         
         // Memecah input menjadi baris-baris mengatasi nama yang di-copy dari sosmed
-        const inputLines = lowerInput.split(/[\n,;]+/).map(line => line.trim()).filter(line => line.length > 2);
+        const inputLines = input.toLowerCase().split(/[\n,;]+/).map(line => normalize(line)).filter(line => line.length > 2);
         
         const matchedIds = new Set<string>();
 
-        const isLineInText = (text: string, searchLine: string) => {
-          if (!text || !searchLine) return false;
-          if (text === searchLine) return true;
-          if (text.startsWith(searchLine + ' ')) return true;
-          if (text.endsWith(' ' + searchLine)) return true;
-          if (text.includes(' ' + searchLine + ' ')) return true;
-          // toleransi karakter agak panjang yang merupakan awalan/akhiran
-          if (text.includes(' ' + searchLine) && searchLine.length >= 5) return true;
-          if (text.startsWith(searchLine) && searchLine.length >= 5) return true;
+        const isExactMatchInTarget = (text: string, targetLine: string) => {
+          if (!text || !targetLine) return false;
+          if (targetLine === text) return true;
+          // Periksa apakah text ada di dalam targetLine sebagai kata utuh atau bagian string (toleransi spasi)
+          if (targetLine.includes(text)) {
+            return true;
+          }
           return false;
         };
         
         employees.forEach(emp => {
-          // Cek apakah akun untuk platform ini tersedia, jika tidak lewati
-          if (platform === 'ig' && !emp.igUsername) return;
-          if (platform === 'fb' && !emp.fbName) return;
-          if (platform === 'tiktok' && !emp.tiktokName) return;
-
-          const nameMatch = emp.name.toLowerCase().trim();
-          const igMatch = emp.igUsername?.replace('@', '').toLowerCase().trim() || '';
-          const fbMatch = emp.fbName?.toLowerCase().trim() || '';
-          const tiktokMatch = emp.tiktokName?.toLowerCase().trim() || '';
+          const nameMatch = normalize(emp.name);
+          const igMatch = emp.igUsername ? normalize(emp.igUsername.replace('@', '')) : '';
+          const fbMatch = emp.fbName ? normalize(emp.fbName) : '';
+          const tiktokMatch = emp.tiktokName ? normalize(emp.tiktokName.replace('@', '')) : '';
           
           let isMatch = false;
 
-          // 1. Pengecekan eksak berdasarkan pencarian lengkap (semua text direkam)
+          // Pengecekan global di teks (kalau di-copy sekaligus semua namanya)
           if (nameMatch && lowerInput.includes(nameMatch)) isMatch = true;
+          
+          // Cek khusus platform kalau field datanya ada
           if (platform === 'ig' && igMatch && lowerInput.includes(igMatch)) isMatch = true;
           if (platform === 'fb' && fbMatch && lowerInput.includes(fbMatch)) isMatch = true;
           if (platform === 'tiktok' && tiktokMatch && lowerInput.includes(tiktokMatch)) isMatch = true;
 
-          // 2. Pengecekan baris per baris (Jika input dicopy per nama/disingkat pas di FB/IG)
+          // Pengecekan baris per baris yang lebih ketat jika teks copas terbagi-bagi baris
           if (!isMatch) {
             for (const line of inputLines) {
-              if (isLineInText(nameMatch, line)) {
+              if (isExactMatchInTarget(nameMatch, line)) {
                 isMatch = true; break;
               }
-              if (platform === 'ig' && isLineInText(igMatch, line)) {
+              if (platform === 'ig' && igMatch && isExactMatchInTarget(igMatch, line)) {
                 isMatch = true; break;
               }
-              if (platform === 'fb' && isLineInText(fbMatch, line)) {
+              if (platform === 'fb' && fbMatch && isExactMatchInTarget(fbMatch, line)) {
                 isMatch = true; break;
               }
-              if (platform === 'tiktok' && isLineInText(tiktokMatch, line)) {
+              if (platform === 'tiktok' && tiktokMatch && isExactMatchInTarget(tiktokMatch, line)) {
                 isMatch = true; break;
               }
             }
