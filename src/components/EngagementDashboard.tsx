@@ -689,7 +689,14 @@ export default function EngagementDashboard() {
       employeeTotals[emp.id] = totalEngagements;
     });
 
-    return { employeeTotals, maxEngagements };
+    const uniqueScores = Array.from(new Set(Object.values(employeeTotals))).sort((a, b) => b - a);
+    const top3Scores = uniqueScores.slice(0, 3);
+    const bottom3Scores = [...uniqueScores].reverse().slice(0, 3);
+
+    const top3Ids = employees.filter(e => top3Scores.includes(employeeTotals[e.id])).map(e => e.id);
+    const bottom3Ids = employees.filter(e => bottom3Scores.includes(employeeTotals[e.id]) && !top3Ids.includes(e.id)).map(e => e.id);
+
+    return { employeeTotals, maxEngagements, top3Ids, bottom3Ids };
   }, [weeklyReports, employees, dailyEngagementsMap]);
 
   const changeWeek = (offset: number) => {
@@ -1462,15 +1469,15 @@ export default function EngagementDashboard() {
                             </div>
                           </motion.div>
 
-                  <motion.div variants={itemVariants} ref={printDailyRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-4 md:p-6 w-max" : "p-4 sm:p-6 md:p-10")}>
-                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-center mb-3 pb-3" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
-                      <div className="space-y-0.5">
-                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-lg" : "text-2xl")}>Laporan Harian</h3>
-                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[10px]" : "text-sm")}>Rekapitulasi Engagement • {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  <motion.div variants={itemVariants} ref={printDailyRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
+                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
+                      <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
+                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Harian</h3>
+                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
                       </div>
-                      <div className={cn("bg-slate-50 rounded-xl border border-slate-100", isExporting ? "text-right p-2" : "text-left md:text-right p-3")}>
-                        <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">RecapLink</p>
-                        <p className="text-[8px] text-slate-500">Generated: {new Date().toLocaleDateString('id-ID')}</p>
+                      <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center", isExporting ? "text-right p-1.5" : "text-left md:text-right p-3")}>
+                        <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                        <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Generated: {new Date().toLocaleDateString('id-ID')}</p>
                       </div>
                     </div>
 
@@ -1573,6 +1580,11 @@ export default function EngagementDashboard() {
                         </Table>
                       </div>
                     </div>
+                    {isExporting && (
+                      <div className="mt-2 text-[8px] text-slate-500 font-medium italic">
+                        * Note : Pencatatan dilakukan setiap pukul 15.00 WIB dan hanya mencakup komentar pada postingan 24 jam terakhir.
+                      </div>
+                    )}
                   </motion.div>
                 </motion.div>
               )}
@@ -1639,15 +1651,15 @@ export default function EngagementDashboard() {
                     </div>
                   </motion.div>
 
-                  <motion.div variants={itemVariants} ref={printRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-4 md:p-6 w-max" : "p-4 sm:p-6 md:p-10")}>
-                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-center mb-3 pb-3" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
-                      <div className="space-y-0.5">
-                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-lg" : "text-2xl")}>Laporan Mingguan</h3>
-                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[10px]" : "text-sm")}>Rekapitulasi Engagement • Minggu ke-{weeklyReports[0]?.weekNumber} • {weeklyReports[0]?.year}</p>
+                  <motion.div variants={itemVariants} ref={printRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
+                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
+                      <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
+                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Mingguan</h3>
+                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • Minggu ke-{weeklyReports[0]?.weekNumber} • {weeklyReports[0]?.year}</p>
                       </div>
-                      <div className={cn("bg-slate-50 rounded-xl border border-slate-100", isExporting ? "text-right p-2" : "text-left md:text-right p-3")}>
-                        <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">RecapLink</p>
-                        <p className="text-[8px] text-slate-500">Generated: {new Date().toLocaleDateString('id-ID')}</p>
+                      <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center", isExporting ? "text-right p-1.5" : "text-left md:text-right p-3")}>
+                        <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                        <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Generated: {new Date().toLocaleDateString('id-ID')}</p>
                       </div>
                     </div>
 
@@ -1677,28 +1689,43 @@ export default function EngagementDashboard() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {sortedEmployees.map((emp) => (
-                              <TableRow key={emp.id} className="hover:bg-slate-50/30 transition-colors border-b border-slate-50">
-                                <TableCell className="sticky left-0 z-10 bg-white border-r border-slate-100 px-2 py-1 w-[1%] whitespace-nowrap">
+                            {sortedEmployees.map((emp) => {
+                              const isTop = weeklyStats.top3Ids?.includes(emp.id);
+                              const isBottom = weeklyStats.bottom3Ids?.includes(emp.id);
+                              const rowClass = isTop 
+                                ? "bg-emerald-50/80 border-b border-emerald-100" 
+                                : isBottom 
+                                  ? "bg-red-50/80 border-b border-red-100" 
+                                  : "hover:bg-slate-50/30 transition-colors border-b border-slate-50";
+
+                              return (
+                              <TableRow key={emp.id} className={rowClass}>
+                                <TableCell className={cn("sticky left-0 z-10 border-r px-2 py-1 w-[1%] whitespace-nowrap",
+                                  isTop ? "bg-emerald-50/80 border-emerald-100" : isBottom ? "bg-red-50/80 border-red-100" : "bg-white border-slate-100"
+                                )}>
                                   <div className="flex items-center gap-2">
-                                    <span className={cn("text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0", getBidangColor(emp.bidang))}>
+                                    <span className={cn("text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0", 
+                                      isTop ? "bg-emerald-100 text-emerald-700" : isBottom ? "bg-red-100 text-red-700" : getBidangColor(emp.bidang)
+                                    )}>
                                       {emp.bidang ? emp.bidang.substring(0, 3) : '---'}
                                     </span>
-                                    <p className="font-bold text-slate-800 text-xs whitespace-nowrap shrink-0">{emp.name}</p>
+                                    <p className={cn("font-bold text-xs whitespace-nowrap shrink-0",
+                                      isTop ? "text-emerald-900" : isBottom ? "text-red-900" : "text-slate-800"
+                                    )}>{emp.name}</p>
                                     <div className="flex items-center gap-2 ml-2">
                                       {emp.igUsername && (
-                                        <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium whitespace-nowrap">
-                                          <Instagram size={10} className="text-pink-500" /> {emp.igUsername.length > 8 ? emp.igUsername.substring(0, 8) + '...' : emp.igUsername}
+                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
+                                          <Instagram size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-pink-500"} /> {emp.igUsername.length > 8 ? emp.igUsername.substring(0, 8) + '...' : emp.igUsername}
                                         </div>
                                       )}
                                       {emp.fbName && (
-                                        <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium whitespace-nowrap">
-                                          <Facebook size={10} className="text-blue-500" /> {emp.fbName.length > 8 ? emp.fbName.substring(0, 8) + '...' : emp.fbName}
+                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
+                                          <Facebook size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-blue-500"} /> {emp.fbName.length > 8 ? emp.fbName.substring(0, 8) + '...' : emp.fbName}
                                         </div>
                                       )}
                                       {emp.tiktokName && (
-                                        <div className="flex items-center gap-1 text-[9px] text-slate-500 font-medium whitespace-nowrap">
-                                          <TiktokIcon size={10} className="text-slate-800" /> {emp.tiktokName.length > 8 ? emp.tiktokName.substring(0, 8) + '...' : emp.tiktokName}
+                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
+                                          <TiktokIcon size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-slate-800"} /> {emp.tiktokName.length > 8 ? emp.tiktokName.substring(0, 8) + '...' : emp.tiktokName}
                                         </div>
                                       )}
                                     </div>
@@ -1743,19 +1770,28 @@ export default function EngagementDashboard() {
                                     </TableCell>
                                   );
                                 })}
-                                <TableCell className="border-l border-slate-100 bg-slate-50/30 text-center px-3 py-1 w-[1%] whitespace-nowrap">
+                                <TableCell className={cn("border-l text-center px-3 py-1 w-[1%] whitespace-nowrap",
+                                  isTop ? "border-emerald-100 bg-emerald-50/50" : isBottom ? "border-red-100 bg-red-50/50" : "border-slate-100 bg-slate-50/30"
+                                )}>
                                   <div className="flex flex-col items-center justify-center">
-                                    <span className="text-slate-600 text-xs font-medium">
+                                    <span className={cn("text-xs font-medium",
+                                      isTop ? "text-emerald-600 font-bold" : isBottom ? "text-red-600 font-bold" : "text-slate-600"
+                                    )}>
                                       {Math.round(((weeklyStats.employeeTotals[emp.id] || 0) / weeklyStats.maxEngagements) * 100)}%
                                     </span>
                                   </div>
                                 </TableCell>
                               </TableRow>
-                            ))}
+                            )})}
                           </TableBody>
                         </Table>
                       </div>
                     </div>
+                    {isExporting && (
+                      <div className="mt-2 text-[8px] text-slate-500 font-medium italic">
+                        * Note : Pencatatan dilakukan setiap pukul 15.00 WIB dan hanya mencakup komentar pada postingan 24 jam terakhir.
+                      </div>
+                    )}
                   </motion.div>
                 </motion.div>
               )}
@@ -1821,15 +1857,15 @@ export default function EngagementDashboard() {
                     </div>
                   </motion.div>
 
-                  <motion.div variants={itemVariants} ref={printMonthlyRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-4 md:p-6 w-max" : "p-4 sm:p-6 md:p-10")}>
-                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-center mb-3 pb-3" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
-                      <div className="space-y-0.5">
-                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-lg" : "text-2xl")}>Laporan Bulanan</h3>
-                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[10px]" : "text-sm")}>Rekapitulasi Engagement • {monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</p>
+                  <motion.div variants={itemVariants} ref={printMonthlyRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
+                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
+                      <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
+                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Bulanan</h3>
+                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • {monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</p>
                       </div>
-                      <div className={cn("bg-slate-50 rounded-xl border border-slate-100", isExporting ? "text-right p-2" : "text-left md:text-right p-3")}>
-                        <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">RecapLink</p>
-                        <p className="text-[8px] text-slate-500">Generated: {new Date().toLocaleDateString('id-ID')}</p>
+                      <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center", isExporting ? "text-right p-1.5" : "text-left md:text-right p-3")}>
+                        <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                        <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Generated: {new Date().toLocaleDateString('id-ID')}</p>
                       </div>
                     </div>
 
@@ -1918,6 +1954,11 @@ export default function EngagementDashboard() {
                         </Table>
                       </div>
                     </div>
+                    {isExporting && (
+                      <div className="mt-2 text-[8px] text-slate-500 font-medium italic">
+                        * Note : Pencatatan dilakukan setiap pukul 15.00 WIB dan hanya mencakup komentar pada postingan 24 jam terakhir.
+                      </div>
+                    )}
                   </motion.div>
                 </motion.div>
               )}
