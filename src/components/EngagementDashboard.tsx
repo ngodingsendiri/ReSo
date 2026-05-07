@@ -521,7 +521,23 @@ export default function EngagementDashboard() {
     try {
       const processInput = (input: string, platform: 'ig' | 'fb' | 'tiktok') => {
         const lowerInput = input.toLowerCase();
-        const matchedIds: string[] = [];
+        
+        // Memecah input menjadi baris-baris mengatasi nama yang di-copy dari sosmed
+        const inputLines = lowerInput.split(/[\n,;]+/).map(line => line.trim()).filter(line => line.length > 2);
+        
+        const matchedIds = new Set<string>();
+
+        const isLineInText = (text: string, searchLine: string) => {
+          if (!text || !searchLine) return false;
+          if (text === searchLine) return true;
+          if (text.startsWith(searchLine + ' ')) return true;
+          if (text.endsWith(' ' + searchLine)) return true;
+          if (text.includes(' ' + searchLine + ' ')) return true;
+          // toleransi karakter agak panjang yang merupakan awalan/akhiran
+          if (text.includes(' ' + searchLine) && searchLine.length >= 5) return true;
+          if (text.startsWith(searchLine) && searchLine.length >= 5) return true;
+          return false;
+        };
         
         employees.forEach(emp => {
           // Cek apakah akun untuk platform ini tersedia, jika tidak lewati
@@ -530,31 +546,42 @@ export default function EngagementDashboard() {
           if (platform === 'tiktok' && !emp.tiktokName) return;
 
           const nameMatch = emp.name.toLowerCase().trim();
-          const igMatch = emp.igUsername?.replace('@', '').toLowerCase().trim();
-          const fbMatch = emp.fbName?.toLowerCase().trim();
-          const tiktokMatch = emp.tiktokName?.toLowerCase().trim();
+          const igMatch = emp.igUsername?.replace('@', '').toLowerCase().trim() || '';
+          const fbMatch = emp.fbName?.toLowerCase().trim() || '';
+          const tiktokMatch = emp.tiktokName?.toLowerCase().trim() || '';
           
           let isMatch = false;
 
-          // Pencocokan berdasarkan nama asli (selalu dicek jika punya akun)
-          if (nameMatch && lowerInput.includes(nameMatch)) {
-            isMatch = true;
-          }
-          
-          // Pencocokan khusus berdasarkan link/username platform
-          if (platform === 'ig' && igMatch && lowerInput.includes(igMatch)) {
-            isMatch = true;
-          } else if (platform === 'fb' && fbMatch && lowerInput.includes(fbMatch)) {
-            isMatch = true;
-          } else if (platform === 'tiktok' && tiktokMatch && lowerInput.includes(tiktokMatch)) {
-            isMatch = true;
+          // 1. Pengecekan eksak berdasarkan pencarian lengkap (semua text direkam)
+          if (nameMatch && lowerInput.includes(nameMatch)) isMatch = true;
+          if (platform === 'ig' && igMatch && lowerInput.includes(igMatch)) isMatch = true;
+          if (platform === 'fb' && fbMatch && lowerInput.includes(fbMatch)) isMatch = true;
+          if (platform === 'tiktok' && tiktokMatch && lowerInput.includes(tiktokMatch)) isMatch = true;
+
+          // 2. Pengecekan baris per baris (Jika input dicopy per nama/disingkat pas di FB/IG)
+          if (!isMatch) {
+            for (const line of inputLines) {
+              if (isLineInText(nameMatch, line)) {
+                isMatch = true; break;
+              }
+              if (platform === 'ig' && isLineInText(igMatch, line)) {
+                isMatch = true; break;
+              }
+              if (platform === 'fb' && isLineInText(fbMatch, line)) {
+                isMatch = true; break;
+              }
+              if (platform === 'tiktok' && isLineInText(tiktokMatch, line)) {
+                isMatch = true; break;
+              }
+            }
           }
 
           if (isMatch) {
-            matchedIds.push(emp.id);
+            matchedIds.add(emp.id);
           }
         });
-        return matchedIds;
+
+        return Array.from(matchedIds);
       };
 
       const currentIgRawInput = igInputRef.current ? igInputRef.current.value : igRawInput;
