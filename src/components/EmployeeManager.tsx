@@ -520,7 +520,7 @@ export default function EmployeeManager() {
               placeholder="Cari nama pegawai..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-11 text-xs rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-indigo-200 transition-all font-medium"
+              className="pl-9 h-11 text-xs rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-rose-200 transition-all font-medium"
             />
           </div>
           <div className="flex flex-wrap gap-2 w-full xl:w-auto">
@@ -549,7 +549,7 @@ export default function EmployeeManager() {
                   isUploading && "opacity-50 pointer-events-none"
                 )}
               >
-                <Upload size={14} className="text-indigo-600" />
+                <Upload size={14} className="text-rose-600" />
                 {isUploading ? 'Uploading...' : 'Impor'}
               </label>
             </div>
@@ -562,7 +562,7 @@ export default function EmployeeManager() {
                     document.getElementById('employee-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }, 100);
                 }} 
-                className="w-full md:w-auto gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md h-11 px-6 text-xs font-bold border-none transition-all active:scale-95"
+                className="w-full md:w-auto gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-md h-11 px-6 text-xs font-bold border-none transition-all active:scale-95"
               >
                 <UserPlus size={14} />
                 Tambah
@@ -701,7 +701,7 @@ export default function EmployeeManager() {
                     </Button>
                     <Button 
                       type="submit" 
-                      className="w-full sm:w-auto rounded-lg px-8 bg-indigo-600 hover:bg-indigo-700 text-white h-10 font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 text-sm border-none"
+                      className="w-full sm:w-auto rounded-lg px-8 bg-rose-600 hover:bg-rose-700 text-white h-10 font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 text-sm border-none"
                     >
                       <Save size={16} />
                       {editingId ? 'Simpan Perubahan' : 'Simpan Pegawai'}
@@ -816,7 +816,7 @@ export default function EmployeeManager() {
                           onClick={() => startEdit(emp)} 
                           className={cn(
                             "h-10 w-10 rounded-xl transition-all active:scale-90 shadow-sm",
-                            editingId === emp.id ? "bg-indigo-600 text-white shadow-indigo-100" : "bg-white border border-slate-200 text-slate-500"
+                            editingId === emp.id ? "bg-rose-600 text-white shadow-rose-100" : "bg-white border border-slate-200 text-slate-500"
                           )}
                           title="Edit"
                         >

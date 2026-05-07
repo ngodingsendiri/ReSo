@@ -1,0 +1,17 @@
+{
+  "name": "RecapLink",
+  "short_name": "RecapLink",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e82a5d",
+  "description": "Aplikasi rekapitulasi engagement PWA",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

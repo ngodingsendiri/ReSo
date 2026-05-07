@@ -5,6 +5,7 @@ import {
   Download,
   Trash2,
   BarChart3,
+  Edit,
   Users2,
   CheckCircle2,
   XCircle,
@@ -518,20 +519,38 @@ export default function EngagementDashboard() {
     
     setIsLoading(true);
     try {
-      const processInput = (input: string) => {
+      const processInput = (input: string, platform: 'ig' | 'fb' | 'tiktok') => {
         const lowerInput = input.toLowerCase();
         const matchedIds: string[] = [];
         
         employees.forEach(emp => {
+          // Cek apakah akun untuk platform ini tersedia, jika tidak lewati
+          if (platform === 'ig' && !emp.igUsername) return;
+          if (platform === 'fb' && !emp.fbName) return;
+          if (platform === 'tiktok' && !emp.tiktokName) return;
+
           const nameMatch = emp.name.toLowerCase().trim();
           const igMatch = emp.igUsername?.replace('@', '').toLowerCase().trim();
           const fbMatch = emp.fbName?.toLowerCase().trim();
           const tiktokMatch = emp.tiktokName?.toLowerCase().trim();
           
-          if ((nameMatch && lowerInput.includes(nameMatch)) || 
-              (igMatch && lowerInput.includes(igMatch)) || 
-              (fbMatch && lowerInput.includes(fbMatch)) ||
-              (tiktokMatch && lowerInput.includes(tiktokMatch))) {
+          let isMatch = false;
+
+          // Pencocokan berdasarkan nama asli (selalu dicek jika punya akun)
+          if (nameMatch && lowerInput.includes(nameMatch)) {
+            isMatch = true;
+          }
+          
+          // Pencocokan khusus berdasarkan link/username platform
+          if (platform === 'ig' && igMatch && lowerInput.includes(igMatch)) {
+            isMatch = true;
+          } else if (platform === 'fb' && fbMatch && lowerInput.includes(fbMatch)) {
+            isMatch = true;
+          } else if (platform === 'tiktok' && tiktokMatch && lowerInput.includes(tiktokMatch)) {
+            isMatch = true;
+          }
+
+          if (isMatch) {
             matchedIds.push(emp.id);
           }
         });
@@ -542,9 +561,9 @@ export default function EngagementDashboard() {
       const currentFbRawInput = fbInputRef.current ? fbInputRef.current.value : fbRawInput;
       const currentTiktokRawInput = tiktokInputRef.current ? tiktokInputRef.current.value : tiktokRawInput;
 
-      const igEngagedIds = processInput(currentIgRawInput);
-      const fbEngagedIds = processInput(currentFbRawInput);
-      const tiktokEngagedIds = processInput(currentTiktokRawInput);
+      const igEngagedIds = processInput(currentIgRawInput, 'ig');
+      const fbEngagedIds = processInput(currentFbRawInput, 'fb');
+      const tiktokEngagedIds = processInput(currentTiktokRawInput, 'tiktok');
 
       const docRef = doc(db, 'dailyEngagement', selectedDate);
       
@@ -817,11 +836,11 @@ export default function EngagementDashboard() {
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
               <motion.div 
-                className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200"
+                className="w-10 h-10 bg-rose-600 rounded-[14px] flex items-center justify-center shadow-lg shadow-rose-200"
                 whileHover={{ rotate: 12, scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
               >
-                <BarChart3 className="text-white" size={22} />
+                <Edit className="text-white" size={22} strokeWidth={2.5} />
               </motion.div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">RecapLink</h1>
@@ -878,7 +897,7 @@ export default function EngagementDashboard() {
           {!user ? (
             <Button 
               onClick={signIn} 
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md font-bold text-sm h-12 transition-all active:scale-95"
+              className="w-full bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-md font-bold text-sm h-12 transition-all active:scale-95"
             >
               Login dengan Google
             </Button>
@@ -888,7 +907,7 @@ export default function EngagementDashboard() {
                 {user.photoURL ? (
                   <img src={user.photoURL} alt="Profile" className="w-10 h-10 rounded-full border-2 border-white shadow-sm" referrerPolicy="no-referrer" />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm shadow-sm border-2 border-white">
+                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-sm shadow-sm border-2 border-white">
                     {user.email?.charAt(0).toUpperCase()}
                   </div>
                 )}
@@ -932,7 +951,7 @@ export default function EngagementDashboard() {
                 {activeTab === 'employees' && 'Data Pegawai'}
                 {activeTab === 'settings' && 'Pengaturan'}
               </h2>
-              <span className="lg:hidden text-[9px] font-bold text-indigo-500 uppercase tracking-widest mt-1">RecapLink Smart</span>
+              <span className="lg:hidden text-[9px] font-bold text-rose-500 uppercase tracking-widest mt-1">RecapLink Smart</span>
             </div>
           </div>
           
@@ -1162,28 +1181,28 @@ export default function EngagementDashboard() {
                           
                           <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 overflow-y-auto pb-safe">
                             {/* Meta API Fetch Section */}
-                            <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-4">
+                            <div className="bg-rose-50/50 p-4 rounded-xl border border-rose-100 space-y-4">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <RefreshCw size={16} className="text-indigo-500" />
-                                  <h4 className="text-sm font-bold text-indigo-900">Tarik Komentar via Meta API</h4>
+                                  <RefreshCw size={16} className="text-rose-500" />
+                                  <h4 className="text-sm font-bold text-rose-900">Tarik Komentar via Meta API</h4>
                                 </div>
-                                <Badge variant="outline" className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[9px]">Otomatis</Badge>
+                                <Badge variant="outline" className="bg-rose-100 text-rose-700 border-rose-200 text-[9px]">Otomatis</Badge>
                               </div>
 
                               <div className="space-y-2 relative">
-                                <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Access Token Meta API</label>
+                                <label className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Access Token Meta API</label>
                                 <textarea 
                                   value={metaToken}
                                   onChange={(e) => setMetaToken(e.target.value)}
                                   placeholder="Paste token Meta API di sini..."
-                                  className="w-full h-16 sm:h-12 px-3 pb-8 rounded-lg border border-indigo-200 bg-white text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none pt-2.5"
+                                  className="w-full h-16 sm:h-12 px-3 pb-8 rounded-lg border border-rose-200 bg-white text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none resize-none pt-2.5"
                                 />
                                 <Button 
                                   onClick={handleSaveMetaToken}
                                   disabled={isSavingToken || !metaToken}
                                   variant="outline"
-                                  className="absolute right-1 bottom-1 h-7 sm:h-6 px-3 sm:px-2 text-[10px] sm:text-[9px] font-bold border-indigo-200 text-indigo-600 hover:bg-indigo-50 bg-white rounded-lg shadow-sm"
+                                  className="absolute right-1 bottom-1 h-7 sm:h-6 px-3 sm:px-2 text-[10px] sm:text-[9px] font-bold border-rose-200 text-rose-600 hover:bg-rose-50 bg-white rounded-lg shadow-sm"
                                 >
                                   {isSavingToken ? 'Saving...' : 'Simpan ke Server'}
                                 </Button>
@@ -1193,12 +1212,12 @@ export default function EngagementDashboard() {
                                 <Button 
                                   onClick={handleFetchRecentMeta}
                                   disabled={isFetchingMeta}
-                                  className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 rounded-lg shadow-sm"
+                                  className="w-full h-10 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 rounded-lg shadow-sm"
                                 >
                                   {isFetchingMeta ? 'Menarik...' : 'Tarik Postingan (15:00 H-1 s/d 15:00 Hari Ini)'}
                                 </Button>
                               </div>
-                              <p className="text-[10px] text-indigo-400/80 leading-relaxed mt-3">
+                              <p className="text-[10px] text-rose-400/80 leading-relaxed mt-3">
                                 Sistem akan otomatis menarik semua komentar dari postingan Instagram yang diunggah antara jam 15:00 WIB kemarin hingga 15:00 WIB hari ini. Untuk Facebook, sistem hanya akan menarik link postingannya saja (karena batasan privasi API Meta).
                               </p>
                             </div>
@@ -1395,7 +1414,7 @@ export default function EngagementDashboard() {
                             <Button 
                               onClick={handleSaveEngagement} 
                               disabled={isLoading}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl h-11 px-8 shadow-lg shadow-indigo-100 border-none"
+                              className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl h-11 px-8 shadow-lg shadow-rose-100 border-none"
                             >
                               {isLoading ? 'Menyimpan...' : 'Simpan Data Rekap'}
                             </Button>
@@ -1432,7 +1451,7 @@ export default function EngagementDashboard() {
                               {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                             </h2>
                             {getLocalISODate(currentDailyDate) === getLocalISODate(new Date()) && (
-                              <Badge variant="outline" className="bg-indigo-50 text-indigo-600 border-indigo-200 text-[9px] px-1.5 py-0">Hari Ini</Badge>
+                              <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 text-[9px] px-1.5 py-0">Hari Ini</Badge>
                             )}
                           </div>
                         </div>
@@ -1456,7 +1475,7 @@ export default function EngagementDashboard() {
                                   </button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                                  <Button onClick={() => handleExportPDF(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-12 shadow-lg shadow-indigo-100 font-bold text-[10px] uppercase tracking-widest border-none">
+                                  <Button onClick={() => handleExportPDF(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} className="gap-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-12 shadow-lg shadow-rose-100 font-bold text-[10px] uppercase tracking-widest border-none">
                                     <FileText size={14} />
                                     PDF
                                   </Button>
@@ -1613,7 +1632,7 @@ export default function EngagementDashboard() {
                           <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             <h2 className="text-xs sm:text-sm font-bold text-slate-900">Minggu ke-{weeklyReports[0]?.weekNumber}</h2>
                             {weeklyReports[0]?.isCurrentWeek && (
-                              <Badge variant="outline" className="bg-indigo-50 text-indigo-600 border-indigo-200 text-[9px] px-1.5 py-0">Sekarang</Badge>
+                              <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 text-[9px] px-1.5 py-0">Sekarang</Badge>
                             )}
                           </div>
                           <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{weeklyReports[0]?.monthName} {weeklyReports[0]?.year}</p>
@@ -1638,7 +1657,7 @@ export default function EngagementDashboard() {
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                          <Button onClick={() => handleExportPDF(printRef, `recaplink-mingguan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-12 shadow-lg shadow-indigo-100 font-bold text-[10px] uppercase tracking-widest border-none">
+                          <Button onClick={() => handleExportPDF(printRef, `recaplink-mingguan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-12 shadow-lg shadow-rose-100 font-bold text-[10px] uppercase tracking-widest border-none">
                             <FileText size={14} />
                             PDF
                           </Button>
@@ -1820,7 +1839,7 @@ export default function EngagementDashboard() {
                           <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             <h2 className="text-xs sm:text-sm font-bold text-slate-900">{monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</h2>
                             {monthlyReports[0]?.isCurrentMonth && (
-                              <Badge variant="outline" className="bg-indigo-50 text-indigo-600 border-indigo-200 text-[9px] px-1.5 py-0">Bulan Ini</Badge>
+                              <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 text-[9px] px-1.5 py-0">Bulan Ini</Badge>
                             )}
                           </div>
                         </div>
@@ -1844,7 +1863,7 @@ export default function EngagementDashboard() {
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                          <Button onClick={() => handleExportPDF(printMonthlyRef, `recaplink-bulanan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-12 shadow-lg shadow-indigo-100 font-bold text-[10px] uppercase tracking-widest border-none">
+                          <Button onClick={() => handleExportPDF(printMonthlyRef, `recaplink-bulanan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-12 shadow-lg shadow-rose-100 font-bold text-[10px] uppercase tracking-widest border-none">
                             <FileText size={14} />
                             PDF
                           </Button>
@@ -1988,8 +2007,8 @@ export default function EngagementDashboard() {
               >
                 <div className="bg-white rounded-[2.5rem] p-4 sm:p-10 border border-slate-100 shadow-sm">
                   <div className="lg:hidden flex items-center gap-4 mb-8">
-                    <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center">
-                      <Settings className="text-indigo-600" size={24} />
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center">
+                      <Settings className="text-rose-600" size={24} />
                     </div>
                     <div>
                       <h2 className="text-2xl font-black text-slate-800">Pengaturan Sistem</h2>
@@ -2054,7 +2073,7 @@ const BottomNavItem = React.memo(function BottomNavItem({ active, onClick, icon,
       onClick={onClick}
       className={cn(
         "flex flex-col items-center justify-center gap-1 w-full h-full transition-all duration-200 relative",
-        active ? "text-indigo-600" : "text-slate-400"
+        active ? "text-rose-600" : "text-slate-400"
       )}
     >
       <div className={cn(
@@ -2067,7 +2086,7 @@ const BottomNavItem = React.memo(function BottomNavItem({ active, onClick, icon,
       {active && (
         <motion.div 
           layoutId="bottom-nav-indicator"
-          className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-8 h-1 bg-indigo-600 rounded-b-full shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
+          className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-8 h-1 bg-rose-600 rounded-b-full shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
         />
       )}
     </button>
@@ -2118,7 +2137,7 @@ const NavItem = React.memo(function NavItem({ active, onClick, icon, label }: { 
         variant="ghost" 
         className={`w-full justify-start gap-3 h-11 rounded-xl px-4 transition-all duration-300 relative overflow-hidden ${
           active 
-            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
+            ? 'bg-rose-600 text-white shadow-lg shadow-rose-100' 
             : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
         }`}
         onClick={onClick}

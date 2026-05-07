@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity } from 'lucide-react';
+import { Edit } from 'lucide-react';
 import EngagementDashboard from './components/EngagementDashboard';
 import LoginScreen from './components/LoginScreen';
 import { useAuth } from './components/FirebaseProvider';
@@ -33,24 +33,24 @@ function LoadingScreen() {
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="bg-white p-8 rounded-3xl shadow-xl shadow-indigo-100/50 border border-indigo-50 flex flex-col items-center w-full max-w-sm"
+        className="bg-white p-8 rounded-3xl shadow-xl shadow-rose-100/50 border border-rose-50 flex flex-col items-center w-full max-w-sm"
       >
-        <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200 mb-8 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-indigo-500/50 animate-ping opacity-20" />
-          <Activity className="w-10 h-10 text-white relative z-10 animate-pulse" />
+        <div className="w-20 h-20 bg-rose-600 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-200 mb-8 relative overflow-hidden group">
+          <div className="absolute inset-0 bg-rose-500/50 animate-ping opacity-20" />
+          <Edit className="w-10 h-10 text-white relative z-10 animate-pulse" />
         </div>
         
-        <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2 text-center">RecapLink<span className="text-indigo-600">Smart</span></h2>
+        <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2 text-center">RecapLink<span className="text-rose-600">Smart</span></h2>
         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest text-center mb-8">Memuat Sistem...</p>
         
         <div className="w-full space-y-2 relative">
           <div className="flex justify-between items-end mb-1">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Memproses Data</span>
-            <span className="text-xs font-black text-indigo-600">{progress}%</span>
+            <span className="text-xs font-black text-rose-600">{progress}%</span>
           </div>
           <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
             <motion.div 
-              className="h-full bg-indigo-600 rounded-full"
+              className="h-full bg-rose-600 rounded-full"
               initial={{ width: "0%" }}
               animate={{ width: `${progress}%` }}
               transition={{ ease: "easeOut" }}
