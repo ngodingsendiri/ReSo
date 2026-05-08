@@ -834,6 +834,21 @@ export default function EngagementDashboard() {
     window.print();
   };
 
+  const currentDailyDateStr = getLocalISODate(currentDailyDate);
+  const currentDailyEngagementOptions = dailyEngagementsMap[currentDailyDateStr];
+  let dailyPossible = 0;
+  let dailyActual = 0;
+  if (currentDailyDateStr <= getLocalISODate(new Date())) {
+    employees.forEach(emp => {
+      // Wajib 3 platform untuk semua pegawai (IG, FB, TikTok)
+      dailyPossible += 3;
+      if (currentDailyEngagementOptions?.igEngagedEmployeeIds?.includes(emp.id)) dailyActual++;
+      if (currentDailyEngagementOptions?.fbEngagedEmployeeIds?.includes(emp.id)) dailyActual++;
+      if (currentDailyEngagementOptions?.tiktokEngagedEmployeeIds?.includes(emp.id)) dailyActual++;
+    });
+  }
+  const dailyEngagementRate = dailyPossible > 0 ? Math.round((dailyActual / dailyPossible) * 100) : 0;
+
   return (
     <div className="flex h-[100dvh] bg-[#fafafa] bg-grid-pattern font-sans overflow-hidden relative">
       {/* Mobile Sidebar Overlay */}
@@ -1518,9 +1533,16 @@ export default function EngagementDashboard() {
                         <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Harian</h3>
                         <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
                       </div>
-                      <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center", isExporting ? "text-right p-1.5" : "text-left md:text-right p-3")}>
-                        <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
-                        <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Generated: {new Date().toLocaleDateString('id-ID')}</p>
+                      <div className={cn("flex items-center bg-slate-50 rounded-lg border border-slate-100", isExporting ? "p-1.5 gap-2" : "p-3 gap-4")}>
+                        <div className="flex flex-col items-end justify-center">
+                          <p className={cn("font-black text-emerald-600 leading-none", isExporting ? "text-[14px]" : "text-[18px]")}>{dailyEngagementRate}%</p>
+                          <p className={cn("font-bold text-slate-500 uppercase tracking-widest leading-none", isExporting ? "text-[6px] mt-0.5" : "text-[8px] mt-1")}>Rate</p>
+                        </div>
+                        <div className={cn("w-px bg-slate-200", isExporting ? "h-5" : "h-7")}></div>
+                        <div className="flex flex-col justify-center text-right">
+                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                          <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
+                        </div>
                       </div>
                     </div>
 
@@ -1586,10 +1608,14 @@ export default function EngagementDashboard() {
                                   <TableCell className="border-r border-slate-50 text-center p-0 w-[1%] whitespace-nowrap">
                                     <div className="flex items-center justify-center py-0.5">
                                       {!isFuture ? (
-                                        hasIg ? (
-                                          <Heart size={14} className="text-pink-500" fill="currentColor" />
+                                        hasIgAccount ? (
+                                          hasIg ? (
+                                            <Heart size={14} className="text-pink-500" fill="currentColor" />
+                                          ) : (
+                                            <X size={14} className="text-red-500" strokeWidth={3} />
+                                          )
                                         ) : (
-                                          <X size={14} className="text-red-500" strokeWidth={3} />
+                                          <span className="text-slate-300 font-bold block w-[14px] text-center">-</span>
                                         )
                                       ) : null}
                                     </div>
@@ -1597,10 +1623,14 @@ export default function EngagementDashboard() {
                                   <TableCell className="border-r border-slate-50 text-center p-0 w-[1%] whitespace-nowrap">
                                     <div className="flex items-center justify-center py-0.5">
                                       {!isFuture ? (
-                                        hasFb ? (
-                                          <ThumbsUp size={14} className="text-blue-500" fill="currentColor" />
+                                        hasFbAccount ? (
+                                          hasFb ? (
+                                            <ThumbsUp size={14} className="text-blue-500" fill="currentColor" />
+                                          ) : (
+                                            <X size={14} className="text-red-500" strokeWidth={3} />
+                                          )
                                         ) : (
-                                          <X size={14} className="text-red-500" strokeWidth={3} />
+                                          <span className="text-slate-300 font-bold block w-[14px] text-center">-</span>
                                         )
                                       ) : null}
                                     </div>
@@ -1608,10 +1638,14 @@ export default function EngagementDashboard() {
                                   <TableCell className="text-center p-0 w-[1%] whitespace-nowrap">
                                     <div className="flex items-center justify-center py-0.5">
                                       {!isFuture ? (
-                                        hasTiktok ? (
-                                          <TiktokIcon size={14} className="text-slate-800" fill="currentColor" />
+                                        hasTiktokAccount ? (
+                                          hasTiktok ? (
+                                            <TiktokIcon size={14} className="text-slate-800" fill="currentColor" />
+                                          ) : (
+                                            <X size={14} className="text-red-500" strokeWidth={3} />
+                                          )
                                         ) : (
-                                          <X size={14} className="text-red-500" strokeWidth={3} />
+                                          <span className="text-slate-300 font-bold block w-[14px] text-center">-</span>
                                         )
                                       ) : null}
                                     </div>
