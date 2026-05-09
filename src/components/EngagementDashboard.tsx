@@ -1608,14 +1608,10 @@ export default function EngagementDashboard() {
                                   <TableCell className="border-r border-slate-50 text-center p-0 w-[1%] whitespace-nowrap">
                                     <div className="flex items-center justify-center py-0.5">
                                       {!isFuture ? (
-                                        hasIgAccount ? (
-                                          hasIg ? (
-                                            <Heart size={14} className="text-pink-500" fill="currentColor" />
-                                          ) : (
-                                            <X size={14} className="text-red-500" strokeWidth={3} />
-                                          )
+                                        hasIg ? (
+                                          <Heart size={14} className="text-pink-500" fill="currentColor" />
                                         ) : (
-                                          <span className="text-slate-300 font-bold block w-[14px] text-center">-</span>
+                                          <X size={14} className="text-red-500" strokeWidth={3} />
                                         )
                                       ) : null}
                                     </div>
@@ -1623,14 +1619,10 @@ export default function EngagementDashboard() {
                                   <TableCell className="border-r border-slate-50 text-center p-0 w-[1%] whitespace-nowrap">
                                     <div className="flex items-center justify-center py-0.5">
                                       {!isFuture ? (
-                                        hasFbAccount ? (
-                                          hasFb ? (
-                                            <ThumbsUp size={14} className="text-blue-500" fill="currentColor" />
-                                          ) : (
-                                            <X size={14} className="text-red-500" strokeWidth={3} />
-                                          )
+                                        hasFb ? (
+                                          <ThumbsUp size={14} className="text-blue-500" fill="currentColor" />
                                         ) : (
-                                          <span className="text-slate-300 font-bold block w-[14px] text-center">-</span>
+                                          <X size={14} className="text-red-500" strokeWidth={3} />
                                         )
                                       ) : null}
                                     </div>
@@ -1638,14 +1630,10 @@ export default function EngagementDashboard() {
                                   <TableCell className="text-center p-0 w-[1%] whitespace-nowrap">
                                     <div className="flex items-center justify-center py-0.5">
                                       {!isFuture ? (
-                                        hasTiktokAccount ? (
-                                          hasTiktok ? (
-                                            <TiktokIcon size={14} className="text-slate-800" fill="currentColor" />
-                                          ) : (
-                                            <X size={14} className="text-red-500" strokeWidth={3} />
-                                          )
+                                        hasTiktok ? (
+                                          <TiktokIcon size={14} className="text-slate-800" fill="currentColor" />
                                         ) : (
-                                          <span className="text-slate-300 font-bold block w-[14px] text-center">-</span>
+                                          <X size={14} className="text-red-500" strokeWidth={3} />
                                         )
                                       ) : null}
                                     </div>
