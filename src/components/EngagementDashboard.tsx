@@ -28,7 +28,8 @@ import {
   Link as LinkIcon,
   RefreshCw,
   ExternalLink,
-  PieChart
+  PieChart,
+  Bell
 } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
 import { motion, AnimatePresence } from 'motion/react';
@@ -104,6 +105,81 @@ export default function EngagementDashboard() {
   const [weeklySortMode, setWeeklySortMode] = useState<'name' | 'bidang'>('bidang');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+  );
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      toast.error('Browser tidak mendukung notifikasi');
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        toast.success('Notifikasi berhasil diaktifkan');
+      } else {
+        toast.error('Notifikasi tidak diizinkan');
+      }
+    } catch (error) {
+      console.error('Error requesting notification permission:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (notificationPermission !== 'granted') return;
+
+    const checkTimeAndNotify = () => {
+      const now = new Date();
+      // Use Asia/Jakarta timezone explicitly
+      const options = { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false } as const;
+      const formatter = new Intl.DateTimeFormat('en-US', options);
+      const timeString = formatter.format(now);
+      
+      const todayStr = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+      const notifiedKey1445 = `notified-1445-${todayStr}`;
+      const notifiedKey1500 = `notified-1500-${todayStr}`;
+
+      if (timeString === '14:45' && !localStorage.getItem(notifiedKey1445)) {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then(registration => {
+            registration.showNotification("Engagement sosmed Diskominfo", {
+              body: "Waktunya melakukan engagement sosial media Diskominfo!",
+              icon: "/icon.svg",
+              vibrate: [200, 100, 200]
+            } as any);
+          });
+        } else {
+          new Notification("Engagement sosmed Diskominfo", {
+            body: "Waktunya melakukan engagement sosial media Diskominfo!",
+            icon: "/icon.svg"
+          });
+        }
+        localStorage.setItem(notifiedKey1445, 'true');
+      } else if (timeString === '15:00' && !localStorage.getItem(notifiedKey1500)) {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then(registration => {
+            registration.showNotification("Rekap engagement sosmed", {
+              body: "Batas waktu engagement telah berakhir. Waktunya mengecek rekap engagement sosial media.",
+              icon: "/icon.svg",
+              vibrate: [200, 100, 200]
+            } as any);
+          });
+        } else {
+          new Notification("Rekap engagement sosmed", {
+            body: "Batas waktu engagement telah berakhir. Waktunya mengecek rekap engagement sosial media.",
+            icon: "/icon.svg"
+          });
+        }
+        localStorage.setItem(notifiedKey1500, 'true');
+      }
+    };
+
+    checkTimeAndNotify();
+    const intervalId = setInterval(checkTimeAndNotify, 30000); // Check every 30 seconds
+    return () => clearInterval(intervalId);
+  }, [notificationPermission]);
 
   // Meta API State
   const [metaToken, setMetaToken] = useState('');
@@ -704,7 +780,7 @@ export default function EngagementDashboard() {
   const weeklyDatesList = useMemo(() => weeklyReports.flatMap(w => w.dates), [weeklyReports]);
 
   const weeklyStats = useMemo(() => {
-    if (weeklyReports.length === 0) return { employeeTotals: {} as Record<string, number>, maxEngagements: 3 };
+    if (weeklyReports.length === 0) return { employeeTotals: {} as Record<string, number>, maxEngagements: 3, top3Ids: [], bottom3Ids: [], bidangRates: [] as { bidang: string, rate: number }[] };
     
     const weekDates = weeklyReports[0].dates;
     const todayStr = getLocalISODate(new Date());
@@ -718,6 +794,7 @@ export default function EngagementDashboard() {
     const maxEngagements = daysPassed * 3;
     
     const employeeTotals: Record<string, number> = {};
+    const bidangStats: Record<string, { possible: number, actual: number }> = {};
 
     employees.forEach(emp => {
       let totalEngagements = 0;
@@ -730,6 +807,11 @@ export default function EngagementDashboard() {
         totalEngagements += (hasIg + hasFb + hasTiktok);
       });
       employeeTotals[emp.id] = totalEngagements;
+
+      const bidang = emp.bidang || 'Lainnya';
+      if (!bidangStats[bidang]) bidangStats[bidang] = { possible: 0, actual: 0 };
+      bidangStats[bidang].possible += maxEngagements;
+      bidangStats[bidang].actual += totalEngagements;
     });
 
     const uniqueScores = Array.from(new Set(Object.values(employeeTotals))).sort((a, b) => b - a);
@@ -739,7 +821,13 @@ export default function EngagementDashboard() {
     const top3Ids = employees.filter(e => top3Scores.includes(employeeTotals[e.id])).map(e => e.id);
     const bottom3Ids = employees.filter(e => bottom3Scores.includes(employeeTotals[e.id]) && !top3Ids.includes(e.id)).map(e => e.id);
 
-    return { employeeTotals, maxEngagements, top3Ids, bottom3Ids };
+    // Calculate rate per bidang
+    const bidangRates = Object.entries(bidangStats).map(([bidang, stats]) => ({
+      bidang,
+      rate: stats.possible > 0 ? Math.round((stats.actual / stats.possible) * 100) : 0
+    })).sort((a, b) => b.rate - a.rate);
+
+    return { employeeTotals, maxEngagements, top3Ids, bottom3Ids, bidangRates };
   }, [weeklyReports, employees, dailyEngagementsMap]);
 
   const changeWeek = (offset: number) => {
@@ -774,7 +862,7 @@ export default function EngagementDashboard() {
   }, [employees, currentMonthlyReportDate]);
 
   const monthlyStats = useMemo(() => {
-    if (monthlyReports.length === 0) return { employeeTotals: {} as Record<string, number>, maxEngagements: 3 };
+    if (monthlyReports.length === 0) return { employeeTotals: {} as Record<string, number>, maxEngagements: 3, top3Ids: [], bottom3Ids: [], bidangRates: [] as { bidang: string, rate: number }[] };
     
     const monthDates = monthlyReports[0].dates;
     const todayStr = getLocalISODate(new Date());
@@ -788,6 +876,7 @@ export default function EngagementDashboard() {
     const maxEngagements = daysPassed * 3;
     
     const employeeTotals: Record<string, number> = {};
+    const bidangStats: Record<string, { possible: number, actual: number }> = {};
 
     employees.forEach(emp => {
       let totalEngagements = 0;
@@ -800,6 +889,11 @@ export default function EngagementDashboard() {
         totalEngagements += (hasIg + hasFb + hasTiktok);
       });
       employeeTotals[emp.id] = totalEngagements;
+
+      const bidang = emp.bidang || 'Lainnya';
+      if (!bidangStats[bidang]) bidangStats[bidang] = { possible: 0, actual: 0 };
+      bidangStats[bidang].possible += maxEngagements;
+      bidangStats[bidang].actual += totalEngagements;
     });
 
     const uniqueScores = Array.from(new Set(Object.values(employeeTotals))).sort((a, b) => b - a);
@@ -809,7 +903,13 @@ export default function EngagementDashboard() {
     const top3Ids = employees.filter(e => top3Scores.includes(employeeTotals[e.id])).map(e => e.id);
     const bottom3Ids = employees.filter(e => bottom3Scores.includes(employeeTotals[e.id]) && !top3Ids.includes(e.id)).map(e => e.id);
 
-    return { employeeTotals, maxEngagements, top3Ids, bottom3Ids };
+    // Calculate rate per bidang
+    const bidangRates = Object.entries(bidangStats).map(([bidang, stats]) => ({
+      bidang,
+      rate: stats.possible > 0 ? Math.round((stats.actual / stats.possible) * 100) : 0
+    })).sort((a, b) => b.rate - a.rate);
+
+    return { employeeTotals, maxEngagements, top3Ids, bottom3Ids, bidangRates };
   }, [monthlyReports, employees, dailyEngagementsMap]);
 
   const changeMonthlyReportDate = (offset: number) => {
@@ -995,6 +1095,18 @@ export default function EngagementDashboard() {
           </div>
           
           <div className="flex items-center gap-2">
+            {notificationPermission !== 'granted' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={requestNotificationPermission}
+                className="rounded-full w-8 h-8 md:w-10 md:h-10 text-rose-500 hover:bg-rose-50 transition-colors mr-1 md:mr-2 relative"
+                title="Aktifkan Notifikasi"
+              >
+                <Bell size={18} className="animate-pulse" />
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500"></span>
+              </Button>
+            )}
             <div className="hidden sm:flex flex-col items-end mr-2">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Status</p>
               <div className="flex items-center gap-1">
@@ -1722,9 +1834,19 @@ export default function EngagementDashboard() {
                         <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Mingguan</h3>
                         <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • Minggu ke-{weeklyReports[0]?.weekNumber} • {weeklyReports[0]?.year}</p>
                       </div>
-                      <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center", isExporting ? "text-right p-1.5" : "text-left md:text-right p-3")}>
-                        <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
-                        <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Generated: {new Date().toLocaleDateString('id-ID')}</p>
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
+                          {weeklyStats.bidangRates?.map((br, idx) => (
+                            <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-100 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
+                              <span className={cn("font-bold uppercase tracking-wider text-slate-500 leading-none", isExporting ? "text-[5px]" : "text-[7px] md:text-[8px]")}>{br.bidang}</span>
+                              <span className={cn("font-bold text-emerald-600 leading-none", isExporting ? "text-[6px]" : "text-[8px] md:text-[10px]")}>{br.rate}%</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
+                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                          <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
+                        </div>
                       </div>
                     </div>
 
@@ -1777,22 +1899,10 @@ export default function EngagementDashboard() {
                                     <p className={cn("font-bold text-xs whitespace-nowrap shrink-0",
                                       isTop ? "text-emerald-900" : isBottom ? "text-red-900" : "text-slate-800"
                                     )}>{emp.name}</p>
-                                    <div className="flex items-center gap-2 ml-2">
-                                      {emp.igUsername && (
-                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
-                                          <Instagram size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-pink-500"} /> {emp.igUsername.length > 8 ? emp.igUsername.substring(0, 8) + '...' : emp.igUsername}
-                                        </div>
-                                      )}
-                                      {emp.fbName && (
-                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
-                                          <Facebook size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-blue-500"} /> {emp.fbName.length > 8 ? emp.fbName.substring(0, 8) + '...' : emp.fbName}
-                                        </div>
-                                      )}
-                                      {emp.tiktokName && (
-                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
-                                          <TiktokIcon size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-slate-800"} /> {emp.tiktokName.length > 8 ? emp.tiktokName.substring(0, 8) + '...' : emp.tiktokName}
-                                        </div>
-                                      )}
+                                    <div className="flex items-center gap-0.5 ml-1">
+                                      {!!emp.igUsername && <Instagram size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-pink-500/50"} />}
+                                      {!!emp.fbName && <Facebook size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-blue-500/50"} />}
+                                      {!!emp.tiktokName && <TiktokIcon size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-slate-800/50"} />}
                                     </div>
                                   </div>
                                 </TableCell>
@@ -1928,9 +2038,19 @@ export default function EngagementDashboard() {
                         <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Bulanan</h3>
                         <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • {monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</p>
                       </div>
-                      <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center", isExporting ? "text-right p-1.5" : "text-left md:text-right p-3")}>
-                        <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
-                        <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Generated: {new Date().toLocaleDateString('id-ID')}</p>
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
+                          {monthlyStats.bidangRates?.map((br, idx) => (
+                            <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-100 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
+                              <span className={cn("font-bold uppercase tracking-wider text-slate-500 leading-none", isExporting ? "text-[5px]" : "text-[7px] md:text-[8px]")}>{br.bidang}</span>
+                              <span className={cn("font-bold text-emerald-600 leading-none", isExporting ? "text-[6px]" : "text-[8px] md:text-[10px]")}>{br.rate}%</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
+                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                          <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
+                        </div>
                       </div>
                     </div>
 
@@ -1974,22 +2094,10 @@ export default function EngagementDashboard() {
                                     <p className={cn("font-bold text-sm whitespace-nowrap shrink-0",
                                       isTop ? "text-emerald-900" : isBottom ? "text-red-900" : "text-slate-800"
                                     )}>{emp.name}</p>
-                                    <div className="flex items-center gap-2 ml-2">
-                                      {emp.igUsername && (
-                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
-                                          <Instagram size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-pink-500"} /> {emp.igUsername.length > 8 ? emp.igUsername.substring(0, 8) + '...' : emp.igUsername}
-                                        </div>
-                                      )}
-                                      {emp.fbName && (
-                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
-                                          <Facebook size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-blue-500"} /> {emp.fbName.length > 8 ? emp.fbName.substring(0, 8) + '...' : emp.fbName}
-                                        </div>
-                                      )}
-                                      {emp.tiktokName && (
-                                        <div className={cn("flex items-center gap-1 text-[9px] font-medium whitespace-nowrap", isTop ? "text-emerald-700/80" : isBottom ? "text-red-700/80" : "text-slate-500")}>
-                                          <TiktokIcon size={10} className={isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-slate-800"} /> {emp.tiktokName.length > 8 ? emp.tiktokName.substring(0, 8) + '...' : emp.tiktokName}
-                                        </div>
-                                      )}
+                                    <div className="flex items-center gap-0.5 ml-1">
+                                      {!!emp.igUsername && <Instagram size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-pink-500/50"} />}
+                                      {!!emp.fbName && <Facebook size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-blue-500/50"} />}
+                                      {!!emp.tiktokName && <TiktokIcon size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-slate-800/50"} />}
                                     </div>
                                   </div>
                                 </TableCell>
