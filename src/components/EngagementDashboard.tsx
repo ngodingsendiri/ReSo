@@ -29,7 +29,8 @@ import {
   RefreshCw,
   ExternalLink,
   PieChart,
-  Bell
+  Bell,
+  Pen
 } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1069,11 +1070,11 @@ export default function EngagementDashboard() {
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
               <motion.div 
-                className="w-10 h-10 bg-rose-600 rounded-[14px] flex items-center justify-center shadow-lg shadow-rose-200"
+                className="w-10 h-10 bg-slate-900 rounded-[14px] flex items-center justify-center shadow-lg shadow-slate-200"
                 whileHover={{ rotate: 12, scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
               >
-                <Edit className="text-white" size={22} strokeWidth={2.5} />
+                <Pen className="text-white" size={22} strokeWidth={2.5} />
               </motion.div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">RecapLink</h1>

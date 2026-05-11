@@ -28,10 +28,10 @@ export default function LoginScreen() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen-safe min-h-[100dvh] bg-slate-50 bg-grid-pattern pb-safe">
       <div className="p-8 bg-white rounded-2xl shadow-xl border border-slate-100 text-center max-w-sm w-full mx-4">
-        <div className="w-16 h-16 bg-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-rose-100">
+        <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-slate-200">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 2.5a2.125 2.125 0 0 1 3 3L12 15l-4 1 1-4Z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m15 5 4 4"/>
           </svg>
         </div>
         <h1 className="text-2xl font-bold mb-2 text-slate-900">RecapLink</h1>
@@ -46,7 +46,7 @@ export default function LoginScreen() {
         <Button 
           onClick={handleSignIn} 
           disabled={isLoggingIn}
-          className="w-full h-12 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
+          className="w-full h-12 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
         >
           {isLoggingIn ? (
             <div className="flex items-center gap-2">
