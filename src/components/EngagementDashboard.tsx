@@ -45,10 +45,13 @@ import { Toaster } from './ui/sonner';
 import { toast } from 'sonner';
 import { DailyEngagement, Employee } from '../types';
 import { useAuth } from './FirebaseProvider';
-import { db, signIn, logout } from '../lib/firebase';
-import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, limit } from 'firebase/firestore';
+import { db, signIn, logout, auth } from '../lib/firebase';
+import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, limit, writeBatch } from 'firebase/firestore';
 import { cn, getBidangColor } from '@/lib/utils';
 import { ErrorBoundary } from './ErrorBoundary';
+
+import { DashboardTab } from './tabs/DashboardTab';
+import { SettingsTab } from './tabs/SettingsTab';
 
 const EngagementChart = React.lazy(() => import('./EngagementChart'));
 const EmployeeManager = React.lazy(() => import('./EmployeeManager'));
@@ -108,6 +111,12 @@ export default function EngagementDashboard() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
+
+  const [recalculateConfig, setRecalculateConfig] = useState<{
+    mode: 'last_week' | 'last_month' | 'last_year';
+  }>({
+    mode: 'last_week'
+  });
 
   const requestNotificationPermission = async () => {
     if (!('Notification' in window)) {
@@ -251,7 +260,7 @@ export default function EngagementDashboard() {
     const q = query(
       collection(db, 'dailyEngagement'), 
       orderBy('date', 'desc'),
-      limit(60) 
+      limit(31) // Menampilkan data 1 bulan ke belakang
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyEngagement));
@@ -587,6 +596,89 @@ export default function EngagementDashboard() {
     };
   }, [employees, dailyEngagements]);
 
+  const processEngagementInput = React.useCallback((input: string, platform: 'ig' | 'fb' | 'tiktok') => {
+    // Normalize whitespace and newlines for robust matching
+    const normalize = (str: string) => str.toLowerCase().replace(/\s+/g, ' ').trim();
+    const lowerInput = normalize(input);
+    
+    // Memecah input menjadi baris-baris mengatasi nama yang di-copy dari sosmed
+    const inputLines = input.toLowerCase().split(/[\n,;]+/).map(line => normalize(line)).filter(line => line.length > 2);
+    
+    const matchedIds = new Set<string>();
+
+    const isExactMatchInTarget = (text: string, targetLine: string) => {
+      if (!text || !targetLine) return false;
+      if (targetLine === text) return true;
+      // Periksa apakah text ada di dalam targetLine sebagai kata utuh atau bagian string (toleransi spasi)
+      if (targetLine.includes(text)) {
+        return true;
+      }
+      return false;
+    };
+    
+    employees.forEach(emp => {
+      const nameMatch = normalize(emp.name);
+      const igMatch = emp.igUsername ? normalize(emp.igUsername.replace('@', '')) : '';
+      const igMatch2 = emp.igUsername2 ? normalize(emp.igUsername2.replace('@', '')) : '';
+      const fbMatch = emp.fbName ? normalize(emp.fbName) : '';
+      const fbMatch2 = emp.fbName2 ? normalize(emp.fbName2) : '';
+      const tiktokMatch = emp.tiktokName ? normalize(emp.tiktokName.replace('@', '')) : '';
+      const tiktokMatch2 = emp.tiktokName2 ? normalize(emp.tiktokName2.replace('@', '')) : '';
+      
+      let isMatch = false;
+
+      // Pengecekan global di teks (kalau di-copy sekaligus semua namanya)
+      if (nameMatch && lowerInput.includes(nameMatch)) isMatch = true;
+      
+      // Cek khusus platform kalau field datanya ada
+      if (platform === 'ig' && igMatch && lowerInput.includes(igMatch)) isMatch = true;
+      if (platform === 'ig' && igMatch2 && lowerInput.includes(igMatch2)) isMatch = true;
+      if (platform === 'fb' && fbMatch && lowerInput.includes(fbMatch)) isMatch = true;
+      if (platform === 'fb' && fbMatch2 && lowerInput.includes(fbMatch2)) isMatch = true;
+      if (platform === 'tiktok' && tiktokMatch && lowerInput.includes(tiktokMatch)) isMatch = true;
+      if (platform === 'tiktok' && tiktokMatch2 && lowerInput.includes(tiktokMatch2)) isMatch = true;
+
+      // Pengecekan baris per baris yang lebih ketat jika teks copas terbagi-bagi baris
+      if (!isMatch) {
+        for (const line of inputLines) {
+          if (isExactMatchInTarget(nameMatch, line)) {
+            isMatch = true; break;
+          }
+          if (platform === 'ig') {
+            if (igMatch && isExactMatchInTarget(igMatch, line)) {
+              isMatch = true; break;
+            }
+            if (igMatch2 && isExactMatchInTarget(igMatch2, line)) {
+              isMatch = true; break;
+            }
+          }
+          if (platform === 'fb') {
+            if (fbMatch && isExactMatchInTarget(fbMatch, line)) {
+              isMatch = true; break;
+            }
+            if (fbMatch2 && isExactMatchInTarget(fbMatch2, line)) {
+              isMatch = true; break;
+            }
+          }
+          if (platform === 'tiktok') {
+            if (tiktokMatch && isExactMatchInTarget(tiktokMatch, line)) {
+              isMatch = true; break;
+            }
+            if (tiktokMatch2 && isExactMatchInTarget(tiktokMatch2, line)) {
+              isMatch = true; break;
+            }
+          }
+        }
+      }
+
+      if (isMatch) {
+        matchedIds.add(emp.id);
+      }
+    });
+
+    return Array.from(matchedIds);
+  }, [employees]);
+
   const handleSaveEngagement = async () => {
     if (!user) {
       toast.error('Anda harus login untuk menyimpan data');
@@ -595,75 +687,13 @@ export default function EngagementDashboard() {
     
     setIsLoading(true);
     try {
-      const processInput = (input: string, platform: 'ig' | 'fb' | 'tiktok') => {
-        // Normalize whitespace and newlines for robust matching
-        const normalize = (str: string) => str.toLowerCase().replace(/\s+/g, ' ').trim();
-        const lowerInput = normalize(input);
-        
-        // Memecah input menjadi baris-baris mengatasi nama yang di-copy dari sosmed
-        const inputLines = input.toLowerCase().split(/[\n,;]+/).map(line => normalize(line)).filter(line => line.length > 2);
-        
-        const matchedIds = new Set<string>();
-
-        const isExactMatchInTarget = (text: string, targetLine: string) => {
-          if (!text || !targetLine) return false;
-          if (targetLine === text) return true;
-          // Periksa apakah text ada di dalam targetLine sebagai kata utuh atau bagian string (toleransi spasi)
-          if (targetLine.includes(text)) {
-            return true;
-          }
-          return false;
-        };
-        
-        employees.forEach(emp => {
-          const nameMatch = normalize(emp.name);
-          const igMatch = emp.igUsername ? normalize(emp.igUsername.replace('@', '')) : '';
-          const fbMatch = emp.fbName ? normalize(emp.fbName) : '';
-          const tiktokMatch = emp.tiktokName ? normalize(emp.tiktokName.replace('@', '')) : '';
-          
-          let isMatch = false;
-
-          // Pengecekan global di teks (kalau di-copy sekaligus semua namanya)
-          if (nameMatch && lowerInput.includes(nameMatch)) isMatch = true;
-          
-          // Cek khusus platform kalau field datanya ada
-          if (platform === 'ig' && igMatch && lowerInput.includes(igMatch)) isMatch = true;
-          if (platform === 'fb' && fbMatch && lowerInput.includes(fbMatch)) isMatch = true;
-          if (platform === 'tiktok' && tiktokMatch && lowerInput.includes(tiktokMatch)) isMatch = true;
-
-          // Pengecekan baris per baris yang lebih ketat jika teks copas terbagi-bagi baris
-          if (!isMatch) {
-            for (const line of inputLines) {
-              if (isExactMatchInTarget(nameMatch, line)) {
-                isMatch = true; break;
-              }
-              if (platform === 'ig' && igMatch && isExactMatchInTarget(igMatch, line)) {
-                isMatch = true; break;
-              }
-              if (platform === 'fb' && fbMatch && isExactMatchInTarget(fbMatch, line)) {
-                isMatch = true; break;
-              }
-              if (platform === 'tiktok' && tiktokMatch && isExactMatchInTarget(tiktokMatch, line)) {
-                isMatch = true; break;
-              }
-            }
-          }
-
-          if (isMatch) {
-            matchedIds.add(emp.id);
-          }
-        });
-
-        return Array.from(matchedIds);
-      };
-
       const currentIgRawInput = igInputRef.current ? igInputRef.current.value : igRawInput;
       const currentFbRawInput = fbInputRef.current ? fbInputRef.current.value : fbRawInput;
       const currentTiktokRawInput = tiktokInputRef.current ? tiktokInputRef.current.value : tiktokRawInput;
 
-      const igEngagedIds = processInput(currentIgRawInput, 'ig');
-      const fbEngagedIds = processInput(currentFbRawInput, 'fb');
-      const tiktokEngagedIds = processInput(currentTiktokRawInput, 'tiktok');
+      const igEngagedIds = processEngagementInput(currentIgRawInput, 'ig');
+      const fbEngagedIds = processEngagementInput(currentFbRawInput, 'fb');
+      const tiktokEngagedIds = processEngagementInput(currentTiktokRawInput, 'tiktok');
 
       const docRef = doc(db, 'dailyEngagement', selectedDate);
       
@@ -706,6 +736,70 @@ export default function EngagementDashboard() {
       } else {
         toast.error(`Gagal menyimpan data: ${error.message || 'Kesalahan tidak diketahui'}`);
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRecalculateAll = async () => {
+    if (!user) {
+      toast.error('Anda harus login untuk melakukan kalkulasi ulang');
+      return;
+    }
+    
+    if (employees.length === 0) {
+      toast.error('Data pegawai masih kosong. Tidak bisa kalkulasi ulang.');
+      return;
+    }
+
+    if (!window.confirm(`Apakah Anda yakin ingin melakukan kalkulasi ulang data (${recalculateConfig.mode})? Aksi ini akan memperbaiki data namun tidak bisa di-undo.`)) {
+      return;
+    }
+
+    setIsLoading(true);
+    let updatedCount = 0;
+    try {
+      const dateBoundaryStart = new Date();
+      if (recalculateConfig.mode === 'last_week') {
+        dateBoundaryStart.setDate(dateBoundaryStart.getDate() - 7);
+      } else if (recalculateConfig.mode === 'last_month') {
+        dateBoundaryStart.setMonth(dateBoundaryStart.getMonth() - 1);
+      } else if (recalculateConfig.mode === 'last_year') {
+        dateBoundaryStart.setFullYear(dateBoundaryStart.getFullYear() - 1);
+      }
+      const isoBoundaryStart = getLocalISODate(dateBoundaryStart);
+
+      const engagementsToProcess = dailyEngagements.filter(e => e.date >= isoBoundaryStart);
+      const idToken = await auth.currentUser?.getIdToken();
+
+      const response = await fetch('/api/recalculate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          engagements: engagementsToProcess,
+          employees,
+          mode: recalculateConfig.mode
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Gagal terhubung ke server");
+      }
+
+      const data = await response.json();
+      
+      if (data.updatedCount === 0) {
+        toast.info("Tidak ada data baru yang perlu diperbaharui.");
+        return;
+      }
+
+      toast.success(`Kalkulasi ulang selesai via server. ${data.updatedCount} data tanggal telah diperbaharui langsung dari backend.`);
+    } catch (error: any) {
+      console.error('Error recalculating data:', error);
+      toast.error('Gagal melakukan kalkulasi ulang: ' + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -1028,6 +1122,12 @@ export default function EngagementDashboard() {
               icon={<Users2 size={20} />} 
               label="Data Pegawai" 
             />
+            <NavItem 
+              active={activeTab === 'settings'} 
+              onClick={() => { setActiveTab('settings'); setIsSidebarOpen(false); }} 
+              icon={<Settings size={20} />} 
+              label="Pengaturan" 
+            />
           </nav>
         </div>
 
@@ -1132,96 +1232,11 @@ export default function EngagementDashboard() {
           <div className="px-4 py-6 md:p-8 lg:p-12 max-w-[1600px] mx-auto w-full">
             <AnimatePresence mode="wait">
               {activeTab === 'dashboard' && (
-                <motion.div
-                  key="dashboard"
-                  variants={containerVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="hidden"
-                  className="space-y-6 md:space-y-10"
-                >
-                  <motion.div variants={itemVariants} className="lg:hidden flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                    <div className="space-y-0.5">
-                      <h2 className="text-xl font-bold tracking-tight text-slate-900">Dashboard Utama</h2>
-                      <p className="text-slate-500 text-xs">Ringkasan statistik dan tren engagement pegawai</p>
-                    </div>
-                  </motion.div>
-
-                  <motion.div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6" variants={itemVariants}>
-                    <StatCard 
-                      title="Total Pegawai" 
-                      value={stats.totalEmployees.toString()} 
-                      icon={<Users2 size={20} />} 
-                      color="violet" 
-                    />
-                    <StatCard 
-                      title="Rekap Hari Ini" 
-                      value={stats.todayCount.toString()} 
-                      icon={<Activity size={20} />} 
-                      color="emerald" 
-                    />
-                    <StatCard 
-                      title="Total Interaksi (2 Bln)" 
-                      value={stats.totalEngagements.toString()} 
-                      icon={<TrendingUp size={20} />} 
-                      color="sky" 
-                    />
-                    <StatCard 
-                      title="Engagement Rate" 
-                      value={`${stats.engagementRate}%`} 
-                      icon={<CheckCircle2 size={20} />} 
-                      color="rose" 
-                    />
-                  </motion.div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-                    <motion.div variants={itemVariants} className="lg:col-span-2">
-                      <Card className="h-full border-slate-100/50 shadow-sm rounded-2xl overflow-hidden bg-white/80 backdrop-blur-sm">
-                        <CardHeader className="p-6 border-b border-slate-50">
-                          <CardTitle className="text-base font-bold">Tren Engagement (7 Hari Terakhir)</CardTitle>
-                          <CardDescription className="text-xs">Perbandingan interaksi harian Instagram, Facebook & TikTok</CardDescription>
-                        </CardHeader>
-                        <CardContent className="p-6 h-[300px] min-h-[300px]">
-                          <React.Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-slate-50/50 rounded-xl text-slate-400 text-xs font-bold">Memuat Grafik...</div>}>
-                            <EngagementChart data={chartData} />
-                          </React.Suspense>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-
-                    <motion.div variants={itemVariants} className="lg:col-span-1">
-                      <Card className="h-full border-slate-100/50 shadow-sm rounded-2xl overflow-hidden bg-white/80 backdrop-blur-sm">
-                        <CardHeader className="p-6 border-b border-slate-50">
-                          <CardTitle className="text-base font-bold">Aktivitas Terakhir</CardTitle>
-                          <CardDescription className="text-xs">Riwayat pembaruan data rekap</CardDescription>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                          <ScrollArea className="h-[300px]">
-                            <div className="divide-y divide-slate-50">
-                              {dailyEngagements.slice(0, 5).map((eng, i) => (
-                                <div key={i} className="p-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500">
-                                      <CalendarIcon size={14} />
-                                    </div>
-                                    <div>
-                                      <p className="text-xs font-bold text-slate-900">{new Date(eng.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long' })}</p>
-                                      <p className="text-[10px] text-slate-400">{(eng.igEngagedEmployeeIds?.length || 0) + (eng.fbEngagedEmployeeIds?.length || 0)} Interaksi</p>
-                                    </div>
-                                  </div>
-                                  <Badge variant="outline" className="text-[9px] font-bold border-slate-100 text-slate-400">Selesai</Badge>
-                                </div>
-                              ))}
-                              {dailyEngagements.length === 0 && (
-                                <div className="p-8 text-center text-slate-400 text-xs italic">Belum ada aktivitas.</div>
-                              )}
-                            </div>
-                          </ScrollArea>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  </div>
-                </motion.div>
+                <DashboardTab 
+                  stats={stats}
+                  chartData={chartData}
+                  dailyEngagements={dailyEngagements}
+                />
               )}
                {activeTab === 'overview' && (
                 <motion.div 
@@ -2151,27 +2166,13 @@ export default function EngagementDashboard() {
             )}
 
             {activeTab === 'settings' && (
-              <motion.div 
-                key="settings"
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                exit="hidden"
-                className="space-y-8"
-              >
-                <div className="bg-white rounded-[2.5rem] p-4 sm:p-10 border border-slate-100 shadow-sm">
-                  <div className="lg:hidden flex items-center gap-4 mb-8">
-                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center">
-                      <Settings className="text-rose-600" size={24} />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-black text-slate-800">Pengaturan Sistem</h2>
-                      <p className="text-slate-500 text-sm">Konfigurasi tambahan untuk sistem rekapitulasi.</p>
-                    </div>
-                  </div>
-                  <p className="text-slate-400 italic">Fitur pengaturan tambahan akan segera hadir.</p>
-                </div>
-              </motion.div>
+              <SettingsTab 
+                recalculateConfig={recalculateConfig}
+                setRecalculateConfig={setRecalculateConfig}
+                handleRecalculateAll={handleRecalculateAll}
+                isLoading={isLoading}
+                containerVariants={containerVariants}
+              />
             )}
           </AnimatePresence>
         </div>

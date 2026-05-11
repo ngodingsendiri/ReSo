@@ -4,8 +4,11 @@ export interface Employee {
   nip: string;
   bidang?: string;
   igUsername?: string;
+  igUsername2?: string;
   fbName?: string;
+  fbName2?: string;
   tiktokName?: string;
+  tiktokName2?: string;
   createdAt?: any;
   updatedAt?: any;
 }

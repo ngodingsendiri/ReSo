@@ -167,7 +167,10 @@ const itemVariants: Variants = {
 export default function EmployeeManager() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [formData, setFormData] = useState({ name: '', nip: '', bidang: '', igUsername: '', fbName: '', tiktokName: '' });
+  const [formData, setFormData] = useState({ name: '', nip: '', bidang: '', igUsername: '', igUsername2: '', fbName: '', fbName2: '', tiktokName: '', tiktokName2: '' });
+  const [showIg2, setShowIg2] = useState(false);
+  const [showFb2, setShowFb2] = useState(false);
+  const [showTiktok2, setShowTiktok2] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -257,7 +260,10 @@ export default function EmployeeManager() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', nip: '', bidang: '', igUsername: '', fbName: '', tiktokName: '' });
+    setFormData({ name: '', nip: '', bidang: '', igUsername: '', igUsername2: '', fbName: '', fbName2: '', tiktokName: '', tiktokName2: '' });
+    setShowIg2(false);
+    setShowFb2(false);
+    setShowTiktok2(false);
     setIsAdding(false);
     setEditingId(null);
   };
@@ -288,9 +294,15 @@ export default function EmployeeManager() {
       nip: emp.nip, 
       bidang: emp.bidang || '',
       igUsername: emp.igUsername || '', 
+      igUsername2: emp.igUsername2 || '',
       fbName: emp.fbName || '',
-      tiktokName: emp.tiktokName || ''
+      fbName2: emp.fbName2 || '',
+      tiktokName: emp.tiktokName || '',
+      tiktokName2: emp.tiktokName2 || ''
     });
+    setShowIg2(!!emp.igUsername2);
+    setShowFb2(!!emp.fbName2);
+    setShowTiktok2(!!emp.tiktokName2);
     setEditingId(emp.id);
     setIsAdding(true);
     
@@ -647,46 +659,112 @@ export default function EmployeeManager() {
                         />
                       </div>
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 md:col-span-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Instagram</label>
-                      <div className="relative group">
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-pink-500 transition-colors">
-                          <Instagram size={14} />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="relative group">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-pink-500 transition-colors">
+                            <Instagram size={14} />
+                          </div>
+                          <Input 
+                            placeholder="@username (Utama)" 
+                            value={formData.igUsername}
+                            onChange={(e) => setFormData({...formData, igUsername: e.target.value})}
+                            className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                          />
                         </div>
-                        <Input 
-                          placeholder="@username" 
-                          value={formData.igUsername}
-                          onChange={(e) => setFormData({...formData, igUsername: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
-                        />
+                        {showIg2 ? (
+                          <div className="relative group">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-pink-500 transition-colors">
+                              <Instagram size={14} />
+                            </div>
+                            <Input 
+                              placeholder="@username (Akun ke-2)" 
+                              value={formData.igUsername2}
+                              onChange={(e) => setFormData({...formData, igUsername2: e.target.value})}
+                              className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                            />
+                            <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowIg2(false); setFormData({...formData, igUsername2: ''}); }}>
+                              <X size={14} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button type="button" variant="outline" className="h-10 border-dashed border-slate-200 text-slate-500 hover:text-slate-900 rounded-xl justify-start px-4 text-xs" onClick={() => setShowIg2(true)}>
+                            <Plus size={14} className="mr-2" /> Tambah Akun Ke-2
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 md:col-span-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Facebook</label>
-                      <div className="relative group">
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
-                          <Facebook size={14} />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="relative group">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                            <Facebook size={14} />
+                          </div>
+                          <Input 
+                            placeholder="Nama Profil FB (Utama)" 
+                            value={formData.fbName}
+                            onChange={(e) => setFormData({...formData, fbName: e.target.value})}
+                            className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                          />
                         </div>
-                        <Input 
-                          placeholder="Nama Profil FB" 
-                          value={formData.fbName}
-                          onChange={(e) => setFormData({...formData, fbName: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
-                        />
+                        {showFb2 ? (
+                          <div className="relative group">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                              <Facebook size={14} />
+                            </div>
+                            <Input 
+                              placeholder="Nama Profil FB (Akun ke-2)" 
+                              value={formData.fbName2}
+                              onChange={(e) => setFormData({...formData, fbName2: e.target.value})}
+                              className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                            />
+                            <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowFb2(false); setFormData({...formData, fbName2: ''}); }}>
+                              <X size={14} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button type="button" variant="outline" className="h-10 border-dashed border-slate-200 text-slate-500 hover:text-slate-900 rounded-xl justify-start px-4 text-xs" onClick={() => setShowFb2(true)}>
+                            <Plus size={14} className="mr-2" /> Tambah Akun Ke-2
+                          </Button>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">TikTok</label>
-                      <div className="relative group">
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-black transition-colors">
-                          <TiktokIcon size={14} />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="relative group">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-black transition-colors">
+                            <TiktokIcon size={14} />
+                          </div>
+                          <Input 
+                            placeholder="Nama Profil TikTok (Utama)" 
+                            value={formData.tiktokName}
+                            onChange={(e) => setFormData({...formData, tiktokName: e.target.value})}
+                            className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                          />
                         </div>
-                        <Input 
-                          placeholder="Nama Profil TikTok (Bukan @username)" 
-                          value={formData.tiktokName}
-                          onChange={(e) => setFormData({...formData, tiktokName: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
-                        />
+                        {showTiktok2 ? (
+                           <div className="relative group">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-black transition-colors">
+                              <TiktokIcon size={14} />
+                            </div>
+                            <Input 
+                              placeholder="Nama Profil TikTok (Akun ke-2)" 
+                              value={formData.tiktokName2}
+                              onChange={(e) => setFormData({...formData, tiktokName2: e.target.value})}
+                              className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                            />
+                            <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowTiktok2(false); setFormData({...formData, tiktokName2: ''}); }}>
+                              <X size={14} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button type="button" variant="outline" className="h-10 border-dashed border-slate-200 text-slate-500 hover:text-slate-900 rounded-xl justify-start px-4 text-xs" onClick={() => setShowTiktok2(true)}>
+                            <Plus size={14} className="mr-2" /> Tambah Akun Ke-2
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
