@@ -236,7 +236,12 @@ body {
     -webkit-tap-highlight-color: transparent;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background-color: hsl(210 40% 98%); /* bg-slate-50 equivalent but using native hsl if preferred, wait, I can just use @apply bg-slate-50 */
+    @apply bg-slate-50;
+    background-image: linear-gradient(to right, rgba(226, 232, 240, 0.4) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(226, 232, 240, 0.4) 1px, transparent 1px);
+    background-size: 24px 24px;
     /* Respect safe areas for notches and bottom bars */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
@@ -260,8 +265,3 @@ body {
   min-height: calc(100vh - env(safe-area-inset-bottom) - env(safe-area-inset-top));
 }
 
-@utility bg-grid-pattern {
-  background-image: linear-gradient(to right, #00000008 1px, transparent 1px),
-                    linear-gradient(to bottom, #00000008 1px, transparent 1px);
-  background-size: 24px 24px;
-}

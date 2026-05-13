@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
       return (
-        <div className="flex flex-col items-center justify-center min-h-[400px] p-6 text-center bg-slate-50/50 rounded-2xl border border-slate-100 m-4">
+        <div className="flex flex-col items-center justify-center min-h-[400px] p-6 text-center bg-slate-50/50 rounded-xl border border-slate-200 m-4">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
             <AlertTriangle className="w-8 h-8 text-red-600" />
           </div>
@@ -42,7 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
           </p>
           <Button 
             onClick={() => window.location.reload()}
-            className="bg-slate-900 text-white rounded-xl font-bold"
+            className="bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold transition-all active:scale-[0.98]"
           >
             <RefreshCcw className="w-4 h-4 mr-2" />
             Muat Ulang

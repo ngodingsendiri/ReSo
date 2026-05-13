@@ -17,9 +17,9 @@ export default defineConfig(({mode}) => {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4MB
         },
         manifest: {
-          name: 'RecapLink Engagement',
-          short_name: 'RecapLink',
-          description: 'Aplikasi Rekapitulasi Engagement Pegawai',
+          name: 'ReSo - Rekap Engagement Sosmed',
+          short_name: 'ReSo',
+          description: 'Aplikasi Rekapitulasi Engagement Media Sosial',
           theme_color: '#4f46e5',
           background_color: '#ffffff',
           display: 'standalone',

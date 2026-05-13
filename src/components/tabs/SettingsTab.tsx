@@ -4,8 +4,8 @@ import { Settings, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 
 interface SettingsTabProps {
-  recalculateConfig: { mode: 'last_week' | 'last_month' | 'last_year' };
-  setRecalculateConfig: (config: { mode: 'last_week' | 'last_month' | 'last_year' }) => void;
+  recalculateConfig: { mode: 'last_day' | 'last_week' };
+  setRecalculateConfig: (config: { mode: 'last_day' | 'last_week' }) => void;
   handleRecalculateAll: () => void;
   isLoading: boolean;
   containerVariants: any;
@@ -27,10 +27,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       exit="hidden"
       className="space-y-8"
     >
-      <div className="bg-white rounded-[2.5rem] p-4 sm:p-10 border border-slate-100 shadow-sm">
+      <div className="bg-white rounded-xl p-4 sm:p-10 border border-slate-200 ">
         <div className="lg:hidden flex items-center gap-4 mb-8">
-          <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center">
-            <Settings className="text-rose-600" size={24} />
+          <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-200">
+            <Settings className="text-slate-600" size={24} />
           </div>
           <div>
             <h2 className="text-2xl font-black text-slate-800">Pengaturan Sistem</h2>
@@ -39,9 +39,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-rose-50/50 p-6 rounded-2xl border border-rose-100">
+          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center border border-orange-100">
                 <RefreshCw size={20} />
               </div>
               <div>
@@ -57,16 +57,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <label className="text-xs font-bold text-slate-700">Pilih Rentang Waktu:</label>
               <div className="flex flex-col gap-3">
                 <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input type="radio" value="last_week" checked={recalculateConfig.mode === 'last_week'} onChange={() => setRecalculateConfig({ mode: 'last_week' })} className="accent-orange-500 w-4 h-4" />
+                  <input type="radio" value="last_day" checked={recalculateConfig.mode === 'last_day'} onChange={() => setRecalculateConfig({ mode: 'last_day' })} className="accent-slate-900 w-4 h-4" />
+                  1 Hari Terakhir
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input type="radio" value="last_week" checked={recalculateConfig.mode === 'last_week'} onChange={() => setRecalculateConfig({ mode: 'last_week' })} className="accent-slate-900 w-4 h-4" />
                   1 Minggu Terakhir
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input type="radio" value="last_month" checked={recalculateConfig.mode === 'last_month'} onChange={() => setRecalculateConfig({ mode: 'last_month' })} className="accent-orange-500 w-4 h-4" />
-                  1 Bulan Terakhir
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input type="radio" value="last_year" checked={recalculateConfig.mode === 'last_year'} onChange={() => setRecalculateConfig({ mode: 'last_year' })} className="accent-orange-500 w-4 h-4" />
-                  1 Tahun Terakhir
                 </label>
               </div>
             </div>
@@ -74,7 +70,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <Button
               onClick={handleRecalculateAll}
               disabled={isLoading}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 rounded-xl font-bold"
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold transition-all active:scale-[0.98] focus:outline-none focus:border-slate-900"
             >
               {isLoading ? 'Sedang Memproses...' : 'Kalkulasi Ulang Sekarang'}
             </Button>

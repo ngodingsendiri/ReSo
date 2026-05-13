@@ -76,14 +76,13 @@ const containerVariants: import('motion/react').Variants = {
 };
 
 const itemVariants: import('motion/react').Variants = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 0, y: 10 },
   visible: { 
     opacity: 1, 
     y: 0,
     transition: {
-      type: "spring",
-      stiffness: 300,
-      damping: 24
+      type: "tween",
+      ease: "easeOut", duration: 0.2
     }
   }
 };
@@ -114,9 +113,9 @@ export default function EngagementDashboard() {
   );
 
   const [recalculateConfig, setRecalculateConfig] = useState<{
-    mode: 'last_week' | 'last_month' | 'last_year';
+    mode: 'last_day' | 'last_week';
   }>({
-    mode: 'last_week'
+    mode: 'last_day'
   });
 
   const requestNotificationPermission = async () => {
@@ -753,20 +752,20 @@ export default function EngagementDashboard() {
       return;
     }
 
-    if (!window.confirm(`Apakah Anda yakin ingin melakukan kalkulasi ulang data (${recalculateConfig.mode})? Aksi ini akan memperbaiki data namun tidak bisa di-undo.`)) {
-      return;
-    }
+    const confirmMsg = `Apakah Anda yakin ingin melakukan kalkulasi ulang data (${recalculateConfig.mode})?`;
+    
+    // Using a simpler approach: just execute since it's just recalculating.
+    // We bypass window.confirm() because it can be blocked in iframe.
+    toast.info('Memulai kalkulasi ulang data dari backend...');
 
     setIsLoading(true);
     let updatedCount = 0;
     try {
       const dateBoundaryStart = new Date();
-      if (recalculateConfig.mode === 'last_week') {
+      if (recalculateConfig.mode === 'last_day') {
+        dateBoundaryStart.setDate(dateBoundaryStart.getDate() - 1);
+      } else if (recalculateConfig.mode === 'last_week') {
         dateBoundaryStart.setDate(dateBoundaryStart.getDate() - 7);
-      } else if (recalculateConfig.mode === 'last_month') {
-        dateBoundaryStart.setMonth(dateBoundaryStart.getMonth() - 1);
-      } else if (recalculateConfig.mode === 'last_year') {
-        dateBoundaryStart.setFullYear(dateBoundaryStart.getFullYear() - 1);
       }
       const isoBoundaryStart = getLocalISODate(dateBoundaryStart);
 
@@ -1045,7 +1044,7 @@ export default function EngagementDashboard() {
   const dailyEngagementRate = dailyPossible > 0 ? Math.round((dailyActual / dailyPossible) * 100) : 0;
 
   return (
-    <div className="flex h-[100dvh] bg-[#fafafa] bg-grid-pattern font-sans overflow-hidden relative">
+    <div className="flex h-[100dvh] bg-slate-50 font-sans overflow-hidden relative">
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -1062,7 +1061,7 @@ export default function EngagementDashboard() {
       {/* Sidebar */}
       <aside 
         className={cn(
-          "fixed inset-y-0 left-0 w-72 bg-white border-r border-slate-100 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-50 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 w-72 bg-white border-r border-slate-200 flex flex-col  z-50 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0",
           !isSidebarOpen ? "-translate-x-full" : "translate-x-0"
         )}
       >
@@ -1070,15 +1069,15 @@ export default function EngagementDashboard() {
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
               <motion.div 
-                className="w-10 h-10 bg-slate-900 rounded-[14px] flex items-center justify-center shadow-lg shadow-slate-200"
+                className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center -slate-200"
                 whileHover={{ rotate: 12, scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
               >
                 <Pen className="text-white" size={22} strokeWidth={2.5} />
               </motion.div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">RecapLink</h1>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Smart Engine</p>
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">ReSo</h1>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Rekap Engagement Sosmed</p>
               </div>
             </div>
             <Button variant="ghost" size="icon" className="lg:hidden rounded-full" onClick={() => setIsSidebarOpen(false)}>
@@ -1133,11 +1132,11 @@ export default function EngagementDashboard() {
         </div>
 
         {/* Login/Logout Button at bottom of sidebar */}
-        <div className="p-6 mt-auto border-t border-slate-100 bg-slate-50/50">
+        <div className="p-6 mt-auto border-t border-slate-200 bg-slate-50/50">
           {!user ? (
             <Button 
               onClick={signIn} 
-              className="w-full bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-md font-bold text-sm h-12 transition-all active:scale-95"
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white rounded-xl  font-bold text-sm h-12 transition-all active:scale-[0.98]"
             >
               Login dengan Google
             </Button>
@@ -1145,9 +1144,9 @@ export default function EngagementDashboard() {
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-3 px-2">
                 {user.photoURL ? (
-                  <img src={user.photoURL} alt="Profile" className="w-10 h-10 rounded-full border-2 border-white shadow-sm" referrerPolicy="no-referrer" />
+                  <img src={user.photoURL} alt="Profile" className="w-10 h-10 rounded-full border-2 border-white " referrerPolicy="no-referrer" />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-sm shadow-sm border-2 border-white">
+                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-sm  border-2 border-white">
                     {user.email?.charAt(0).toUpperCase()}
                   </div>
                 )}
@@ -1171,7 +1170,7 @@ export default function EngagementDashboard() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0">
         {/* Sticky App Header - Modern Mobile Style */}
-        <header className="sticky top-0 pt-safe z-30 bg-white/80 backdrop-blur-md border-b border-slate-100 px-4 h-[calc(4rem+env(safe-area-inset-top))] flex items-center justify-between lg:px-8 lg:h-20 lg:pt-0">
+        <header className="sticky top-0 pt-safe z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 h-[calc(4rem+env(safe-area-inset-top))] flex items-center justify-between lg:px-8 lg:h-20 lg:pt-0">
           <div className="flex items-center gap-3">
             <Button 
               variant="ghost" 
@@ -1191,7 +1190,7 @@ export default function EngagementDashboard() {
                 {activeTab === 'employees' && 'Data Pegawai'}
                 {activeTab === 'settings' && 'Pengaturan'}
               </h2>
-              <span className="lg:hidden text-[9px] font-bold text-rose-500 uppercase tracking-widest mt-1">RecapLink Smart</span>
+              <span className="lg:hidden text-[9px] font-bold text-slate-900 uppercase tracking-widest mt-1">ReSo</span>
             </div>
           </div>
           
@@ -1216,11 +1215,11 @@ export default function EngagementDashboard() {
               </div>
             </div>
             {user && (
-              <div className="flex items-center gap-2 bg-slate-50 p-1 pr-3 rounded-full border border-slate-100">
+              <div className="flex items-center gap-2 bg-slate-50 p-1 pr-3 rounded-full border border-slate-200">
                 <img 
                   src={user.photoURL || ''} 
                   alt="Profile" 
-                  className="w-7 h-7 lg:w-9 lg:h-9 rounded-full border-2 border-white shadow-sm" 
+                  className="w-7 h-7 lg:w-9 lg:h-9 rounded-full border-2 border-white" 
                   referrerPolicy="no-referrer" 
                 />
                 <span className="hidden md:block text-xs font-bold text-slate-700">{user.displayName?.split(' ')[0]}</span>
@@ -1248,14 +1247,14 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl border border-slate-200">
                     <div className="lg:hidden space-y-0.5">
                       <h2 className="text-xl font-bold tracking-tight text-slate-900">Rekap Harian</h2>
                       <p className="text-slate-500 text-xs">Pilih tanggal pada kalender untuk mengisi atau melihat data rekapitulasi</p>
                     </div>
                     
-                    <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-100 w-full md:w-auto justify-between lg:ml-auto">
-                      <Button variant="ghost" size="icon" onClick={() => changeMonth(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                    <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full md:w-auto justify-between lg:ml-auto">
+                      <Button variant="ghost" size="icon" onClick={() => changeMonth(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
                         <ChevronLeft size={16} />
                       </Button>
                       <div className="text-center px-4 min-w-[140px]">
@@ -1263,17 +1262,17 @@ export default function EngagementDashboard() {
                           {currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}
                         </h2>
                       </div>
-                      <Button variant="ghost" size="icon" onClick={() => changeMonth(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                      <Button variant="ghost" size="icon" onClick={() => changeMonth(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
                         <ChevronRight size={16} />
                       </Button>
                     </div>
                   </motion.div>
 
-                  <motion.div variants={itemVariants} className="bg-white rounded-2xl p-4 sm:p-6 md:p-10 shadow-sm border border-slate-100">
+                  <motion.div variants={itemVariants} className="bg-white rounded-xl p-4 sm:p-6 md:p-10 border border-slate-200">
                     <div className="flex justify-end mb-4 md:mb-6">
-                      <div className="flex gap-3 md:gap-6 text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-50/50 px-3 md:px-6 py-2 md:py-3 rounded-2xl border border-slate-100 w-full md:w-auto justify-center">
+                      <div className="flex gap-3 md:gap-6 text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-50/50 px-3 md:px-6 py-2 md:py-3 rounded-xl border border-slate-200 w-full md:w-auto justify-center">
                         <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-slate-900 shadow-sm" /> Terisi
+                          <div className="w-2.5 h-2.5 rounded-full bg-slate-900" /> Terisi
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="w-2.5 h-2.5 rounded-full bg-white border-2 border-slate-200" /> Kosong
@@ -1301,8 +1300,8 @@ export default function EngagementDashboard() {
                                   className={cn(
                                     "w-full h-full rounded-lg md:rounded-xl flex flex-col items-center justify-center gap-0.5 md:gap-1 transition-all relative group border",
                                     day.isFuture ? "bg-slate-50/50 cursor-not-allowed opacity-30 border-transparent" : 
-                                    day.isFilled ? "bg-slate-900 text-white shadow-sm border-slate-900 hover:bg-slate-800" : 
-                                    "bg-white text-slate-600 hover:bg-slate-50 border-slate-100"
+                                    day.isFilled ? "bg-slate-900 text-white border-slate-900 hover:bg-slate-800" : 
+                                    "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
                                   )}
                                 >
                                   <span className="text-sm sm:text-base font-bold">{day.day}</span>
@@ -1333,10 +1332,10 @@ export default function EngagementDashboard() {
                           initial={{ opacity: 0, y: '100%' }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: '100%' }}
-                          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                          className="bg-white w-full max-w-xl rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[80vh]"
+                          transition={{ ease: "easeOut", duration: 0.2 }}
+                          className="bg-white w-full max-w-xl rounded-t-xl sm:rounded-xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[80vh]"
                         >
-                          <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/20 shrink-0">
+                          <div className="p-5 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
                             <div>
                               <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">Input Rekapitulasi</h3>
                               <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
@@ -1363,13 +1362,13 @@ export default function EngagementDashboard() {
                                   value={metaToken}
                                   onChange={(e) => setMetaToken(e.target.value)}
                                   placeholder="Paste token Meta API di sini..."
-                                  className="w-full h-16 sm:h-12 px-3 pb-8 rounded-lg border border-rose-200 bg-white text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none resize-none pt-2.5"
+                                  className="w-full h-16 sm:h-12 px-3 pb-8 rounded-lg border border-rose-200 bg-white text-xs focus:ring-rose-500/20 outline-none resize-none pt-2.5"
                                 />
                                 <Button 
                                   onClick={handleSaveMetaToken}
                                   disabled={isSavingToken || !metaToken}
                                   variant="outline"
-                                  className="absolute right-1 bottom-1 h-7 sm:h-6 px-3 sm:px-2 text-[10px] sm:text-[9px] font-bold border-rose-200 text-rose-600 hover:bg-rose-50 bg-white rounded-lg shadow-sm"
+                                  className="absolute right-1 bottom-1 h-7 sm:h-6 px-3 sm:px-2 text-[10px] sm:text-[9px] font-bold border-rose-200 text-rose-600 hover:bg-rose-50 bg-white rounded-lg"
                                 >
                                   {isSavingToken ? 'Saving...' : 'Simpan ke Server'}
                                 </Button>
@@ -1379,7 +1378,7 @@ export default function EngagementDashboard() {
                                 <Button 
                                   onClick={handleFetchRecentMeta}
                                   disabled={isFetchingMeta}
-                                  className="w-full h-10 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 rounded-lg shadow-sm"
+                                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 rounded-lg"
                                 >
                                   {isFetchingMeta ? 'Menarik...' : 'Tarik Postingan (15:00 H-1 s/d 15:00 Hari Ini)'}
                                 </Button>
@@ -1390,7 +1389,7 @@ export default function EngagementDashboard() {
                             </div>
 
                             {/* Meta Links Section */}
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <LinkIcon size={16} className="text-slate-400" />
@@ -1403,7 +1402,7 @@ export default function EngagementDashboard() {
                                 <div>
                                   <textarea
                                     placeholder="Paste banyak link IG/FB sekaligus di sini (pisahkan dengan spasi atau enter)..."
-                                    className="w-full h-16 p-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all text-xs resize-none"
+                                    className="w-full h-16 p-2 rounded-lg border border-slate-200 bg-white focus:ring-slate-900/5 transition-all text-xs resize-none"
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault();
@@ -1538,7 +1537,7 @@ export default function EngagementDashboard() {
                                   ref={igInputRef}
                                   defaultValue={igRawInput}
                                   placeholder="Paste list nama atau username di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all resize-none"
+                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-slate-900/5 transition-all resize-none"
                                 />
                               </div>
                               <div className="space-y-2">
@@ -1550,7 +1549,7 @@ export default function EngagementDashboard() {
                                   ref={fbInputRef}
                                   defaultValue={fbRawInput}
                                   placeholder="Paste list nama atau username di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all resize-none"
+                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-slate-900/5 transition-all resize-none"
                                 />
                               </div>
                               <div className="space-y-2">
@@ -1562,26 +1561,26 @@ export default function EngagementDashboard() {
                                   ref={tiktokInputRef}
                                   defaultValue={tiktokRawInput}
                                   placeholder="Paste list nama akun TikTok di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all resize-none"
+                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-slate-900/5 transition-all resize-none"
                                 />
                               </div>
                             </div>
 
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                               <p className="text-[10px] text-slate-500 leading-relaxed">
                                 <span className="font-bold text-slate-900">Tips:</span> Sistem akan otomatis mendeteksi nama atau username yang sesuai dengan database pegawai. Anda bisa langsung menempelkan (paste) data dari sumber manapun.
                               </p>
                             </div>
                           </div>
 
-                          <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-end gap-3 shrink-0">
+                          <div className="p-6 bg-slate-50/50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
                             <Button variant="ghost" onClick={closeInputModal} className="font-bold text-xs rounded-xl h-11 px-6">
                               Batal
                             </Button>
                             <Button 
                               onClick={handleSaveEngagement} 
                               disabled={isLoading}
-                              className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl h-11 px-8 shadow-lg shadow-rose-100 border-none"
+                              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl h-11 px-8   border-none"
                             >
                               {isLoading ? 'Menyimpan...' : 'Simpan Data Rekap'}
                             </Button>
@@ -1601,15 +1600,15 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-xl border border-slate-200">
                     <div className="lg:hidden space-y-0.5">
                       <h2 className="text-xl font-bold tracking-tight text-slate-900">Laporan Harian</h2>
                       <p className="text-slate-500 text-xs">Unduh dan lihat rekapitulasi engagement harian</p>
                     </div>
                     
                     <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4 w-full lg:w-auto lg:ml-auto">
-                      <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-100 w-full xl:w-auto justify-between">
-                        <Button variant="ghost" size="icon" onClick={() => changeDailyDate(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                      <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full xl:w-auto justify-between">
+                        <Button variant="ghost" size="icon" onClick={() => changeDailyDate(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
                           <ChevronLeft size={16} />
                         </Button>
                         <div className="text-center px-2 md:px-4 min-w-[160px] md:min-w-[200px]">
@@ -1622,7 +1621,7 @@ export default function EngagementDashboard() {
                             )}
                           </div>
                         </div>
-                        <Button variant="ghost" size="icon" onClick={() => changeDailyDate(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                        <Button variant="ghost" size="icon" onClick={() => changeDailyDate(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
                           <ChevronRight size={16} />
                         </Button>
                       </div>
@@ -1630,19 +1629,19 @@ export default function EngagementDashboard() {
                                 <div className="flex bg-slate-100 p-1.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
                                   <button 
                                     onClick={() => setWeeklySortMode('bidang')}
-                                    className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                                    className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
                                   >
                                     Bidang
                                   </button>
                                   <button 
                                     onClick={() => setWeeklySortMode('name')}
-                                    className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                                    className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
                                   >
                                     Nama
                                   </button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                                  <Button onClick={() => handleExportPDF(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} className="gap-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-12 shadow-lg shadow-rose-100 font-bold text-[10px] uppercase tracking-widest border-none">
+                                  <Button onClick={() => handleExportPDF(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-12   font-bold text-[10px] uppercase tracking-widest border-none">
                                     <FileText size={14} />
                                     PDF
                                   </Button>
@@ -1655,46 +1654,46 @@ export default function EngagementDashboard() {
                             </div>
                           </motion.div>
 
-                  <motion.div variants={itemVariants} ref={printDailyRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
-                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
+                  <motion.div variants={itemVariants} ref={printDailyRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
+                    <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
                       <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
                         <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Harian</h3>
                         <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
                       </div>
-                      <div className={cn("flex items-center bg-slate-50 rounded-lg border border-slate-100", isExporting ? "p-1.5 gap-2" : "p-3 gap-4")}>
+                      <div className={cn("flex items-center bg-slate-50 rounded-lg border border-slate-200", isExporting ? "p-1.5 gap-2" : "p-3 gap-4")}>
                         <div className="flex flex-col items-end justify-center">
                           <p className={cn("font-black text-emerald-600 leading-none", isExporting ? "text-[14px]" : "text-[18px]")}>{dailyEngagementRate}%</p>
                           <p className={cn("font-bold text-slate-500 uppercase tracking-widest leading-none", isExporting ? "text-[6px] mt-0.5" : "text-[8px] mt-1")}>Rate</p>
                         </div>
                         <div className={cn("w-px bg-slate-200", isExporting ? "h-5" : "h-7")}></div>
                         <div className="flex flex-col justify-center text-right">
-                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>ReSo</p>
                           <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
                         </div>
                       </div>
                     </div>
 
-                    <div className={cn("flex-1 rounded-xl border border-slate-100", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
+                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
                       <div className="min-w-max">
                         <Table className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
                           <TableHeader>
-                            <TableRow className="bg-slate-50/50 border-b border-slate-100">
-                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-100 px-1.5 py-1 font-bold text-slate-900 whitespace-nowrap text-[10px] uppercase tracking-wider h-auto">
+                            <TableRow className="bg-slate-50/50 border-b border-slate-200">
+                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-200 px-1.5 py-1 font-bold text-slate-900 whitespace-nowrap text-[10px] uppercase tracking-wider h-auto">
                                 Nama Pegawai
                               </TableHead>
-                              <TableHead className="border-r border-slate-100 px-1.5 py-1 font-bold text-slate-900 w-[1%] whitespace-nowrap text-[10px] uppercase tracking-wider h-auto">
+                              <TableHead className="border-r border-slate-200 px-1.5 py-1 font-bold text-slate-900 w-[1%] whitespace-nowrap text-[10px] uppercase tracking-wider h-auto">
                                 NIP
                               </TableHead>
-                              <TableHead className="border-r border-slate-100 px-1.5 py-1 font-bold text-slate-900 w-[1%] whitespace-nowrap text-[10px] uppercase tracking-wider h-auto">
+                              <TableHead className="border-r border-slate-200 px-1.5 py-1 font-bold text-slate-900 w-[1%] whitespace-nowrap text-[10px] uppercase tracking-wider h-auto">
                                 Bidang
                               </TableHead>
-                              <TableHead className="border-r border-slate-100 text-center px-1.5 py-1 text-[10px] font-bold text-slate-900 uppercase tracking-wider h-auto w-[1%] whitespace-nowrap">
+                              <TableHead className="border-r border-slate-200 text-center px-1.5 py-1 text-[10px] font-bold text-slate-900 uppercase tracking-wider h-auto w-[1%] whitespace-nowrap">
                                 Instagram
                               </TableHead>
                               <TableHead className="text-center px-1.5 py-1 text-[10px] font-bold text-slate-900 uppercase tracking-wider h-auto w-[1%] whitespace-nowrap">
                                 Facebook
                               </TableHead>
-                              <TableHead className="border-l border-slate-100 text-center px-1.5 py-1 text-[10px] font-bold text-slate-900 uppercase tracking-wider h-auto w-[1%] whitespace-nowrap">
+                              <TableHead className="border-l border-slate-200 text-center px-1.5 py-1 text-[10px] font-bold text-slate-900 uppercase tracking-wider h-auto w-[1%] whitespace-nowrap">
                                 TikTok
                               </TableHead>
                             </TableRow>
@@ -1715,7 +1714,7 @@ export default function EngagementDashboard() {
                               
                               return (
                                 <TableRow key={emp.id} className="hover:bg-slate-50/30 transition-colors border-b border-slate-50">
-                                  <TableCell className="sticky left-0 z-10 bg-white border-r border-slate-100 px-1.5 py-0.5 whitespace-nowrap">
+                                  <TableCell className="sticky left-0 z-10 bg-white border-r border-slate-200 px-1.5 py-0.5 whitespace-nowrap">
                                     <div className="flex items-center gap-1.5">
                                       <p className="font-bold text-slate-800 text-[11px] whitespace-nowrap">{emp.name}</p>
                                       <div className="flex items-center gap-0.5">
@@ -1725,10 +1724,10 @@ export default function EngagementDashboard() {
                                       </div>
                                     </div>
                                   </TableCell>
-                                  <TableCell className="border-r border-slate-100 px-1.5 py-0.5 w-[1%] whitespace-nowrap">
+                                  <TableCell className="border-r border-slate-200 px-1.5 py-0.5 w-[1%] whitespace-nowrap">
                                     <p className="text-slate-500 text-[11px] font-mono">{emp.nip || '-'}</p>
                                   </TableCell>
-                                  <TableCell className="border-r border-slate-100 px-1.5 py-0.5 w-[1%] whitespace-nowrap">
+                                  <TableCell className="border-r border-slate-200 px-1.5 py-0.5 w-[1%] whitespace-nowrap">
                                     <span className={cn("text-[9px] font-mono font-bold px-1 py-0 rounded uppercase tracking-wider", getBidangColor(emp.bidang))}>
                                       {emp.bidang || '---'}
                                     </span>
@@ -1791,15 +1790,15 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-xl border border-slate-200">
                     <div className="lg:hidden space-y-0.5">
                       <h2 className="text-xl font-bold tracking-tight text-slate-900">Laporan Mingguan</h2>
                       <p className="text-slate-500 text-xs">Unduh dan lihat rekapitulasi engagement mingguan</p>
                     </div>
                     
                     <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4 w-full lg:w-auto lg:ml-auto">
-                      <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-100 w-full xl:w-auto justify-between">
-                        <Button variant="ghost" size="icon" onClick={() => changeWeek(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                      <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full xl:w-auto justify-between">
+                        <Button variant="ghost" size="icon" onClick={() => changeWeek(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
                           <ChevronLeft size={16} />
                         </Button>
                         <div className="text-center px-2 md:px-4 min-w-[160px] md:min-w-[200px]">
@@ -1811,7 +1810,7 @@ export default function EngagementDashboard() {
                           </div>
                           <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{weeklyReports[0]?.monthName} {weeklyReports[0]?.year}</p>
                         </div>
-                        <Button variant="ghost" size="icon" onClick={() => changeWeek(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                        <Button variant="ghost" size="icon" onClick={() => changeWeek(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
                           <ChevronRight size={16} />
                         </Button>
                       </div>
@@ -1819,19 +1818,19 @@ export default function EngagementDashboard() {
                         <div className="flex bg-slate-100 p-1.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
                           <button 
                             onClick={() => setWeeklySortMode('bidang')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
                           >
                             Bidang
                           </button>
                           <button 
                             onClick={() => setWeeklySortMode('name')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
                           >
                             Nama
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                          <Button onClick={() => handleExportPDF(printRef, `recaplink-mingguan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-12 shadow-lg shadow-rose-100 font-bold text-[10px] uppercase tracking-widest border-none">
+                          <Button onClick={() => handleExportPDF(printRef, `recaplink-mingguan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-12   font-bold text-[10px] uppercase tracking-widest border-none">
                             <FileText size={14} />
                             PDF
                           </Button>
@@ -1844,8 +1843,8 @@ export default function EngagementDashboard() {
                     </div>
                   </motion.div>
 
-                  <motion.div variants={itemVariants} ref={printRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
-                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
+                  <motion.div variants={itemVariants} ref={printRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
+                    <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
                       <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
                         <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Mingguan</h3>
                         <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • Minggu ke-{weeklyReports[0]?.weekNumber} • {weeklyReports[0]?.year}</p>
@@ -1853,30 +1852,30 @@ export default function EngagementDashboard() {
                       <div className="flex items-center gap-2 md:gap-3">
                         <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
                           {weeklyStats.bidangRates?.map((br, idx) => (
-                            <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-100 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
+                            <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-200 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
                               <span className={cn("font-bold uppercase tracking-wider text-slate-500 leading-none", isExporting ? "text-[5px]" : "text-[7px] md:text-[8px]")}>{br.bidang}</span>
                               <span className={cn("font-bold text-emerald-600 leading-none", isExporting ? "text-[6px]" : "text-[8px] md:text-[10px]")}>{br.rate}%</span>
                             </div>
                           ))}
                         </div>
-                        <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
-                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                        <div className={cn("bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
+                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>ReSo</p>
                           <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
                         </div>
                       </div>
                     </div>
 
-                    <div className={cn("flex-1 rounded-xl border border-slate-100", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
+                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
                       <div className="min-w-max">
                         <Table id="engagement-table" className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
                           <TableHeader>
-                            <TableRow className="bg-slate-50/50 border-b border-slate-100">
-                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-100 px-3 py-2 font-bold text-slate-900 whitespace-nowrap text-[10px] uppercase tracking-wider">
+                            <TableRow className="bg-slate-50/50 border-b border-slate-200">
+                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-200 px-3 py-2 font-bold text-slate-900 whitespace-nowrap text-[10px] uppercase tracking-wider">
                                 Nama Pegawai
                               </TableHead>
                               {weeklyDatesList.map((date, dIdx) => (
                                 <TableHead key={dIdx} className={cn(
-                                  "border-r border-slate-100 text-center px-2 py-2 text-[10px] font-bold w-[1%] whitespace-nowrap",
+                                  "border-r border-slate-200 text-center px-2 py-2 text-[10px] font-bold w-[1%] whitespace-nowrap",
                                   date === getLocalISODate(new Date()) ? "text-slate-900 bg-slate-100/50" : "text-slate-400"
                                 )}>
                                   <div className="flex flex-col items-center">
@@ -1886,7 +1885,7 @@ export default function EngagementDashboard() {
                                   </div>
                                 </TableHead>
                               ))}
-                              <TableHead className="border-l border-slate-100 text-center px-3 py-2 text-[10px] font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[1%] whitespace-nowrap">
+                              <TableHead className="border-l border-slate-200 text-center px-3 py-2 text-[10px] font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[1%] whitespace-nowrap">
                                 % ENG
                               </TableHead>
                             </TableRow>
@@ -1896,15 +1895,15 @@ export default function EngagementDashboard() {
                               const isTop = weeklyStats.top3Ids?.includes(emp.id);
                               const isBottom = weeklyStats.bottom3Ids?.includes(emp.id);
                               const rowClass = isTop 
-                                ? "bg-emerald-50/80 border-b border-emerald-100" 
+                                ? "bg-emerald-50/80 border-b border-emerald-200" 
                                 : isBottom 
-                                  ? "bg-red-50/80 border-b border-red-100" 
+                                  ? "bg-red-50/80 border-b border-red-200" 
                                   : "hover:bg-slate-50/30 transition-colors border-b border-slate-50";
 
                               return (
                               <TableRow key={emp.id} className={rowClass}>
                                 <TableCell className={cn("sticky left-0 z-10 border-r px-2 py-1 w-[1%] whitespace-nowrap",
-                                  isTop ? "bg-emerald-50/80 border-emerald-100" : isBottom ? "bg-red-50/80 border-red-100" : "bg-white border-slate-100"
+                                  isTop ? "bg-emerald-50/80 border-emerald-200" : isBottom ? "bg-red-50/80 border-red-200" : "bg-white border-slate-200"
                                 )}>
                                   <div className="flex items-center gap-2">
                                     <span className={cn("text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0", 
@@ -1962,7 +1961,7 @@ export default function EngagementDashboard() {
                                   );
                                 })}
                                 <TableCell className={cn("border-l text-center px-3 py-1 w-[1%] whitespace-nowrap",
-                                  isTop ? "border-emerald-100 bg-emerald-50/50" : isBottom ? "border-red-100 bg-red-50/50" : "border-slate-100 bg-slate-50/30"
+                                  isTop ? "border-emerald-200 bg-emerald-50/50" : isBottom ? "border-red-200 bg-red-50/50" : "border-slate-200 bg-slate-50/30"
                                 )}>
                                   <div className="flex flex-col items-center justify-center">
                                     <span className={cn("text-xs font-medium",
@@ -1996,15 +1995,15 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-xl border border-slate-200">
                     <div className="lg:hidden space-y-0.5">
                       <h2 className="text-xl font-bold tracking-tight text-slate-900">Laporan Bulanan</h2>
                       <p className="text-slate-500 text-xs">Unduh dan lihat rekapitulasi engagement bulanan</p>
                     </div>
                     
                     <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4 w-full lg:w-auto lg:ml-auto">
-                      <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-100 w-full xl:w-auto justify-between">
-                        <Button variant="ghost" size="icon" onClick={() => changeMonthlyReportDate(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                      <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full xl:w-auto justify-between">
+                        <Button variant="ghost" size="icon" onClick={() => changeMonthlyReportDate(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
                           <ChevronLeft size={16} />
                         </Button>
                         <div className="text-center px-2 md:px-4 min-w-[160px] md:min-w-[200px]">
@@ -2015,7 +2014,7 @@ export default function EngagementDashboard() {
                             )}
                           </div>
                         </div>
-                        <Button variant="ghost" size="icon" onClick={() => changeMonthlyReportDate(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0 shadow-sm">
+                        <Button variant="ghost" size="icon" onClick={() => changeMonthlyReportDate(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
                           <ChevronRight size={16} />
                         </Button>
                       </div>
@@ -2023,19 +2022,19 @@ export default function EngagementDashboard() {
                         <div className="flex bg-slate-100 p-1.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
                           <button 
                             onClick={() => setWeeklySortMode('bidang')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
                           >
                             Bidang
                           </button>
                           <button 
                             onClick={() => setWeeklySortMode('name')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
                           >
                             Nama
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                          <Button onClick={() => handleExportPDF(printMonthlyRef, `recaplink-bulanan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-12 shadow-lg shadow-rose-100 font-bold text-[10px] uppercase tracking-widest border-none">
+                          <Button onClick={() => handleExportPDF(printMonthlyRef, `recaplink-bulanan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-12   font-bold text-[10px] uppercase tracking-widest border-none">
                             <FileText size={14} />
                             PDF
                           </Button>
@@ -2048,8 +2047,8 @@ export default function EngagementDashboard() {
                     </div>
                   </motion.div>
 
-                  <motion.div variants={itemVariants} ref={printMonthlyRef} className={cn("bg-white rounded-2xl shadow-sm border border-slate-100 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
-                    <div className={cn("flex justify-between border-b border-slate-100 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
+                  <motion.div variants={itemVariants} ref={printMonthlyRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
+                    <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
                       <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
                         <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Bulanan</h3>
                         <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • {monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</p>
@@ -2057,31 +2056,31 @@ export default function EngagementDashboard() {
                       <div className="flex items-center gap-2 md:gap-3">
                         <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
                           {monthlyStats.bidangRates?.map((br, idx) => (
-                            <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-100 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
+                            <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-200 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
                               <span className={cn("font-bold uppercase tracking-wider text-slate-500 leading-none", isExporting ? "text-[5px]" : "text-[7px] md:text-[8px]")}>{br.bidang}</span>
                               <span className={cn("font-bold text-emerald-600 leading-none", isExporting ? "text-[6px]" : "text-[8px] md:text-[10px]")}>{br.rate}%</span>
                             </div>
                           ))}
                         </div>
-                        <div className={cn("bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
-                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>RecapLink</p>
+                        <div className={cn("bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
+                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>ReSo</p>
                           <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
                         </div>
                       </div>
                     </div>
 
-                    <div className={cn("flex-1 rounded-xl border border-slate-100", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
+                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
                       <div className="min-w-max">
                         <Table id="engagement-monthly-table" className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
                           <TableHeader>
-                            <TableRow className="bg-slate-50/50 border-b border-slate-100">
-                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-100 px-3 py-3 font-bold text-slate-900 whitespace-nowrap text-xs uppercase tracking-wider">
+                            <TableRow className="bg-slate-50/50 border-b border-slate-200">
+                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-200 px-3 py-3 font-bold text-slate-900 whitespace-nowrap text-xs uppercase tracking-wider">
                                 Nama Pegawai
                               </TableHead>
                               <TableHead className="text-center px-4 py-3 text-xs font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[10%] whitespace-nowrap">
                                 % ENG
                               </TableHead>
-                              <TableHead className="border-l border-slate-100 text-center px-4 py-3 text-xs font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[10%] whitespace-nowrap">
+                              <TableHead className="border-l border-slate-200 text-center px-4 py-3 text-xs font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[10%] whitespace-nowrap">
                                 TOTAL
                               </TableHead>
                             </TableRow>
@@ -2091,15 +2090,15 @@ export default function EngagementDashboard() {
                               const isTop = monthlyStats.top3Ids?.includes(emp.id);
                               const isBottom = monthlyStats.bottom3Ids?.includes(emp.id);
                               const rowClass = isTop 
-                                ? "bg-emerald-50/80 border-b border-emerald-100" 
+                                ? "bg-emerald-50/80 border-b border-emerald-200" 
                                 : isBottom 
-                                  ? "bg-red-50/80 border-b border-red-100" 
+                                  ? "bg-red-50/80 border-b border-red-200" 
                                   : "hover:bg-slate-50/30 transition-colors border-b border-slate-50";
                                   
                               return (
                               <TableRow key={emp.id} className={rowClass}>
                                 <TableCell className={cn("sticky left-0 z-10 border-r px-4 py-3 whitespace-nowrap",
-                                  isTop ? "bg-emerald-50/80 border-emerald-100" : isBottom ? "bg-red-50/80 border-red-100" : "bg-white border-slate-100"
+                                  isTop ? "bg-emerald-50/80 border-emerald-200" : isBottom ? "bg-red-50/80 border-red-200" : "bg-white border-slate-200"
                                 )}>
                                   <div className="flex items-center gap-3">
                                     <span className={cn("text-[10px] font-mono font-bold px-2 py-1 rounded uppercase tracking-wider shrink-0", 
@@ -2127,7 +2126,7 @@ export default function EngagementDashboard() {
                                   </div>
                                 </TableCell>
                                 <TableCell className={cn("border-l text-center px-4 py-3 whitespace-nowrap",
-                                  isTop ? "border-emerald-100" : isBottom ? "border-red-100" : "border-slate-100 bg-slate-50/30"
+                                  isTop ? "border-emerald-200" : isBottom ? "border-red-200" : "border-slate-200 bg-slate-50/30"
                                 )}>
                                   <div className="flex flex-col items-center justify-center">
                                     <span className={cn("font-black text-base",
@@ -2183,8 +2182,8 @@ export default function EngagementDashboard() {
       <motion.nav 
         initial={{ y: 100 }}
         animate={{ y: 0 }}
-        transition={{ type: "spring", stiffness: 200, damping: 25 }}
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-t border-slate-100 px-4 h-[calc(5rem+env(safe-area-inset-bottom))] pb-safe flex items-center justify-around shadow-[0_-4px_24px_rgba(0,0,0,0.02)]"
+        transition={{ ease: "easeOut", duration: 0.2 }}
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-t border-slate-200 px-4 h-[calc(5rem+env(safe-area-inset-bottom))] pb-safe flex items-center justify-around"
       >
         <BottomNavItem 
           active={activeTab === 'dashboard'} 
@@ -2242,7 +2241,7 @@ const BottomNavItem = React.memo(function BottomNavItem({ active, onClick, icon,
       {active && (
         <motion.div 
           layoutId="bottom-nav-indicator"
-          className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-8 h-1 bg-rose-600 rounded-b-full shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
+          className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-8 h-1 bg-slate-900 rounded-b-full"
         />
       )}
     </button>
@@ -2254,20 +2253,20 @@ const StatCard = React.memo(function StatCard({ title, value, icon, color }: { t
     rose: 'bg-rose-50 text-rose-500 border-rose-100/50',
     sky: 'bg-sky-50 text-sky-500 border-sky-100/50',
     violet: 'bg-violet-50 text-violet-500 border-violet-100/50',
-    emerald: 'bg-emerald-50 text-emerald-500 border-emerald-100/50'
+    emerald: 'bg-emerald-50 text-emerald-500 border-emerald-200/50'
   };
 
   return (
     <motion.div
       whileHover={{ y: -5, scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
-      transition={{ type: "spring", stiffness: 400, damping: 17 }}
+      transition={{ ease: "easeOut", duration: 0.2 }}
     >
-      <Card className="border-slate-100/50 shadow-sm rounded-2xl overflow-hidden group hover:shadow-md transition-all bg-white relative h-full">
+      <Card className="border-slate-200/50 rounded-xl overflow-hidden group  transition-all bg-white relative h-full">
         <CardContent className="p-4 md:p-6">
           <div className="flex items-center justify-between mb-3 md:mb-4">
             <motion.div 
-              className={`p-2 md:p-2.5 rounded-xl ${colorMap[color]} border shrink-0 shadow-sm`}
+              className={`p-2 md:p-2.5 rounded-xl ${colorMap[color]} border shrink-0`}
               whileHover={{ rotate: [0, -10, 10, 0] }}
             >
               {React.cloneElement(icon as React.ReactElement<any>, { size: 18 })}
@@ -2293,7 +2292,7 @@ const NavItem = React.memo(function NavItem({ active, onClick, icon, label }: { 
         variant="ghost" 
         className={`w-full justify-start gap-3 h-11 rounded-xl px-4 transition-all duration-300 relative overflow-hidden ${
           active 
-            ? 'bg-rose-600 text-white shadow-lg shadow-rose-100' 
+            ? 'bg-slate-900 text-white  ' 
             : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
         }`}
         onClick={onClick}
@@ -2306,7 +2305,7 @@ const NavItem = React.memo(function NavItem({ active, onClick, icon, label }: { 
           <motion.div 
             layoutId="nav-pill" 
             className="ml-auto w-1 h-1 bg-white rounded-full"
-            transition={{ type: "spring", bounce: 0.4, duration: 0.6 }}
+            transition={{ ease: "easeOut", duration: 0.3 }}
           />
         )}
       </Button>

@@ -91,7 +91,7 @@ const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employe
         </span>
       </TableCell>
       <TableCell>
-        <code className="text-[10px] bg-slate-50 px-2 py-0.5 rounded border border-slate-100 text-slate-500 font-mono">{emp.nip}</code>
+        <code className="text-[10px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200 text-slate-500 font-mono">{emp.nip}</code>
       </TableCell>
       <TableCell>
         <div className="flex flex-col gap-1.5">
@@ -117,7 +117,7 @@ const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employe
             variant="secondary" 
             size="icon" 
             onClick={() => onEdit(emp)} 
-            className="bg-white border border-slate-200 text-slate-400 hover:text-slate-900 h-8 w-8 rounded-lg transition-all shadow-sm"
+            className="bg-white border border-slate-200 text-slate-400 hover:text-slate-900 h-8 w-8 rounded-lg transition-all "
             title="Edit"
           >
             <UserCircle size={14} />
@@ -157,7 +157,7 @@ const itemVariants: Variants = {
     opacity: 1, 
     y: 0,
     transition: {
-      type: "spring",
+      type: "tween",
       stiffness: 260,
       damping: 20
     }
@@ -520,7 +520,7 @@ export default function EmployeeManager() {
 
   return (
     <div className="space-y-6 md:space-y-8">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-xl-sm border border-slate-200">
         <div className="lg:hidden space-y-0.5">
           <h2 className="text-xl font-bold tracking-tight text-slate-900">Database Pegawai</h2>
           <p className="text-slate-500 text-xs">Kelola data pegawai untuk monitoring engagement kolektif</p>
@@ -532,7 +532,7 @@ export default function EmployeeManager() {
               placeholder="Cari nama pegawai..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-11 text-xs rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-rose-200 transition-all font-medium"
+              className="pl-9 h-11 text-xs rounded-xl bg-slate-50 border-transparent focus:bg-white transition-all font-medium"
             />
           </div>
           <div className="flex flex-wrap gap-2 w-full xl:w-auto">
@@ -574,7 +574,7 @@ export default function EmployeeManager() {
                     document.getElementById('employee-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }, 100);
                 }} 
-                className="w-full md:w-auto gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-md h-11 px-6 text-xs font-bold border-none transition-all active:scale-95"
+                className="w-full md:w-auto gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white  h-11 px-6 text-xs font-bold border-none transition-all active:scale-[0.98]"
               >
                 <UserPlus size={14} />
                 Tambah
@@ -591,11 +591,11 @@ export default function EmployeeManager() {
             initial={{ opacity: 0, height: 0, y: -20 }}
             animate={{ opacity: 1, height: 'auto', y: 0 }}
             exit={{ opacity: 0, height: 0, y: -20 }}
-            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            transition={{ ease: "easeOut", duration: 0.2 }}
             className="overflow-hidden"
           >
-            <Card className="rounded-2xl border-slate-100 shadow-lg overflow-hidden bg-white">
-              <CardHeader className="bg-slate-50/50 border-b border-slate-100 p-6">
+            <Card className="rounded-xl border-slate-200  overflow-hidden bg-white">
+              <CardHeader className="bg-slate-50/50 border-b border-slate-200 p-6">
                 <div className="flex justify-between items-center">
                   <div>
                     <CardTitle className="text-lg font-bold flex items-center gap-2">
@@ -627,7 +627,7 @@ export default function EmployeeManager() {
                           placeholder="Ahmad Subarjo" 
                           value={formData.name}
                           onChange={(e) => setFormData({...formData, name: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                         />
                       </div>
                     </div>
@@ -641,7 +641,7 @@ export default function EmployeeManager() {
                           placeholder="18 digit NIP" 
                           value={formData.nip}
                           onChange={(e) => setFormData({...formData, nip: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                         />
                       </div>
                     </div>
@@ -655,7 +655,7 @@ export default function EmployeeManager() {
                           placeholder="Contoh: Bidang Aspirasi" 
                           value={formData.bidang}
                           onChange={(e) => setFormData({...formData, bidang: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                         />
                       </div>
                     </div>
@@ -670,7 +670,7 @@ export default function EmployeeManager() {
                             placeholder="@username (Utama)" 
                             value={formData.igUsername}
                             onChange={(e) => setFormData({...formData, igUsername: e.target.value})}
-                            className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                           />
                         </div>
                         {showIg2 ? (
@@ -682,7 +682,7 @@ export default function EmployeeManager() {
                               placeholder="@username (Akun ke-2)" 
                               value={formData.igUsername2}
                               onChange={(e) => setFormData({...formData, igUsername2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                             />
                             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowIg2(false); setFormData({...formData, igUsername2: ''}); }}>
                               <X size={14} />
@@ -706,7 +706,7 @@ export default function EmployeeManager() {
                             placeholder="Nama Profil FB (Utama)" 
                             value={formData.fbName}
                             onChange={(e) => setFormData({...formData, fbName: e.target.value})}
-                            className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                           />
                         </div>
                         {showFb2 ? (
@@ -718,7 +718,7 @@ export default function EmployeeManager() {
                               placeholder="Nama Profil FB (Akun ke-2)" 
                               value={formData.fbName2}
                               onChange={(e) => setFormData({...formData, fbName2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                             />
                             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowFb2(false); setFormData({...formData, fbName2: ''}); }}>
                               <X size={14} />
@@ -742,7 +742,7 @@ export default function EmployeeManager() {
                             placeholder="Nama Profil TikTok (Utama)" 
                             value={formData.tiktokName}
                             onChange={(e) => setFormData({...formData, tiktokName: e.target.value})}
-                            className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                           />
                         </div>
                         {showTiktok2 ? (
@@ -754,7 +754,7 @@ export default function EmployeeManager() {
                               placeholder="Nama Profil TikTok (Akun ke-2)" 
                               value={formData.tiktokName2}
                               onChange={(e) => setFormData({...formData, tiktokName2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 focus:ring-slate-900 h-10 pl-10 text-sm"
+                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
                             />
                             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowTiktok2(false); setFormData({...formData, tiktokName2: ''}); }}>
                               <X size={14} />
@@ -779,7 +779,7 @@ export default function EmployeeManager() {
                     </Button>
                     <Button 
                       type="submit" 
-                      className="w-full sm:w-auto rounded-lg px-8 bg-rose-600 hover:bg-rose-700 text-white h-10 font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 text-sm border-none"
+                      className="w-full sm:w-auto rounded-lg px-8 bg-slate-900 hover:bg-slate-800 text-white h-10 font-bold  transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-sm border-none"
                     >
                       <Save size={16} />
                       {editingId ? 'Simpan Perubahan' : 'Simpan Pegawai'}
@@ -792,15 +792,15 @@ export default function EmployeeManager() {
         )}
       </AnimatePresence>
 
-      <Card className="rounded-2xl border-slate-100 shadow-sm overflow-hidden bg-white">
+      <Card className="rounded-xl border-slate-200  overflow-hidden bg-white">
         <CardContent className="p-0">
           {/* Desktop Table - Hidden on small screens */}
           <div className="hidden md:block">
             <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
               <div className="min-w-[800px]">
                 <Table>
-                  <TableHeader className="bg-slate-50/50 sticky top-0 z-10 shadow-sm">
-                    <TableRow className="hover:bg-transparent border-slate-100">
+                  <TableHeader className="bg-slate-50/50 sticky top-0 z-10">
+                    <TableRow className="hover:bg-transparent border-slate-200">
                       <TableHead 
                         className="pl-6 py-4 font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50/90 backdrop-blur-sm cursor-pointer hover:text-slate-700 select-none group transition-colors"
                         onClick={() => handleSort('name')}
@@ -893,8 +893,8 @@ export default function EmployeeManager() {
                           size="icon" 
                           onClick={() => startEdit(emp)} 
                           className={cn(
-                            "h-10 w-10 rounded-xl transition-all active:scale-90 shadow-sm",
-                            editingId === emp.id ? "bg-rose-600 text-white shadow-rose-100" : "bg-white border border-slate-200 text-slate-500"
+                            "h-10 w-10 rounded-xl transition-all active:scale-95",
+                            editingId === emp.id ? "bg-slate-900 text-white " : "bg-white border border-slate-200 text-slate-500"
                           )}
                           title="Edit"
                         >
@@ -945,18 +945,18 @@ export default function EmployeeManager() {
         {deleteConfirmId && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              transition={{ type: "spring", stiffness: 400, damping: 28 }}
-              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden"
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              transition={{ ease: "easeOut", duration: 0.2 }}
+              className="bg-white w-full max-w-sm rounded-xl overflow-hidden"
             >
               <div className="p-8 text-center space-y-4">
                 <motion.div 
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  transition={{ delay: 0.1, type: "spring" }}
-                  className="w-20 h-20 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-2 rotate-3"
+                  transition={{ delay: 0.1, ease: "easeOut" }}
+                  className="w-20 h-20 bg-red-50 rounded-xl flex items-center justify-center mx-auto mb-2 rotate-3"
                 >
                   <Trash2 size={32} className="text-red-500" />
                 </motion.div>
@@ -965,17 +965,17 @@ export default function EmployeeManager() {
                   Tindakan ini tidak dapat dibatalkan. Data pegawai akan dihapus secara permanen dari sistem.
                 </p>
               </div>
-              <div className="p-5 bg-slate-50/50 border-t border-slate-100 flex gap-3">
+              <div className="p-5 bg-slate-50/50 border-t border-slate-200 flex gap-3">
                 <Button 
                   variant="outline" 
                   onClick={cancelDelete} 
-                  className="flex-1 font-bold text-xs rounded-2xl h-12 border-slate-200 hover:bg-white active:scale-95 transition-all"
+                  className="flex-1 font-bold text-xs rounded-xl h-12 border-slate-200 hover:bg-white active:scale-[0.98] transition-all"
                 >
                   Batal
                 </Button>
                 <Button 
                   onClick={executeDelete} 
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-2xl h-12 shadow-xl shadow-red-100 border-none active:scale-95 transition-all"
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl h-12  border-none active:scale-[0.98] transition-all"
                 >
                   Hapus
                 </Button>
