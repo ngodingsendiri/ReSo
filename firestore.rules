@@ -18,63 +18,102 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper Functions
-    function isAuthenticated() {
-      return request.auth != null;
+    // 0. Global Safety Net: Default Deny All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Primitive Helpers
+    function isSignedIn() {
+      // Must be logged in AND email must be verified to prevent spoofing
+      return request.auth != null && request.auth.token.email_verified == true;
     }
 
     function isAuthorized() {
+      // Only these 3 Google accounts have access
       let allowedEmails = [
         'ngerjaindiri@gmail.com',
         'sipencil@gmail.com',
         'abiemputra.asn@gmail.com'
       ];
-      return isAuthenticated() && request.auth.token.email in allowedEmails;
-    }
-    
-    function isAdmin() {
-      return isAuthorized() && 
-             (('email' in request.auth.token && 
-               (request.auth.token.email.lower() == "sipencil@gmail.com" || 
-                request.auth.token.email.lower() == "abiemputra.asn@gmail.com" ||
-                request.auth.token.email.lower() == "ngerjaindiri@gmail.com")) ||
-              (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+      return isSignedIn() && request.auth.token.email in allowedEmails;
     }
 
-    match /users/{userId} {
-      allow read: if isAuthorized() && request.auth.uid == userId;
-      allow create: if isAuthorized() && request.auth.uid == userId && 
-                      (!('role' in request.resource.data) || request.resource.data.role == 'user');
-      allow update: if isAuthorized() && request.auth.uid == userId && 
-                      (!('role' in request.resource.data) || request.resource.data.role == resource.data.role);
-      allow delete: if isAdmin();
+    function isAdmin() {
+      return isAuthorized();
+    }
+
+    function isValidId(id) {
+      // ID Poisoning Guard: prevent massive ID attacks
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // 2. Validation Blueprints
+
+    function isValidUser(data) {
+      return (!('role' in data) || (data.role is string && data.role in ['user', 'admin']));
     }
 
     function isValidEmployee(data) {
       return data.keys().hasAll(['name', 'nip']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.nip is string && data.nip.size() > 0 && data.nip.size() < 50 &&
-             (!('bidang' in data) || (data.bidang is string && data.bidang.size() < 100)) &&
-             (!('igUsername' in data) || (data.igUsername is string && data.igUsername.size() < 50)) &&
-             (!('fbName' in data) || (data.fbName is string && data.fbName.size() < 100)) &&
+             (!('bidang' in data) || (data.bidang is string && data.bidang.size() <= 100)) &&
+             (!('igUsername' in data) || (data.igUsername is string && data.igUsername.size() <= 50)) &&
+             (!('fbName' in data) || (data.fbName is string && data.fbName.size() <= 100)) &&
              (!('createdAt' in data) || data.createdAt is timestamp) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
+    function isValidDailyEngagement(data) {
+      return data.keys().hasAll(['date']) &&
+             data.date is string && data.date.size() == 10 &&
+             (!('igRawText' in data) || (data.igRawText is string && data.igRawText.size() <= 10000)) &&
+             (!('fbRawText' in data) || (data.fbRawText is string && data.fbRawText.size() <= 10000)) &&
+             (!('igLinks' in data) || (data.igLinks is list && data.igLinks.size() <= 100)) &&
+             (!('fbLinks' in data) || (data.fbLinks is list && data.fbLinks.size() <= 100)) &&
+             (!('igEngagedEmployeeIds' in data) || (data.igEngagedEmployeeIds is list && data.igEngagedEmployeeIds.size() <= 500)) &&
+             (!('fbEngagedEmployeeIds' in data) || (data.fbEngagedEmployeeIds is list && data.fbEngagedEmployeeIds.size() <= 500)) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+    
+    function isValidSetting(data) {
+      return (!('value' in data) || (data.value is string && data.value.size() <= 5000)) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    // 3. Collection Rules
+
+    match /users/{userId} {
+      allow read: if isAuthorized() && request.auth.uid == userId;
+      allow create: if isAuthorized() && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isAuthorized() && request.auth.uid == userId && isValidUser(incoming()) && 
+                       (!('role' in incoming()) || incoming().role == existing().role);
+      allow delete: if isAdmin();
+    }
+
     match /employees/{employeeId} {
-      allow read: if isAuthorized();
-      allow create, update, delete: if isAdmin();
+      allow list, get: if isAuthorized();
+      allow create: if isAdmin() && isValidId(employeeId) && isValidEmployee(incoming());
+      allow update: if isAdmin() && isValidId(employeeId) && isValidEmployee(incoming());
+      allow delete: if isAdmin() && isValidId(employeeId);
     }
 
     match /dailyEngagement/{dateId} {
-      allow read: if isAuthorized();
-      allow write: if isAdmin();
+      allow list, get: if isAuthorized();
+      allow create: if isAdmin() && isValidId(dateId) && isValidDailyEngagement(incoming());
+      allow update: if isAdmin() && isValidId(dateId) && isValidDailyEngagement(incoming());
+      allow delete: if isAdmin() && isValidId(dateId);
     }
 
     match /settings/{settingId} {
-      allow read: if isAuthorized();
-      allow write: if isAdmin();
+      allow list, get: if isAuthorized();
+      allow create: if isAdmin() && isValidId(settingId) && isValidSetting(incoming());
+      allow update: if isAdmin() && isValidId(settingId) && isValidSetting(incoming());
+      allow delete: if isAdmin() && isValidId(settingId);
     }
   }
 }
