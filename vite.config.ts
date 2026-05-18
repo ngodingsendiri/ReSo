@@ -12,9 +12,26 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: [],
+        includeAssets: ['pwa-icon.svg'],
         workbox: {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4MB
+        },
+        manifest: {
+          name: 'ReSo - Rekap Engagement Sosmed',
+          short_name: 'ReSo',
+          description: 'Aplikasi Rekapitulasi Engagement Media Sosial Diskominfo',
+          theme_color: '#0f172a',
+          background_color: '#ffffff',
+          display: 'standalone',
+          orientation: 'portrait',
+          icons: [
+            {
+              src: 'pwa-icon.svg',
+              sizes: 'any',
+              type: 'image/svg+xml',
+              purpose: 'any'
+            }
+          ]
         }
       })
     ],

@@ -18,19 +18,25 @@ const updateDOM = (value: string) => {
 
     // Dynamically update PWA Manifest
     const manifestString = JSON.stringify({
-      name: "ReSo",
+      name: "ReSo - Rekap Engagement Sosmed",
       short_name: "ReSo",
       start_url: "/",
       display: "standalone",
       background_color: "#ffffff",
       theme_color: "#0f172a",
-      description: "ReSo - Rekap Engagement Sosmed",
+      description: "Aplikasi Rekapitulasi Engagement Media Sosial Diskominfo",
       icons: [
         {
           src: value,
           sizes: "any",
           type: value.startsWith('data:image/svg') ? "image/svg+xml" : "image/png",
-          purpose: "any maskable"
+          purpose: "any"
+        },
+        {
+          src: "/pwa-icon.svg",
+          sizes: "any",
+          type: "image/svg+xml",
+          purpose: "maskable"
         }
       ]
     });
