@@ -11,7 +11,6 @@ import {
   XCircle,
   X,
   Calendar as CalendarIcon,
-  ClipboardPaste,
   ChevronLeft,
   ChevronRight,
   History,
@@ -157,14 +156,14 @@ export default function EngagementDashboard() {
           navigator.serviceWorker.ready.then(registration => {
             registration.showNotification("Engagement sosmed Diskominfo", {
               body: "Waktunya melakukan engagement sosial media Diskominfo!",
-              icon: "/icon.svg",
+              icon: appLogo || undefined,
               vibrate: [200, 100, 200]
             } as any);
           });
         } else {
           new Notification("Engagement sosmed Diskominfo", {
             body: "Waktunya melakukan engagement sosial media Diskominfo!",
-            icon: "/icon.svg"
+            icon: appLogo || undefined
           });
         }
         localStorage.setItem(notifiedKey1445, 'true');
@@ -173,14 +172,14 @@ export default function EngagementDashboard() {
           navigator.serviceWorker.ready.then(registration => {
             registration.showNotification("Rekap engagement sosmed", {
               body: "Batas waktu engagement telah berakhir. Waktunya mengecek rekap engagement sosial media.",
-              icon: "/icon.svg",
+              icon: appLogo || undefined,
               vibrate: [200, 100, 200]
             } as any);
           });
         } else {
           new Notification("Rekap engagement sosmed", {
             body: "Batas waktu engagement telah berakhir. Waktunya mengecek rekap engagement sosial media.",
-            icon: "/icon.svg"
+            icon: appLogo || undefined
           });
         }
         localStorage.setItem(notifiedKey1500, 'true');
@@ -396,7 +395,7 @@ export default function EngagementDashboard() {
           }
         }
       } catch (e) {
-        console.log("Not a user token, continuing with original token.");
+        // Not a user token, continuing with original token
       }
 
       // Fetch FB Posts

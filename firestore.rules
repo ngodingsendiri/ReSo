@@ -110,7 +110,8 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow list, get: if isAuthorized();
+      allow list: if isAuthorized();
+      allow get: if isAuthorized() || settingId == 'appLogo';
       allow create: if isAdmin() && isValidId(settingId) && isValidSetting(incoming());
       allow update: if isAdmin() && isValidId(settingId) && isValidSetting(incoming());
       allow delete: if isAdmin() && isValidId(settingId);
