@@ -10,9 +10,11 @@ import EngagementDashboard from './components/EngagementDashboard';
 import LoginScreen from './components/LoginScreen';
 import { useAuth } from './components/FirebaseProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useAppLogo } from './hooks/useAppLogo';
 
 function LoadingScreen() {
   const [progress, setProgress] = useState(0);
+  const logoUrl = useAppLogo();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -28,20 +30,25 @@ function LoadingScreen() {
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-transparent p-4">
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
-        className="bg-white p-8 rounded-xl  border border-slate-200 flex flex-col items-center w-full max-w-sm"
+        className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col items-center w-full max-w-sm"
       >
         <div className="w-20 h-20 bg-slate-900 rounded-xl flex items-center justify-center mb-8 relative overflow-hidden group">
           <div className="absolute inset-0 bg-slate-700/50 animate-ping opacity-20" />
-          <Edit className="w-10 h-10 text-white relative z-10 animate-pulse" />
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" className="w-12 h-12 object-contain relative z-10" />
+          ) : (
+            <Edit className="w-10 h-10 text-white relative z-10 animate-pulse" />
+          )}
         </div>
         
         <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2 text-center">Re<span className="text-slate-900">So</span></h2>
         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest text-center mb-8">Rekap Engagement Sosmed</p>
+
         
         <div className="w-full space-y-2 relative">
           <div className="flex justify-between items-end mb-1">
@@ -84,8 +91,8 @@ export default function App() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-red-500 font-bold bg-slate-50">
-        <div className="bg-white p-6 rounded-xl  border border-red-100 text-center max-w-md">
+      <div className="flex items-center justify-center min-h-screen text-rose-500 font-bold bg-transparent">
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-rose-100 dark:border-rose-900/50 text-center max-w-md">
           <span className="text-3xl mb-4 block">⚠️</span>
           <span>{error}</span>
         </div>

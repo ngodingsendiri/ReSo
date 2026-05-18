@@ -27,8 +27,14 @@ export default function EngagementChart({ data }: { data: any[] }) {
           tick={{ fontSize: 10, fontWeight: 600, fill: '#94a3b8' }}
         />
         <Tooltip 
-          cursor={{ fill: '#f8fafc' }}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)' }}
+          cursor={{ fill: 'rgba(226, 232, 240, 0.4)' }}
+          contentStyle={{ 
+            borderRadius: '12px', 
+            border: '1px solid #e2e8f0', 
+            boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+            backgroundColor: '#ffffff',
+            color: '#0f172a'
+          }}
         />
         <Bar dataKey="ig" name="Instagram" stackId="a" fill="#ec4899" radius={[0, 0, 0, 0]} barSize={32} />
         <Bar dataKey="fb" name="Facebook" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} barSize={32} />

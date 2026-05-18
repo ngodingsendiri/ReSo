@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { signIn } from '../lib/firebase';
 import { Button } from './ui/button';
+import { useAppLogo } from '../hooks/useAppLogo';
 
 export default function LoginScreen() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const appLogo = useAppLogo();
 
   const handleSignIn = async () => {
     if (isLoggingIn) return;
@@ -26,19 +28,23 @@ export default function LoginScreen() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen-safe min-h-[100dvh] bg-slate-50 pb-safe">
-      <div className="p-8 bg-white rounded-xl border border-slate-200 text-center max-w-sm w-full mx-4 ">
+    <div className="flex flex-col items-center justify-center min-h-screen-safe min-h-[100dvh] bg-transparent pb-safe">
+      <div className="p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center max-w-sm w-full mx-4 ">
         <div className="w-16 h-16 bg-slate-900 rounded-xl flex items-center justify-center mx-auto mb-6">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
-            <path strokeLinecap="round" strokeLinejoin="round" d="m15 5 4 4"/>
-          </svg>
+          {appLogo ? (
+            <img src={appLogo} alt="Logo" className="w-10 h-10 object-contain z-10" />
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m15 5 4 4"/>
+            </svg>
+          )}
         </div>
         <h1 className="text-2xl font-bold mb-2 text-slate-900">ReSo</h1>
         <p className="text-slate-500 mb-8 text-sm">Rekap Engagement Sosmed. Silakan masuk untuk melanjutkan.</p>
         
         {error && (
-          <div className="mb-6 p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-200 font-medium">
+          <div className="mb-6 p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 text-xs rounded-lg border border-rose-100 dark:border-rose-900/50 font-medium">
             {error}
           </div>
         )}

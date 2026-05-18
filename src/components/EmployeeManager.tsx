@@ -945,37 +945,38 @@ export default function EmployeeManager() {
         {deleteConfirmId && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
               transition={{ ease: "easeOut", duration: 0.2 }}
-              className="bg-white w-full max-w-sm rounded-xl overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-xl border border-transparent dark:border-slate-800 overflow-hidden shadow-2xl"
             >
               <div className="p-8 text-center space-y-4">
                 <motion.div 
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: 0.1, ease: "easeOut" }}
-                  className="w-20 h-20 bg-red-50 rounded-xl flex items-center justify-center mx-auto mb-2 rotate-3"
+                  className="w-20 h-20 bg-rose-50 dark:bg-rose-950/40 rounded-xl flex items-center justify-center mx-auto mb-2 border border-rose-100 dark:border-rose-900/50 rotate-3"
                 >
-                  <Trash2 size={32} className="text-red-500" />
+                  <Trash2 size={32} className="text-rose-600 dark:text-rose-400" />
                 </motion.div>
-                <h3 className="text-xl font-black text-slate-900 tracking-tight">Hapus Pegawai?</h3>
+                <h3 className="text-xl font-black text-slate-900 dark:text-slate-50 tracking-tight">Hapus Pegawai?</h3>
                 <p className="text-xs font-medium text-slate-400 leading-relaxed px-4">
                   Tindakan ini tidak dapat dibatalkan. Data pegawai akan dihapus secara permanen dari sistem.
                 </p>
               </div>
-              <div className="p-5 bg-slate-50/50 border-t border-slate-200 flex gap-3">
+              <div className="p-5 bg-slate-50/50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex gap-3">
                 <Button 
                   variant="outline" 
                   onClick={cancelDelete} 
-                  className="flex-1 font-bold text-xs rounded-xl h-12 border-slate-200 hover:bg-white active:scale-[0.98] transition-all"
+                  className="flex-1 font-bold text-xs h-12 active:scale-[0.98] transition-all"
                 >
                   Batal
                 </Button>
                 <Button 
                   onClick={executeDelete} 
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl h-12  border-none active:scale-[0.98] transition-all"
+                  variant="destructive"
+                  className="flex-1 font-bold text-xs h-12 active:scale-[0.98] transition-all border-none"
                 >
                   Hapus
                 </Button>

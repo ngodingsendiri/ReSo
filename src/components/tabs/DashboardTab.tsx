@@ -45,20 +45,18 @@ export const DashboardTab = ({
 
     return (
       <motion.div
-        whileHover={{ y: -5, scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
         transition={{ ease: "easeOut", duration: 0.2 }}
       >
-        <Card className="h-full border-slate-200/50  rounded-xl overflow-hidden bg-white/80 backdrop-blur-sm relative group cursor-pinter">
+        <Card className="h-full border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 relative group">
           <div className="p-4 md:p-6 lg:p-8 relative z-10 flex flex-col h-full justify-between">
             <div className="flex justify-between items-start mb-6 md:mb-8">
               <p className="font-bold text-[10px] md:text-xs text-slate-400 uppercase tracking-widest">{title}</p>
-              <div className={cn("p-2 md:p-3 rounded-xl  border", colorMap[color])}>
+              <div className={cn("p-2 md:p-3 rounded-xl border", colorMap[color])}>
                 {icon}
               </div>
             </div>
             <div className="space-y-1 md:space-y-2">
-              <p className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-800">{value}</p>
+              <p className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-900 dark:text-slate-50">{value}</p>
             </div>
           </div>
         </Card>
@@ -75,10 +73,10 @@ export const DashboardTab = ({
       exit="hidden"
       className="space-y-6 md:space-y-10"
     >
-      <motion.div variants={itemVariants} className="lg:hidden flex flex-col justify-between items-start gap-4 bg-white p-6 rounded-xl border border-slate-200">
+      <motion.div variants={itemVariants} className="lg:hidden flex flex-col justify-between items-start gap-4 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
         <div className="space-y-0.5">
-          <h2 className="text-xl font-bold tracking-tight text-slate-900">Dashboard Utama</h2>
-          <p className="text-slate-500 text-xs">Ringkasan statistik dan tren engagement pegawai</p>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Dashboard Utama</h2>
+          <p className="text-slate-500 dark:text-slate-400 text-xs">Ringkasan statistik dan tren engagement pegawai</p>
         </div>
       </motion.div>
 
@@ -91,10 +89,10 @@ export const DashboardTab = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         <motion.div variants={itemVariants} className="lg:col-span-2">
-          <Card className="h-full border-slate-200/50 rounded-xl overflow-hidden bg-white/80 backdrop-blur-sm">
-            <CardHeader className="p-6 border-b border-slate-50">
-              <CardTitle className="text-base font-bold">Tren Engagement (7 Hari Terakhir)</CardTitle>
-              <CardDescription className="text-xs">Perbandingan interaksi harian Instagram, Facebook & TikTok</CardDescription>
+          <Card className="h-full border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
+            <CardHeader className="p-6 border-b border-slate-200 dark:border-slate-800">
+              <CardTitle className="text-base font-bold text-slate-900 dark:text-slate-50">Tren Engagement (7 Hari Terakhir)</CardTitle>
+              <CardDescription className="text-xs text-slate-600 dark:text-slate-400">Perbandingan interaksi harian Instagram, Facebook & TikTok</CardDescription>
             </CardHeader>
             <CardContent className="p-6 h-[300px] min-h-[300px]">
               <React.Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-slate-50/50 rounded-xl text-slate-400 text-xs font-bold">Memuat Grafik...</div>}>
@@ -105,16 +103,16 @@ export const DashboardTab = ({
         </motion.div>
 
         <motion.div variants={itemVariants} className="lg:col-span-1">
-          <Card className="h-full border-slate-200/50 rounded-xl overflow-hidden bg-white/80 backdrop-blur-sm">
-            <CardHeader className="p-6 border-b border-slate-50">
-              <CardTitle className="text-base font-bold">Aktivitas Terakhir</CardTitle>
-              <CardDescription className="text-xs">Riwayat pembaruan data rekap</CardDescription>
+          <Card className="h-full border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
+            <CardHeader className="p-6 border-b border-slate-200 dark:border-slate-800">
+              <CardTitle className="text-base font-bold text-slate-900 dark:text-slate-50">Aktivitas Terakhir</CardTitle>
+              <CardDescription className="text-xs text-slate-600 dark:text-slate-400">Riwayat pembaruan data rekap</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               <ScrollArea className="h-[300px]">
-                <div className="divide-y divide-slate-50">
+                <div className="divide-y divide-slate-200 dark:divide-slate-800">
                   {dailyEngagements.slice(0, 5).map((eng, i) => (
-                    <div key={i} className="p-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
+                    <div key={i} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500">
                           <CalendarIcon size={14} />

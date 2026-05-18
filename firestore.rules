@@ -81,7 +81,7 @@ service cloud.firestore {
     }
     
     function isValidSetting(data) {
-      return (!('value' in data) || (data.value is string && data.value.size() <= 5000)) &&
+      return (!('value' in data) || (data.value is string && data.value.size() <= 5000000)) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 

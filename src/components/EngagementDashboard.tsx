@@ -46,6 +46,7 @@ import { Toaster } from './ui/sonner';
 import { toast } from 'sonner';
 import { DailyEngagement, Employee } from '../types';
 import { useAuth } from './FirebaseProvider';
+import { useAppLogo } from '../hooks/useAppLogo';
 import { db, signIn, logout, auth } from '../lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, limit, writeBatch } from 'firebase/firestore';
 import { cn, getBidangColor } from '@/lib/utils';
@@ -89,6 +90,7 @@ const itemVariants: import('motion/react').Variants = {
 
 export default function EngagementDashboard() {
   const { user, loading } = useAuth();
+  const appLogo = useAppLogo();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [dailyEngagements, setDailyEngagements] = useState<DailyEngagement[]>([]);
   const [selectedDate, setSelectedDate] = useState(getLocalISODate(new Date()));
@@ -1044,7 +1046,7 @@ export default function EngagementDashboard() {
   const dailyEngagementRate = dailyPossible > 0 ? Math.round((dailyActual / dailyPossible) * 100) : 0;
 
   return (
-    <div className="flex h-[100dvh] bg-slate-50 font-sans overflow-hidden relative">
+    <div className="flex h-[100dvh] bg-transparent font-sans overflow-hidden relative">
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -1061,7 +1063,7 @@ export default function EngagementDashboard() {
       {/* Sidebar */}
       <aside 
         className={cn(
-          "fixed inset-y-0 left-0 w-72 bg-white border-r border-slate-200 flex flex-col  z-50 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 w-72 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0",
           !isSidebarOpen ? "-translate-x-full" : "translate-x-0"
         )}
       >
@@ -1073,7 +1075,11 @@ export default function EngagementDashboard() {
                 whileHover={{ rotate: 12, scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
               >
-                <Pen className="text-white" size={22} strokeWidth={2.5} />
+                {appLogo ? (
+                  <img src={appLogo} alt="Logo" className="w-6 h-6 object-contain" />
+                ) : (
+                  <Pen className="text-white" size={22} strokeWidth={2.5} />
+                )}
               </motion.div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">ReSo</h1>
@@ -1170,7 +1176,7 @@ export default function EngagementDashboard() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0">
         {/* Sticky App Header - Modern Mobile Style */}
-        <header className="sticky top-0 pt-safe z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 h-[calc(4rem+env(safe-area-inset-top))] flex items-center justify-between lg:px-8 lg:h-20 lg:pt-0">
+        <header className="sticky top-0 pt-safe z-30 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 h-[calc(4rem+env(safe-area-inset-top))] flex items-center justify-between lg:px-8 lg:h-20 lg:pt-0">
           <div className="flex items-center gap-3">
             <Button 
               variant="ghost" 
@@ -1329,11 +1335,11 @@ export default function EngagementDashboard() {
                     {isInputModalOpen && (
                       <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4">
                         <motion.div
-                          initial={{ opacity: 0, y: '100%' }}
+                          initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: '100%' }}
+                          exit={{ opacity: 0, y: 8 }}
                           transition={{ ease: "easeOut", duration: 0.2 }}
-                          className="bg-white w-full max-w-xl rounded-t-xl sm:rounded-xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[80vh]"
+                          className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-t-xl sm:rounded-xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[80vh] shadow-xl sm:shadow-2xl border border-transparent dark:border-slate-800"
                         >
                           <div className="p-5 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
                             <div>
@@ -2183,7 +2189,7 @@ export default function EngagementDashboard() {
         initial={{ y: 100 }}
         animate={{ y: 0 }}
         transition={{ ease: "easeOut", duration: 0.2 }}
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-t border-slate-200 px-4 h-[calc(5rem+env(safe-area-inset-bottom))] pb-safe flex items-center justify-around"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 px-4 h-[calc(5rem+env(safe-area-inset-bottom))] pb-safe flex items-center justify-around"
       >
         <BottomNavItem 
           active={activeTab === 'dashboard'} 
