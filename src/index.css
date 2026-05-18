@@ -7,13 +7,13 @@
 
   --color-slate-50: hsl(210 40% 98%);
   --color-slate-100: hsl(210 40% 96.1%);
-  --color-slate-200: color-mix(in srgb, hsl(214.3 31.8% 91.4%) 25%, transparent);
-  --color-slate-300: color-mix(in srgb, hsl(212.7 26.8% 83.9%) 40%, transparent);
+  --color-slate-200: hsl(214.3 31.8% 91.4%);
+  --color-slate-300: hsl(212.7 26.8% 83.9%);
   --color-slate-400: hsl(215 20.2% 65.1%);
   --color-slate-500: hsl(215.4 16.3% 46.9%);
   --color-slate-600: hsl(215.3 19.3% 34.5%);
   --color-slate-700: hsl(215.3 25% 26.7%);
-  --color-slate-800: color-mix(in srgb, hsl(217.2 32.6% 17.5%) 25%, transparent);
+  --color-slate-800: hsl(217.2 32.6% 17.5%);
   --color-slate-900: hsl(222.2 47.4% 11.2%);
   --color-slate-950: hsl(222.2 84% 4.9%);
   
@@ -266,6 +266,17 @@ body {
 
 @utility min-h-screen-safe {
   min-height: calc(100vh - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+}
+
+@layer utilities {
+  .border, .border-x, .border-y, .border-t, .border-b, .border-l, .border-r {
+    border-color: color-mix(in srgb, currentColor 15%, transparent);
+  }
+  .border-slate-200 { border-color: color-mix(in srgb, var(--color-slate-200) 40%, transparent) !important; }
+  .dark\:border-slate-800:is(.dark *) { border-color: color-mix(in srgb, var(--color-slate-800) 40%, transparent) !important; }
+  .border-rose-200 { border-color: color-mix(in srgb, var(--color-rose-200) 40%, transparent) !important; }
+  .border-emerald-200 { border-color: color-mix(in srgb, var(--color-emerald-200) 40%, transparent) !important; }
+  .border-red-200 { border-color: color-mix(in srgb, var(--color-red-200) 40%, transparent) !important; }
 }
 
 
