@@ -21,6 +21,7 @@ const updateDOM = (value: string) => {
       name: "ReSo - Rekap Engagement Sosmed",
       short_name: "ReSo",
       start_url: "/",
+      scope: "/",
       display: "standalone",
       background_color: "#ffffff",
       theme_color: "#0f172a",
@@ -36,7 +37,7 @@ const updateDOM = (value: string) => {
           src: "/pwa-icon.svg",
           sizes: "any",
           type: "image/svg+xml",
-          purpose: "maskable"
+          purpose: "any maskable"
         }
       ]
     });

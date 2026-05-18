@@ -24,12 +24,14 @@ export default defineConfig(({mode}) => {
           background_color: '#ffffff',
           display: 'standalone',
           orientation: 'portrait',
+          start_url: '/',
+          scope: '/',
           icons: [
             {
               src: 'pwa-icon.svg',
               sizes: 'any',
               type: 'image/svg+xml',
-              purpose: 'any'
+              purpose: 'any maskable'
             }
           ]
         }
