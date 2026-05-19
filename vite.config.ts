@@ -12,7 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['pwa-icon.svg'],
+        includeAssets: ['pwa-icon.svg', 'icon-192x192.png', 'icon-512x512.png', 'maskable-icon-512x512.png'],
         workbox: {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4MB
         },
@@ -28,21 +28,21 @@ export default defineConfig(({mode}) => {
           scope: '/',
           icons: [
             {
-              src: 'pwa-icon.svg',
+              src: 'icon-192x192.png',
               sizes: '192x192',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'pwa-icon.svg',
+              src: 'icon-512x512.png',
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any'
             },
             {
-              src: 'pwa-icon.svg',
+              src: 'maskable-icon-512x512.png',
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'maskable'
             }
           ]
