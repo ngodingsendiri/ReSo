@@ -11,6 +11,7 @@ import LoginScreen from './components/LoginScreen';
 import { useAuth } from './components/FirebaseProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAppLogo } from './hooks/useAppLogo';
+import { PWAPrompt } from './components/PWAPrompt';
 
 function LoadingScreen() {
   const [progress, setProgress] = useState(0);
@@ -104,6 +105,7 @@ export default function App() {
     return (
       <ErrorBoundary>
         <LoginScreen />
+        <PWAPrompt />
       </ErrorBoundary>
     );
   }
@@ -113,6 +115,7 @@ export default function App() {
       <ErrorBoundary>
         <EngagementDashboard />
       </ErrorBoundary>
+      <PWAPrompt />
     </div>
   );
 }
