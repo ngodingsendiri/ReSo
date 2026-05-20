@@ -11,6 +11,12 @@ export const PWAPrompt: React.FC = () => {
     const handleBeforeInstallPrompt = (e: Event) => {
       // Prevent Chrome 67 and earlier from automatically showing the prompt
       e.preventDefault();
+      
+      // Check if user already dismissed it this session
+      if (sessionStorage.getItem('pwaPromptDismissed') === 'true') {
+        return;
+      }
+      
       // Stash the event so it can be triggered later.
       setDeferredPrompt(e);
       // Show the prompt
@@ -38,6 +44,7 @@ export const PWAPrompt: React.FC = () => {
       setIsVisible(false);
     } else {
       console.log('User dismissed the install prompt');
+      sessionStorage.setItem('pwaPromptDismissed', 'true');
     }
     
     // We've used the prompt, and can't use it again, throw it away
@@ -46,6 +53,7 @@ export const PWAPrompt: React.FC = () => {
 
   const handleDismiss = () => {
     setIsVisible(false);
+    sessionStorage.setItem('pwaPromptDismissed', 'true');
   };
 
   return (

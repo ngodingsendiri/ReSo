@@ -47,7 +47,7 @@ import { DailyEngagement, Employee } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
 import { db, signIn, logout, auth } from '../lib/firebase';
-import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, limit, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, limit, writeBatch, where } from 'firebase/firestore';
 import { cn, getBidangColor } from '@/lib/utils';
 import { ErrorBoundary } from './ErrorBoundary';
 
@@ -248,27 +248,38 @@ export default function EngagementDashboard() {
     return unsubscribe;
   }, [user, loading]);
 
-  // Load all daily engagements
+  // Calculate the oldest date we need to fetch based on current views
+  const oldestRequiredDate = useMemo(() => {
+    const dates = [
+      currentMonthlyReportDate,
+      currentWeekDate,
+      new Date() // Today
+    ];
+    // Set to 1st of the month for each date to ensure we get the full month
+    const oldest = new Date(Math.min(...dates.map(d => new Date(d.getFullYear(), d.getMonth(), 1).getTime())));
+    // Subtract 7 days just to be safe with timezone issues and week overlaps
+    oldest.setDate(oldest.getDate() - 7);
+    return getLocalISODate(oldest);
+  }, [currentMonthlyReportDate, currentWeekDate]);
+
+  // Load daily engagements
   useEffect(() => {
     if (loading || !user) {
       setDailyEngagements([]);
       return;
     }
 
-    // Optimization: Only fetch the last 60 days to prevent excessive payload size
-    // The previous setup fetched ALL time history, including massive raw texts, 
-    // which exponentially bloated initial load times.
     const q = query(
       collection(db, 'dailyEngagement'), 
-      orderBy('date', 'desc'),
-      limit(31) // Menampilkan data 1 bulan ke belakang
+      where('date', '>=', oldestRequiredDate),
+      orderBy('date', 'desc')
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyEngagement));
       setDailyEngagements(data);
     });
     return unsubscribe;
-  }, [user, loading]);
+  }, [user, loading, oldestRequiredDate]);
 
   const dailyEngagementsMap = useMemo(() => {
     return dailyEngagements.reduce((acc, curr) => {

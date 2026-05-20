@@ -101,22 +101,21 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return (
-      <ErrorBoundary>
-        <LoginScreen />
-        <PWAPrompt />
-      </ErrorBoundary>
-    );
-  }
-
   return (
-    <div className="min-h-screen">
-      <ErrorBoundary>
-        <EngagementDashboard />
-      </ErrorBoundary>
+    <>
+      <div className="font-sans antialiased text-slate-900 min-h-screen bg-slate-50 selection:bg-rose-500/30">
+        {!user ? (
+          <ErrorBoundary>
+            <LoginScreen />
+          </ErrorBoundary>
+        ) : (
+          <ErrorBoundary>
+            <EngagementDashboard />
+          </ErrorBoundary>
+        )}
+      </div>
       <PWAPrompt />
-    </div>
+    </>
   );
 }
 
