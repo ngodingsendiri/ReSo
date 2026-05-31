@@ -2166,10 +2166,25 @@ export default function EngagementDashboard() {
                                     <p className={cn("font-bold text-xs whitespace-nowrap shrink-0",
                                       isTop ? "text-emerald-900" : isBottom ? "text-red-900" : "text-slate-800"
                                     )}>{emp.name}</p>
-                                    <div className="flex items-center gap-0.5 ml-1">
-                                      {!!emp.igUsername && <Instagram size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-pink-500/50"} />}
-                                      {!!emp.fbName && <Facebook size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-blue-500/50"} />}
-                                      {!!emp.tiktokName && <TiktokIcon size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-slate-800/50"} />}
+                                    <div className="flex items-center gap-1.5 ml-1">
+                                      {!!emp.igUsername && (
+                                        <div className="flex items-center gap-0.5" title={emp.igUsername}>
+                                          <Instagram size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-pink-500/50"} />
+                                          <span className={cn("text-[9px] font-mono", isTop ? "text-emerald-700/60" : isBottom ? "text-red-700/60" : "text-slate-400")}>{emp.igUsername.substring(0, 7)}</span>
+                                        </div>
+                                      )}
+                                      {!!emp.fbName && (
+                                        <div className="flex items-center gap-0.5" title={emp.fbName}>
+                                          <Facebook size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-blue-500/50"} />
+                                          <span className={cn("text-[9px] font-mono", isTop ? "text-emerald-700/60" : isBottom ? "text-red-700/60" : "text-slate-400")}>{emp.fbName.substring(0, 7)}</span>
+                                        </div>
+                                      )}
+                                      {!!emp.tiktokName && (
+                                        <div className="flex items-center gap-0.5" title={emp.tiktokName}>
+                                          <TiktokIcon size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-slate-800/50"} />
+                                          <span className={cn("text-[9px] font-mono", isTop ? "text-emerald-700/60" : isBottom ? "text-red-700/60" : "text-slate-400")}>{emp.tiktokName.substring(0, 7)}</span>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </TableCell>
