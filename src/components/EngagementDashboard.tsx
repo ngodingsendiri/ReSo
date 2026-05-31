@@ -107,6 +107,7 @@ export default function EngagementDashboard() {
   const [currentMonthlyReportDate, setCurrentMonthlyReportDate] = useState(new Date());
   const [currentDailyDate, setCurrentDailyDate] = useState(new Date());
   const [weeklySortMode, setWeeklySortMode] = useState<'name' | 'bidang'>('bidang');
+  const [monthlySortMode, setMonthlySortMode] = useState<'rank' | 'bidang' | 'name'>('rank');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
@@ -968,7 +969,7 @@ export default function EngagementDashboard() {
   }, [employees, currentMonthlyReportDate]);
 
   const monthlyStats = useMemo(() => {
-    if (monthlyReports.length === 0) return { employeeTotals: {} as Record<string, number>, maxEngagements: 3, top3Ids: [], bottom3Ids: [], bidangRates: [] as { bidang: string, rate: number }[] };
+    if (monthlyReports.length === 0) return { employeeTotals: {} as Record<string, number>, employeePlatformStats: {} as Record<string, { igPercent: number, fbPercent: number, tiktokPercent: number }>, maxEngagements: 3, top3Ids: [], bottom3Ids: [], bidangRates: [] as { bidang: string, rate: number }[] };
     
     const monthDates = monthlyReports[0].dates;
     const todayStr = getLocalISODate(new Date());
@@ -982,19 +983,32 @@ export default function EngagementDashboard() {
     const maxEngagements = daysPassed * 3;
     
     const employeeTotals: Record<string, number> = {};
+    const employeePlatformStats: Record<string, { igPercent: number, fbPercent: number, tiktokPercent: number }> = {};
     const bidangStats: Record<string, { possible: number, actual: number }> = {};
 
     employees.forEach(emp => {
+      let totalIg = 0;
+      let totalFb = 0;
+      let totalTiktok = 0;
       let totalEngagements = 0;
+      
       monthDates.forEach(date => {
         if (date > todayStr) return;
         const engagement = dailyEngagementsMap[date];
         const hasIg = engagement?.igEngagedEmployeeIds?.includes(emp.id) ? 1 : 0;
         const hasFb = engagement?.fbEngagedEmployeeIds?.includes(emp.id) ? 1 : 0;
         const hasTiktok = engagement?.tiktokEngagedEmployeeIds?.includes(emp.id) ? 1 : 0;
+        totalIg += hasIg;
+        totalFb += hasFb;
+        totalTiktok += hasTiktok;
         totalEngagements += (hasIg + hasFb + hasTiktok);
       });
       employeeTotals[emp.id] = totalEngagements;
+      employeePlatformStats[emp.id] = {
+        igPercent: daysPassed > 0 ? Math.round((totalIg / daysPassed) * 100) : 0,
+        fbPercent: daysPassed > 0 ? Math.round((totalFb / daysPassed) * 100) : 0,
+        tiktokPercent: daysPassed > 0 ? Math.round((totalTiktok / daysPassed) * 100) : 0,
+      };
 
       const bidang = emp.bidang || 'Lainnya';
       if (!bidangStats[bidang]) bidangStats[bidang] = { possible: 0, actual: 0 };
@@ -1015,8 +1029,23 @@ export default function EngagementDashboard() {
       rate: stats.possible > 0 ? Math.round((stats.actual / stats.possible) * 100) : 0
     })).sort((a, b) => b.rate - a.rate);
 
-    return { employeeTotals, maxEngagements, top3Ids, bottom3Ids, bidangRates };
+    return { employeeTotals, employeePlatformStats, maxEngagements, top3Ids, bottom3Ids, bidangRates };
   }, [monthlyReports, employees, dailyEngagementsMap]);
+
+  const sortedMonthlyEmployees = useMemo(() => {
+    return employees.slice().sort((a, b) => {
+      if (monthlySortMode === 'rank') {
+        const scoreA = monthlyStats.employeeTotals[a.id] || 0;
+        const scoreB = monthlyStats.employeeTotals[b.id] || 0;
+        if (scoreB !== scoreA) {
+          return scoreB - scoreA;
+        }
+      } else if (monthlySortMode === 'name') {
+        return a.name.localeCompare(b.name);
+      }
+      return (a.bidang || '').localeCompare(b.bidang || '') || a.name.localeCompare(b.name);
+    });
+  }, [employees, monthlySortMode, monthlyStats.employeeTotals]);
 
   const changeMonthlyReportDate = (offset: number) => {
     const newDate = new Date(currentMonthlyReportDate);
@@ -2037,14 +2066,20 @@ export default function EngagementDashboard() {
                       <div className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto">
                         <div className="flex bg-slate-100 p-1.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
                           <button 
-                            onClick={() => setWeeklySortMode('bidang')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                            onClick={() => setMonthlySortMode('rank')}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", monthlySortMode === 'rank' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                          >
+                            Peringkat
+                          </button>
+                          <button 
+                            onClick={() => setMonthlySortMode('bidang')}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", monthlySortMode === 'bidang' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
                           >
                             Bidang
                           </button>
                           <button 
-                            onClick={() => setWeeklySortMode('name')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                            onClick={() => setMonthlySortMode('name')}
+                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", monthlySortMode === 'name' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
                           >
                             Nama
                           </button>
@@ -2090,21 +2125,27 @@ export default function EngagementDashboard() {
                         <Table id="engagement-monthly-table" className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
                           <TableHeader>
                             <TableRow className="bg-slate-50/50 border-b border-slate-200">
-                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-200 px-3 py-3 font-bold text-slate-900 whitespace-nowrap text-xs uppercase tracking-wider">
+                              <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-200 px-3 py-1.5 font-bold text-slate-900 whitespace-nowrap text-xs uppercase tracking-wider">
                                 Nama Pegawai
                               </TableHead>
-                              <TableHead className="text-center px-4 py-3 text-xs font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[10%] whitespace-nowrap">
-                                % ENG
+                              <TableHead className="text-center px-4 py-1.5 text-[10px] font-bold text-pink-600 bg-pink-50/50 uppercase tracking-wider w-[8%] whitespace-nowrap border-r border-slate-200">
+                                <div className="flex items-center justify-center gap-1"><Instagram size={12} /> IG</div>
                               </TableHead>
-                              <TableHead className="border-l border-slate-200 text-center px-4 py-3 text-xs font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[10%] whitespace-nowrap">
-                                TOTAL
+                              <TableHead className="text-center px-4 py-1.5 text-[10px] font-bold text-blue-600 bg-blue-50/50 uppercase tracking-wider w-[8%] whitespace-nowrap border-r border-slate-200">
+                                <div className="flex items-center justify-center gap-1"><Facebook size={12} /> FB</div>
+                              </TableHead>
+                              <TableHead className="text-center px-4 py-1.5 text-[10px] font-bold text-slate-700 bg-slate-100 uppercase tracking-wider w-[8%] whitespace-nowrap border-r border-slate-200">
+                                <div className="flex items-center justify-center gap-1"><TiktokIcon size={12} /> TT</div>
+                              </TableHead>
+                              <TableHead className="text-center px-4 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 uppercase tracking-wider w-[10%] whitespace-nowrap border-r border-slate-200">
+                                % ENG
                               </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {sortedEmployees.map((emp) => {
-                              const isTop = monthlyStats.top3Ids?.includes(emp.id);
-                              const isBottom = monthlyStats.bottom3Ids?.includes(emp.id);
+                            {sortedMonthlyEmployees.map((emp) => {
+                              const isTop = monthlySortMode === 'rank' && monthlyStats.top3Ids?.includes(emp.id);
+                              const isBottom = monthlySortMode === 'rank' && monthlyStats.bottom3Ids?.includes(emp.id);
                               const rowClass = isTop 
                                 ? "bg-emerald-50/80 border-b border-emerald-200" 
                                 : isBottom 
@@ -2113,42 +2154,46 @@ export default function EngagementDashboard() {
                                   
                               return (
                               <TableRow key={emp.id} className={rowClass}>
-                                <TableCell className={cn("sticky left-0 z-10 border-r px-4 py-3 whitespace-nowrap",
+                                <TableCell className={cn("sticky left-0 z-10 border-r px-4 py-1.5 whitespace-nowrap",
                                   isTop ? "bg-emerald-50/80 border-emerald-200" : isBottom ? "bg-red-50/80 border-red-200" : "bg-white border-slate-200"
                                 )}>
-                                  <div className="flex items-center gap-3">
-                                    <span className={cn("text-[10px] font-mono font-bold px-2 py-1 rounded uppercase tracking-wider shrink-0", 
+                                  <div className="flex items-center gap-2">
+                                    <span className={cn("text-[8px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0", 
                                       isTop ? "bg-emerald-100 text-emerald-700" : isBottom ? "bg-red-100 text-red-700" : getBidangColor(emp.bidang)
                                     )}>
                                       {emp.bidang ? emp.bidang.substring(0, 3) : '---'}
                                     </span>
-                                    <p className={cn("font-bold text-sm whitespace-nowrap shrink-0",
+                                    <p className={cn("font-bold text-xs whitespace-nowrap shrink-0",
                                       isTop ? "text-emerald-900" : isBottom ? "text-red-900" : "text-slate-800"
                                     )}>{emp.name}</p>
                                     <div className="flex items-center gap-0.5 ml-1">
-                                      {!!emp.igUsername && <Instagram size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-pink-500/50"} />}
-                                      {!!emp.fbName && <Facebook size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-blue-500/50"} />}
-                                      {!!emp.tiktokName && <TiktokIcon size={10} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-slate-800/50"} />}
+                                      {!!emp.igUsername && <Instagram size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-pink-500/50"} />}
+                                      {!!emp.fbName && <Facebook size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-blue-500/50"} />}
+                                      {!!emp.tiktokName && <TiktokIcon size={8} className={isTop ? "text-emerald-600/50" : isBottom ? "text-red-600/50" : "text-slate-800/50"} />}
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-center px-4 py-3 whitespace-nowrap">
+                                <TableCell className="text-center px-4 py-1.5 whitespace-nowrap border-r border-slate-200">
+                                  <span className="font-bold text-[10px] text-pink-600/80">
+                                    {monthlyStats.employeePlatformStats[emp.id]?.igPercent || 0}%
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-center px-4 py-1.5 whitespace-nowrap border-r border-slate-200">
+                                  <span className="font-bold text-[10px] text-blue-600/80">
+                                    {monthlyStats.employeePlatformStats[emp.id]?.fbPercent || 0}%
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-center px-4 py-1.5 whitespace-nowrap border-r border-slate-200">
+                                  <span className="font-bold text-[10px] text-slate-700/80">
+                                    {monthlyStats.employeePlatformStats[emp.id]?.tiktokPercent || 0}%
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-center px-4 py-1.5 whitespace-nowrap border-r border-slate-200">
                                   <div className="flex flex-col items-center justify-center">
-                                    <span className={cn("font-bold text-sm",
+                                    <span className={cn("font-bold text-xs",
                                       isTop ? "text-emerald-700" : isBottom ? "text-red-700" : "text-slate-600"
                                     )}>
                                       {Math.round(((monthlyStats.employeeTotals[emp.id] || 0) / monthlyStats.maxEngagements) * 100)}%
-                                    </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className={cn("border-l text-center px-4 py-3 whitespace-nowrap",
-                                  isTop ? "border-emerald-200" : isBottom ? "border-red-200" : "border-slate-200 bg-slate-50/30"
-                                )}>
-                                  <div className="flex flex-col items-center justify-center">
-                                    <span className={cn("font-black text-base",
-                                      isTop ? "text-emerald-600" : isBottom ? "text-red-600" : "text-slate-900"
-                                    )}>
-                                      {monthlyStats.employeeTotals[emp.id] || 0}
                                     </span>
                                   </div>
                                 </TableCell>
