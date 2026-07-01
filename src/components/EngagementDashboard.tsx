@@ -1425,11 +1425,11 @@ export default function EngagementDashboard() {
                                   disabled={isFetchingMeta}
                                   className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 rounded-lg"
                                 >
-                                  {isFetchingMeta ? 'Menarik...' : 'Tarik Postingan (15:00 H-1 s/d 15:00 Hari Ini)'}
+                                  {isFetchingMeta ? 'Menarik...' : `Tarik Postingan (15:00 ${new Date(new Date(selectedDate).getTime() - 24 * 60 * 60 * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} s/d 15:00 ${new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })})`}
                                 </Button>
                               </div>
                               <p className="text-[10px] text-rose-400/80 leading-relaxed mt-3">
-                                Sistem akan otomatis menarik semua komentar dari postingan Instagram yang diunggah antara jam 15:00 WIB kemarin hingga 15:00 WIB hari ini. Untuk Facebook, sistem hanya akan menarik link postingannya saja (karena batasan privasi API Meta).
+                                Sistem akan otomatis menarik semua komentar dari postingan Instagram yang diunggah antara jam 15:00 WIB {new Date(new Date(selectedDate).getTime() - 24 * 60 * 60 * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} hingga 15:00 WIB {new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}. Untuk Facebook, sistem hanya akan menarik link postingannya saja (karena batasan privasi API Meta).
                               </p>
                             </div>
 
@@ -1438,7 +1438,7 @@ export default function EngagementDashboard() {
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <LinkIcon size={16} className="text-slate-400" />
-                                  <h4 className="text-sm font-bold text-slate-700">Link Postingan Hari Ini</h4>
+                                  <h4 className="text-sm font-bold text-slate-700">Link Postingan {new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</h4>
                                 </div>
                               </div>
                               
