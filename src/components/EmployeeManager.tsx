@@ -325,8 +325,11 @@ export default function EmployeeManager() {
         'NIP': '198XXXXXXXXXXXXX', 
         'Bidang / Unit Kerja': 'Bidang Aspirasi', 
         'Username Instagram': '@username', 
+        'Username Instagram 2': '@username2',
         'Nama Profil Facebook': 'Nama Facebook',
-        'Nama Profil TikTok': 'Nama Akun TikTok'
+        'Nama Profil Facebook 2': 'Nama Facebook 2',
+        'Nama Profil TikTok': 'Nama Akun TikTok',
+        'Nama Profil TikTok 2': 'Nama Akun TikTok 2'
       }
     ];
 
@@ -351,8 +354,11 @@ export default function EmployeeManager() {
       'NIP': emp.nip,
       'Bidang / Unit Kerja': emp.bidang || '',
       'Username Instagram': emp.igUsername || '',
+      'Username Instagram 2': emp.igUsername2 || '',
       'Nama Profil Facebook': emp.fbName || '',
-      'Nama Profil TikTok': emp.tiktokName || ''
+      'Nama Profil Facebook 2': emp.fbName2 || '',
+      'Nama Profil TikTok': emp.tiktokName || '',
+      'Nama Profil TikTok 2': emp.tiktokName2 || ''
     }));
 
     const XLSX = await import('xlsx');
@@ -446,8 +452,11 @@ export default function EmployeeManager() {
           const nip = String(row.nip || row['NIP'] || row['Nomor Induk Pegawai'] || '').trim();
           const bidang = String(row.bidang || row['Bidang / Unit Kerja'] || row['Bidang'] || row['Unit Kerja'] || '').trim();
           const igUsername = String(row.igUsername || row['Username Instagram'] || row['Instagram'] || '').trim();
+          const igUsername2 = String(row.igUsername2 || row['Username Instagram 2'] || row['Instagram 2'] || '').trim();
           const fbName = String(row.fbName || row['Nama Profil Facebook'] || row['Facebook'] || '').trim();
+          const fbName2 = String(row.fbName2 || row['Nama Profil Facebook 2'] || row['Facebook 2'] || '').trim();
           const tiktokName = String(row.tiktokName || row['Nama Profil TikTok'] || row['TikTok'] || '').trim();
+          const tiktokName2 = String(row.tiktokName2 || row['Nama Profil TikTok 2'] || row['TikTok 2'] || '').trim();
 
           if (name && nip) {
             // Check if it exists in the current database
@@ -462,8 +471,11 @@ export default function EmployeeManager() {
                 nip: nip,
                 bidang: bidang,
                 igUsername: igUsername,
+                igUsername2: igUsername2,
                 fbName: fbName,
+                fbName2: fbName2,
                 tiktokName: tiktokName,
+                tiktokName2: tiktokName2,
                 updatedAt: serverTimestamp()
               }, { merge: true });
               updatedCount++;
@@ -475,8 +487,11 @@ export default function EmployeeManager() {
                 nip: nip,
                 bidang: bidang,
                 igUsername: igUsername,
+                igUsername2: igUsername2,
                 fbName: fbName,
+                fbName2: fbName2,
                 tiktokName: tiktokName,
+                tiktokName2: tiktokName2,
                 updatedAt: serverTimestamp()
               }, { merge: true });
             } else {
@@ -487,8 +502,11 @@ export default function EmployeeManager() {
                 nip: nip,
                 bidang: bidang,
                 igUsername: igUsername,
+                igUsername2: igUsername2,
                 fbName: fbName,
+                fbName2: fbName2,
                 tiktokName: tiktokName,
+                tiktokName2: tiktokName2,
                 createdAt: serverTimestamp()
               });
               newlyAddedNips.set(nip, newDocRef);
