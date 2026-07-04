@@ -28,9 +28,14 @@ export default function LoginScreen() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen-safe min-h-[100dvh] bg-transparent pb-safe">
-      <div className="p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center max-w-sm w-full mx-4 ">
-        <div className="w-16 h-16 bg-slate-900 rounded-xl flex items-center justify-center mx-auto mb-6">
+    <div className="flex flex-col items-center justify-center min-h-screen-safe min-h-[100dvh] pb-safe relative overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <div className="absolute inset-0 z-0">
+        <div className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-rose-200/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
+        <div className="absolute top-[20%] -right-[10%] w-[60%] h-[60%] bg-sky-200/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
+        <div className="absolute -bottom-[20%] left-[20%] w-[60%] h-[60%] bg-violet-200/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
+      </div>
+      <div className="p-8 bg-white/60 backdrop-blur-xl dark:bg-slate-900/80 rounded-2xl border border-white/50 dark:border-slate-800 text-center max-w-sm w-full mx-4 shadow-xl shadow-slate-200/50 dark:shadow-none relative z-10">
+        <div className="w-16 h-16 bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-slate-900/20">
           {appLogo ? (
             <img src={appLogo} alt="Logo" className="w-10 h-10 object-contain z-10" />
           ) : (
@@ -40,8 +45,8 @@ export default function LoginScreen() {
             </svg>
           )}
         </div>
-        <h1 className="text-2xl font-bold mb-2 text-slate-900">ReSo</h1>
-        <p className="text-slate-500 mb-8 text-sm">Rekap Engagement Sosmed. Silakan masuk untuk melanjutkan.</p>
+        <h1 className="text-2xl font-bold mb-2 text-slate-900 dark:text-white">ReSo</h1>
+        <p className="text-slate-500 dark:text-slate-400 mb-8 text-sm">Rekap Engagement Sosmed. Silakan masuk untuk melanjutkan.</p>
         
         {error && (
           <div className="mb-6 p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 text-xs rounded-lg border border-rose-100 dark:border-rose-900/50 font-medium">
@@ -52,7 +57,7 @@ export default function LoginScreen() {
         <Button 
           onClick={handleSignIn} 
           disabled={isLoggingIn}
-          className="w-full h-12 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition-all active:scale-[0.98] focus:outline-none focus:border-slate-900"
+          className="w-full h-12 bg-gradient-to-r from-slate-900 to-slate-800 hover:from-slate-800 hover:to-slate-700 text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.98] focus:outline-none border-none"
         >
           {isLoggingIn ? (
             <div className="flex items-center gap-2">

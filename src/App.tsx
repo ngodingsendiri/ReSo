@@ -38,8 +38,8 @@ function LoadingScreen() {
         transition={{ duration: 0.3, ease: "easeOut" }}
         className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col items-center w-full max-w-sm"
       >
-        <div className="w-20 h-20 bg-slate-900 rounded-xl flex items-center justify-center mb-8 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-slate-700/50 animate-ping opacity-20" />
+        <div className="w-20 h-20 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl flex items-center justify-center mb-8 relative overflow-hidden group shadow-xl shadow-slate-900/20">
+          <div className="absolute inset-0 bg-white/5 animate-pulse" />
           {logoUrl ? (
             <img src={logoUrl} alt="Logo" className="w-12 h-12 object-contain relative z-10" />
           ) : (

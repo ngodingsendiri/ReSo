@@ -636,7 +636,7 @@ export default function EmployeeManager() {
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Nama Lengkap</label>
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">Nama Lengkap</label>
                       <div className="relative group">
                         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-900 transition-colors">
                           <User size={14} />
@@ -645,12 +645,12 @@ export default function EmployeeManager() {
                           placeholder="Ahmad Subarjo" 
                           value={formData.name}
                           onChange={(e) => setFormData({...formData, name: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
                         />
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">NIP</label>
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">NIP</label>
                       <div className="relative group">
                         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-900 transition-colors">
                           <CreditCard size={14} />
@@ -659,12 +659,12 @@ export default function EmployeeManager() {
                           placeholder="18 digit NIP" 
                           value={formData.nip}
                           onChange={(e) => setFormData({...formData, nip: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
                         />
                       </div>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Bidang / Unit Kerja</label>
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">Bidang / Unit Kerja</label>
                       <div className="relative group">
                         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-900 transition-colors">
                           <Users size={14} />
@@ -673,13 +673,13 @@ export default function EmployeeManager() {
                           placeholder="Contoh: Bidang Aspirasi" 
                           value={formData.bidang}
                           onChange={(e) => setFormData({...formData, bidang: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
                         />
                       </div>
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Instagram</label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5 md:col-span-2 flex flex-col">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">Instagram</label>
+                      <div className={cn("grid gap-4", showIg2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
                         <div className="relative group">
                           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-pink-500 transition-colors">
                             <Instagram size={14} />
@@ -688,10 +688,10 @@ export default function EmployeeManager() {
                             placeholder="@username (Utama)" 
                             value={formData.igUsername}
                             onChange={(e) => setFormData({...formData, igUsername: e.target.value})}
-                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-pink-200"
                           />
                         </div>
-                        {showIg2 ? (
+                        {showIg2 && (
                           <div className="relative group">
                             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-pink-500 transition-colors">
                               <Instagram size={14} />
@@ -700,22 +700,23 @@ export default function EmployeeManager() {
                               placeholder="@username (Akun ke-2)" 
                               value={formData.igUsername2}
                               onChange={(e) => setFormData({...formData, igUsername2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-pink-200"
                             />
                             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowIg2(false); setFormData({...formData, igUsername2: ''}); }}>
                               <X size={14} />
                             </Button>
                           </div>
-                        ) : (
-                          <Button type="button" variant="outline" className="h-10 border-dashed border-slate-200 text-slate-500 hover:text-slate-900 rounded-xl justify-start px-4 text-xs" onClick={() => setShowIg2(true)}>
-                            <Plus size={14} className="mr-2" /> Tambah Akun Ke-2
-                          </Button>
                         )}
                       </div>
+                      {!showIg2 && (
+                        <button type="button" className="text-xs font-semibold text-slate-400 hover:text-slate-700 flex items-center gap-1.5 px-2 mt-2 w-max transition-colors" onClick={() => setShowIg2(true)}>
+                          <Plus size={14} /> Tambah Akun Ke-2
+                        </button>
+                      )}
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Facebook</label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5 md:col-span-2 flex flex-col">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">Facebook</label>
+                      <div className={cn("grid gap-4", showFb2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
                         <div className="relative group">
                           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
                             <Facebook size={14} />
@@ -724,10 +725,10 @@ export default function EmployeeManager() {
                             placeholder="Nama Profil FB (Utama)" 
                             value={formData.fbName}
                             onChange={(e) => setFormData({...formData, fbName: e.target.value})}
-                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-blue-200"
                           />
                         </div>
-                        {showFb2 ? (
+                        {showFb2 && (
                           <div className="relative group">
                             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
                               <Facebook size={14} />
@@ -736,54 +737,56 @@ export default function EmployeeManager() {
                               placeholder="Nama Profil FB (Akun ke-2)" 
                               value={formData.fbName2}
                               onChange={(e) => setFormData({...formData, fbName2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-blue-200"
                             />
                             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowFb2(false); setFormData({...formData, fbName2: ''}); }}>
                               <X size={14} />
                             </Button>
                           </div>
-                        ) : (
-                          <Button type="button" variant="outline" className="h-10 border-dashed border-slate-200 text-slate-500 hover:text-slate-900 rounded-xl justify-start px-4 text-xs" onClick={() => setShowFb2(true)}>
-                            <Plus size={14} className="mr-2" /> Tambah Akun Ke-2
-                          </Button>
                         )}
                       </div>
+                      {!showFb2 && (
+                        <button type="button" className="text-xs font-semibold text-slate-400 hover:text-slate-700 flex items-center gap-1.5 px-2 mt-2 w-max transition-colors" onClick={() => setShowFb2(true)}>
+                          <Plus size={14} /> Tambah Akun Ke-2
+                        </button>
+                      )}
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">TikTok</label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5 md:col-span-2 flex flex-col">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">TikTok</label>
+                      <div className={cn("grid gap-4", showTiktok2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
                         <div className="relative group">
-                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-black transition-colors">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-800 transition-colors">
                             <TiktokIcon size={14} />
                           </div>
                           <Input 
                             placeholder="Nama Profil TikTok (Utama)" 
                             value={formData.tiktokName}
                             onChange={(e) => setFormData({...formData, tiktokName: e.target.value})}
-                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
                           />
                         </div>
-                        {showTiktok2 ? (
+                        {showTiktok2 && (
                            <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-black transition-colors">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-800 transition-colors">
                               <TiktokIcon size={14} />
                             </div>
                             <Input 
                               placeholder="Nama Profil TikTok (Akun ke-2)" 
                               value={formData.tiktokName2}
                               onChange={(e) => setFormData({...formData, tiktokName2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm"
+                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
                             />
                             <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowTiktok2(false); setFormData({...formData, tiktokName2: ''}); }}>
                               <X size={14} />
                             </Button>
                           </div>
-                        ) : (
-                          <Button type="button" variant="outline" className="h-10 border-dashed border-slate-200 text-slate-500 hover:text-slate-900 rounded-xl justify-start px-4 text-xs" onClick={() => setShowTiktok2(true)}>
-                            <Plus size={14} className="mr-2" /> Tambah Akun Ke-2
-                          </Button>
                         )}
                       </div>
+                      {!showTiktok2 && (
+                        <button type="button" className="text-xs font-semibold text-slate-400 hover:text-slate-700 flex items-center gap-1.5 px-2 mt-2 w-max transition-colors" onClick={() => setShowTiktok2(true)}>
+                          <Plus size={14} /> Tambah Akun Ke-2
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-slate-50">

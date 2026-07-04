@@ -47,10 +47,10 @@ export const DashboardTab = ({
       <motion.div
         transition={{ ease: "easeOut", duration: 0.2 }}
       >
-        <Card className="h-full border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 relative group">
-          <div className="p-4 md:p-6 lg:p-8 relative z-10 flex flex-col h-full justify-between">
+        <Card className="h-full border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 relative group hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
+          <div className="p-6 relative z-10 flex flex-col h-full justify-between">
             <div className="flex justify-between items-start mb-6 md:mb-8">
-              <p className="font-bold text-[10px] md:text-xs text-slate-400 uppercase tracking-widest">{title}</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{title}</p>
               <div className={cn("p-2 md:p-3 rounded-xl border", colorMap[color])}>
                 {icon}
               </div>
