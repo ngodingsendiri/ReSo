@@ -25,7 +25,20 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        if (user.email && !ALLOWED_EMAILS.includes(user.email)) {
+        let isAllowed = user.email ? ALLOWED_EMAILS.includes(user.email) : false;
+
+        if (!isAllowed) {
+          try {
+            const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+            if (adminSnap.exists()) {
+              isAllowed = true;
+            }
+          } catch (err) {
+            console.error("Error checking dynamic admin:", err);
+          }
+        }
+
+        if (!isAllowed) {
           await signOut(auth);
           setError("can't access");
           setUser(null);

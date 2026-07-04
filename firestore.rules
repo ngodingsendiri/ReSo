@@ -30,13 +30,16 @@ service cloud.firestore {
     }
 
     function isAuthorized() {
-      // Only these 3 Google accounts have access
+      // Only these 3 Google accounts have access as a secure fallback
       let allowedEmails = [
         'ngerjaindiri@gmail.com',
         'sipencil@gmail.com',
         'abiemputra.asn@gmail.com'
       ];
-      return isSignedIn() && request.auth.token.email in allowedEmails;
+      return isSignedIn() && (
+        request.auth.token.email in allowedEmails ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
     }
 
     function isAdmin() {
@@ -93,6 +96,16 @@ service cloud.firestore {
       allow update: if isAuthorized() && request.auth.uid == userId && isValidUser(incoming()) && 
                        (!('role' in incoming()) || incoming().role == existing().role);
       allow delete: if isAdmin();
+    }
+
+    match /admins/{adminId} {
+      allow read: if isAuthorized();
+      allow create, update: if isAdmin() && isValidId(adminId) && 
+                            incoming().keys().hasAll(['email']) && 
+                            incoming().email is string && incoming().email.size() > 0 && incoming().email.size() < 100 &&
+                            (!('name' in incoming()) || (incoming().name is string && incoming().name.size() < 100)) &&
+                            (!('addedAt' in incoming()) || incoming().addedAt is timestamp);
+      allow delete: if isAdmin() && isValidId(adminId);
     }
 
     match /employees/{employeeId} {
