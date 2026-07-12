@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import "dotenv/config";
+import { matchEmployeesToEngagement, engagedIdsEqual } from "./src/lib/matching";
 
 // Error handling for the process
 process.on('unhandledRejection', (reason, promise) => {
@@ -21,7 +22,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
   
   // Basic health check
   app.get("/api/health", (req, res) => {
@@ -44,10 +45,10 @@ async function startServer() {
     console.error('Could not load firebase-applet-config.json', e);
   }
 
-  // Recalculate logic offloaded to backend
+  // Optional local-dev recalculate (production uses client-side; same matching module)
   app.post("/api/recalculate", async (req, res) => {
     try {
-      const { engagements, employees, mode } = req.body;
+      const { engagements, employees } = req.body;
       const authHeader = req.headers.authorization;
       const token = authHeader?.split('Bearer ')[1];
       
@@ -55,72 +56,18 @@ async function startServer() {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const isExactMatchInTarget = (nameMatch: string, targetText: string) => {
-        if (!targetText) return false;
-        const normalizedTarget = normalize(targetText);
-        return normalizedTarget.includes(nameMatch);
-      };
+      if (!Array.isArray(engagements) || !Array.isArray(employees)) {
+        return res.status(400).json({ error: "Invalid payload" });
+      }
 
       const updated = engagements.map((engagement: any) => {
-        const processEngagement = (rawText: string, platform: 'ig' | 'fb' | 'tiktok') => {
-          if (!rawText) return [];
-          const textLines = rawText.split('\n').filter(l => l.trim().length > 0);
-          const lowerInput = normalize(rawText);
-          const engagedIds: string[] = [];
+        const igEngagedIds = matchEmployeesToEngagement(engagement.igRawText || '', employees, 'ig');
+        const fbEngagedIds = matchEmployeesToEngagement(engagement.fbRawText || '', employees, 'fb');
+        const tiktokEngagedIds = matchEmployeesToEngagement(engagement.tiktokRawText || '', employees, 'tiktok');
 
-          employees.forEach((emp: any) => {
-            const nameMatch = normalize(emp.name);
-            const igMatch = emp.igUsername ? normalize(emp.igUsername.replace('@', '')) : '';
-            const igMatch2 = emp.igUsername2 ? normalize(emp.igUsername2.replace('@', '')) : '';
-            const fbMatch = emp.fbName ? normalize(emp.fbName) : '';
-            const fbMatch2 = emp.fbName2 ? normalize(emp.fbName2) : '';
-            const tiktokMatch = emp.tiktokName ? normalize(emp.tiktokName.replace('@', '')) : '';
-            const tiktokMatch2 = emp.tiktokName2 ? normalize(emp.tiktokName2.replace('@', '')) : '';
-            
-            let isMatch = false;
-
-            if (nameMatch && lowerInput.includes(nameMatch)) isMatch = true;
-            
-            if (platform === 'ig' && igMatch && lowerInput.includes(igMatch)) isMatch = true;
-            if (platform === 'ig' && igMatch2 && lowerInput.includes(igMatch2)) isMatch = true;
-            if (platform === 'fb' && fbMatch && lowerInput.includes(fbMatch)) isMatch = true;
-            if (platform === 'fb' && fbMatch2 && lowerInput.includes(fbMatch2)) isMatch = true;
-            if (platform === 'tiktok' && tiktokMatch && lowerInput.includes(tiktokMatch)) isMatch = true;
-            if (platform === 'tiktok' && tiktokMatch2 && lowerInput.includes(tiktokMatch2)) isMatch = true;
-
-            if (!isMatch) {
-              for (const line of textLines) {
-                if (isExactMatchInTarget(nameMatch, line)) {
-                  isMatch = true; break;
-                }
-                if (platform === 'ig') {
-                  if (igMatch && isExactMatchInTarget(igMatch, line)) { isMatch = true; break; }
-                  if (igMatch2 && isExactMatchInTarget(igMatch2, line)) { isMatch = true; break; }
-                }
-                if (platform === 'fb') {
-                  if (fbMatch && isExactMatchInTarget(fbMatch, line)) { isMatch = true; break; }
-                  if (fbMatch2 && isExactMatchInTarget(fbMatch2, line)) { isMatch = true; break; }
-                }
-                if (platform === 'tiktok') {
-                  if (tiktokMatch && isExactMatchInTarget(tiktokMatch, line)) { isMatch = true; break; }
-                  if (tiktokMatch2 && isExactMatchInTarget(tiktokMatch2, line)) { isMatch = true; break; }
-                }
-              }
-            }
-
-            if (isMatch) engagedIds.push(emp.id);
-          });
-          return engagedIds;
-        };
-
-        const igEngagedIds = processEngagement(engagement.igRawText || '', 'ig');
-        const fbEngagedIds = processEngagement(engagement.fbRawText || '', 'fb');
-        const tiktokEngagedIds = processEngagement(engagement.tiktokRawText || '', 'tiktok');
-
-        const igChanged = JSON.stringify(engagement.igEngagedEmployeeIds || []) !== JSON.stringify(igEngagedIds);
-        const fbChanged = JSON.stringify(engagement.fbEngagedEmployeeIds || []) !== JSON.stringify(fbEngagedIds);
-        const tiktokChanged = JSON.stringify(engagement.tiktokEngagedEmployeeIds || []) !== JSON.stringify(tiktokEngagedIds);
+        const igChanged = !engagedIdsEqual(engagement.igEngagedEmployeeIds || [], igEngagedIds);
+        const fbChanged = !engagedIdsEqual(engagement.fbEngagedEmployeeIds || [], fbEngagedIds);
+        const tiktokChanged = !engagedIdsEqual(engagement.tiktokEngagedEmployeeIds || [], tiktokEngagedIds);
 
         return {
           id: engagement.id,

@@ -13,18 +13,35 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
+  clearError: () => void;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true, error: null });
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  error: null,
+  clearError: () => {},
+});
 
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const clearError = () => setError(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        // Align with Firestore rules: email must be verified
+        if (!user.emailVerified) {
+          // Set error BEFORE signOut — signOut retriggers this listener with user=null
+          setError('Email Google belum terverifikasi. Verifikasi email lalu coba lagi.');
+          setUser(null);
+          setLoading(false);
+          await signOut(auth);
+          return;
+        }
+
         let isAllowed = user.email ? ALLOWED_EMAILS.includes(user.email) : false;
 
         if (!isAllowed) {
@@ -39,16 +56,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
 
         if (!isAllowed) {
-          await signOut(auth);
-          setError("can't access");
+          setError('Akses ditolak. Akun Google Anda tidak terdaftar sebagai admin ReSo.');
           setUser(null);
           setLoading(false);
+          await signOut(auth);
           return;
         }
 
         setUser(user);
         setError(null);
-        setLoading(false); // Make sure app proceeds
+        setLoading(false);
 
         // Sync user to Firestore lazily
         getDoc(doc(db, 'users', user.uid)).then(async (userSnap) => {
@@ -59,7 +76,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               email: user.email,
               displayName: user.displayName,
               photoURL: user.photoURL,
-              role: 'user', // Default role
+              role: 'user',
               createdAt: serverTimestamp(),
               lastLogin: serverTimestamp()
             }).catch(console.error);
@@ -75,7 +92,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         });
       } else {
         setUser(null);
-        setError(null);
+        // Do NOT clear error here — access-denied message must survive signOut callback
         setLoading(false);
       }
     });
@@ -83,7 +100,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, error }}>
+    <AuthContext.Provider value={{ user, loading, error, clearError }}>
       {children}
     </AuthContext.Provider>
   );

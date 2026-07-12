@@ -9,7 +9,11 @@
         "nip": { "type": "string", "description": "Employee ID number" },
         "bidang": { "type": "string", "description": "Department or field" },
         "igUsername": { "type": "string", "description": "Instagram username" },
+        "igUsername2": { "type": "string", "description": "Secondary Instagram username" },
         "fbName": { "type": "string", "description": "Facebook account name" },
+        "fbName2": { "type": "string", "description": "Secondary Facebook account name" },
+        "tiktokName": { "type": "string", "description": "TikTok account name" },
+        "tiktokName2": { "type": "string", "description": "Secondary TikTok account name" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -23,13 +27,19 @@
         "date": { "type": "string", "format": "date" },
         "igRawText": { "type": "string" },
         "fbRawText": { "type": "string" },
+        "tiktokRawText": { "type": "string" },
         "igLinks": { "type": "array", "items": { "type": "string" } },
         "fbLinks": { "type": "array", "items": { "type": "string" } },
-        "igEngagedEmployeeIds": { 
+        "tiktokLinks": { "type": "array", "items": { "type": "string" } },
+        "igEngagedEmployeeIds": {
           "type": "array",
           "items": { "type": "string" }
         },
-        "fbEngagedEmployeeIds": { 
+        "fbEngagedEmployeeIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tiktokEngagedEmployeeIds": {
           "type": "array",
           "items": { "type": "string" }
         },
@@ -73,7 +83,7 @@
     },
     "/settings/{settingId}": {
       "schema": "SystemSetting",
-      "description": "Global settings like Meta API Token"
+      "description": "Global settings like Meta API Token and app logo"
     }
   }
 }

@@ -1,17 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Settings, RefreshCw, Upload, Image as ImageIcon, Download, Bell, Zap } from 'lucide-react';
+import { motion } from 'motion/react';
+import { Settings, RefreshCw, Upload, Image as ImageIcon, Download, KeyRound } from 'lucide-react';
 import { Button } from '../ui/button';
 import { db } from '../../lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { toast } from 'sonner';
+import { isIosDevice, isStandaloneDisplay } from '../../lib/pwa';
 
 interface SettingsTabProps {
   recalculateConfig: { mode: 'last_day' | 'last_week' };
   setRecalculateConfig: (config: { mode: 'last_day' | 'last_week' }) => void;
   handleRecalculateAll: () => void;
   isLoading: boolean;
-  containerVariants: any;
+  containerVariants: import('motion/react').Variants;
+  metaToken: string;
+  setMetaToken: (v: string) => void;
+  handleSaveMetaToken: () => void;
+  isSavingToken: boolean;
+}
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
@@ -19,11 +29,15 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   setRecalculateConfig,
   handleRecalculateAll,
   isLoading,
-  containerVariants
+  containerVariants,
+  metaToken,
+  setMetaToken,
+  handleSaveMetaToken,
+  isSavingToken,
 }) => {
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null);
@@ -41,18 +55,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     };
     fetchLogo();
 
-    // Listen for PWA install prompt
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e);
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
       setIsInstallable(true);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    
-    // Attempt to find the Service Worker registration
+
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistration().then(reg => {
+      navigator.serviceWorker.getRegistration().then((reg) => {
         if (reg) setSwRegistration(reg);
       });
     }
@@ -63,15 +75,23 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   }, []);
 
   const handleInstallClick = async () => {
+    if (isStandaloneDisplay()) {
+      toast.success('ReSo sudah terpasang sebagai aplikasi.');
+      return;
+    }
     if (!deferredPrompt) {
-      toast.warning('Browser tidak mendukung instalasi atau aplikasi sudah diinstal.');
+      toast.info(
+        isIosDevice()
+          ? 'Di iPhone/iPad: ketuk Bagikan (□↑) lalu “Tambah ke Layar Utama”.'
+          : 'Prompt instal tidak tersedia. Aplikasi mungkin sudah terpasang, atau buka lewat Chrome/Edge (HTTPS).'
+      );
       return;
     }
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') {
       setIsInstallable(false);
-      toast.success('Pemasangan PWA berhasil dimulai!');
+      toast.success('Instalasi dimulai');
     }
     setDeferredPrompt(null);
   };
@@ -81,14 +101,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     if ('serviceWorker' in navigator && swRegistration) {
       try {
         await swRegistration.update();
-        toast.success('Sistem memperbarui background Worker. App siap digunakan di versi terbaru.');
-      } catch (e) {
+        toast.success('Pembaruan dicek. Jika ada versi baru, notifikasi “Muat ulang” akan muncul.');
+      } catch {
         toast.error('Gagal memeriksa pembaruan.');
       }
     } else {
-       toast.info('Pembaruan terjadi secara otomatis pada PWA ini. Reload halaman untuk efek maksimal.');
+      toast.info('Muat ulang halaman untuk memastikan versi terbaru.');
     }
-    setTimeout(() => setIsCheckingUpdate(false), 2000);
+    setTimeout(() => setIsCheckingUpdate(false), 1500);
   };
 
   const forceReloadForUpdate = () => {
@@ -100,7 +120,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      toast.error('Gagal: Ukuran file maksimal 2MB');
+      toast.error('Ukuran file maksimal 2MB');
       return;
     }
 
@@ -111,12 +131,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       try {
         await setDoc(doc(db, 'settings', 'appLogo'), {
           value: base64String,
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
         });
         setLogoBase64(base64String);
-        toast.success('Logo berhasil diunggah! Segarkan halaman untuk melihat perubahan pada favicon/PWA.');
-      } catch (error) {
-        toast.error('Gagal menyimpan logo ke database');
+        toast.success('Logo disimpan. Segarkan halaman untuk favicon/PWA.');
+      } catch {
+        toast.error('Gagal menyimpan logo');
       } finally {
         setIsUploading(false);
       }
@@ -124,153 +144,212 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const SettingRow = ({
+    icon,
+    iconClass,
+    title,
+    desc,
+    children,
+  }: {
+    icon: React.ReactNode;
+    iconClass: string;
+    title: string;
+    desc: string;
+    children: React.ReactNode;
+  }) => (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 gap-4">
+      <div className="flex items-start sm:items-center gap-3 min-w-0">
+        <div
+          className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center border ${iconClass}`}
+        >
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-sm text-slate-900">{title}</h3>
+          <p className="text-xs text-slate-500 leading-snug">{desc}</p>
+        </div>
+      </div>
+      <div className="shrink-0 w-full sm:w-auto">{children}</div>
+    </div>
+  );
+
   return (
-    <motion.div 
+    <motion.div
       key="settings"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      exit="hidden"
-      className="space-y-8"
+      exit={{ opacity: 0 }}
+      className="space-y-6"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-10 border border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center border border-slate-200 dark:border-slate-700">
-            <Settings className="text-slate-900 dark:text-slate-50" size={20} />
+      <div className="bg-white rounded-xl p-5 sm:p-8 border border-slate-200">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center border border-slate-200">
+            <Settings className="text-slate-900" size={18} />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50">Pengaturan Sistem</h2>
-            <p className="text-slate-500 dark:text-slate-400 text-xs">Konfigurasi PWA, Kalkulasi, dan Tampilan.</p>
+            <h2 className="text-lg font-bold text-slate-900">Pengaturan</h2>
+            <p className="text-slate-500 text-xs">PWA, logo, Meta API, dan kalkulasi ulang</p>
           </div>
         </div>
 
         <div className="flex flex-col gap-3">
-          
-          {/* Instal Aplikasi */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 gap-4">
-            <div className="flex items-start sm:items-center gap-4">
-              <div className="w-10 h-10 shrink-0 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-100 dark:border-blue-900/50">
-                <Download size={20} />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-slate-900 dark:text-slate-50">Instal Aplikasi (PWA)</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Instal ke Layar Utama perangkat Anda.</p>
-              </div>
-            </div>
-            <Button 
-              onClick={handleInstallClick} 
-              disabled={!isInstallable}
-              variant={isInstallable ? "default" : "outline"}
+          <SettingRow
+            icon={<Download size={18} />}
+            iconClass="bg-sky-50 text-sky-600 border-sky-100"
+            title="Instal Aplikasi (PWA)"
+            desc={
+              isStandaloneDisplay()
+                ? 'ReSo sedang berjalan dalam mode terpasang.'
+                : isInstallable
+                  ? 'Pasang ke layar utama perangkat.'
+                  : 'Chrome/Edge: tombol muncul jika memenuhi syarat. iPhone: Bagikan → Tambah ke Layar Utama.'
+            }
+          >
+            <Button
+              onClick={handleInstallClick}
               size="sm"
-              className="sm:w-auto w-full font-bold shrink-0"
+              className={`w-full sm:w-auto font-bold h-10 rounded-xl ${isInstallable || isStandaloneDisplay() ? 'bg-slate-900 text-white' : ''}`}
+              variant={isInstallable || isStandaloneDisplay() ? 'default' : 'outline'}
             >
-              {isInstallable ? 'Instal Sekarang' : 'Tidak Didukung'}
+              {isStandaloneDisplay()
+                ? 'Sudah terpasang'
+                : isInstallable
+                  ? 'Instal Sekarang'
+                  : 'Petunjuk instal'}
             </Button>
-          </div>
+          </SettingRow>
 
-          {/* Pembaruan Sistem */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 gap-4">
-            <div className="flex items-start sm:items-center gap-4">
-              <div className="w-10 h-10 shrink-0 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-100 dark:border-emerald-900/50">
-                <RefreshCw size={20} />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-slate-900 dark:text-slate-50">Pembaruan Sistem</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Periksa pembaruan versi PWA terbaru.</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0 sm:w-auto w-full">
-              <Button 
-                onClick={handleCheckUpdate} 
+          <SettingRow
+            icon={<RefreshCw size={18} />}
+            iconClass="bg-emerald-50 text-emerald-600 border-emerald-100"
+            title="Pembaruan"
+            desc="Cek versi PWA terbaru."
+          >
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button
+                onClick={handleCheckUpdate}
                 disabled={isCheckingUpdate}
                 variant="outline"
                 size="sm"
-                className="flex-1 sm:flex-none font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 border-slate-200"
+                className="flex-1 sm:flex-none font-bold h-10 rounded-xl"
               >
-                {isCheckingUpdate ? 'Memeriksa...' : 'Cek'}
+                {isCheckingUpdate ? 'Memeriksa…' : 'Cek'}
               </Button>
-              <Button 
-                onClick={forceReloadForUpdate} 
-                variant="default"
+              <Button
+                onClick={forceReloadForUpdate}
                 size="sm"
-                className="flex-1 sm:flex-none font-bold bg-slate-900 text-white"
+                className="flex-1 sm:flex-none font-bold h-10 rounded-xl bg-slate-900 text-white"
               >
                 Muat Ulang
               </Button>
             </div>
-          </div>
+          </SettingRow>
 
-          {/* Logo Aplikasi */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 gap-4">
-            <div className="flex items-start sm:items-center gap-4">
-              <div className="w-10 h-10 shrink-0 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-100 dark:border-indigo-900/50">
-                <ImageIcon size={20} />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-slate-900 dark:text-slate-50">Logo Aplikasi</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Ubah ikon utama aplikasi (Format 1:1).</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 shrink-0 sm:w-auto w-full">
-              {logoBase64 && <img src={logoBase64} alt="App Logo" className="w-8 h-8 rounded-md object-contain border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5" />}
-              <div className="relative flex-1 sm:flex-none">
-                <input 
-                  type="file" 
+          <SettingRow
+            icon={<ImageIcon size={18} />}
+            iconClass="bg-indigo-50 text-indigo-600 border-indigo-100"
+            title="Logo Aplikasi"
+            desc="Ikon utama (disarankan 1:1, max 2MB)."
+          >
+            <div className="flex items-center gap-2 justify-end">
+              {logoBase64 && (
+                <img
+                  src={logoBase64}
+                  alt="Logo"
+                  className="w-8 h-8 rounded-md object-contain border border-slate-200 bg-white p-0.5"
+                />
+              )}
+              <div className="relative">
+                <input
+                  type="file"
                   accept="image/png, image/jpeg, image/svg+xml"
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   onChange={handleLogoUpload}
                   disabled={isUploading}
                 />
-                <Button 
-                  variant="outline" 
+                <Button variant="outline" size="sm" disabled={isUploading} className="font-bold h-10 rounded-xl">
+                  <Upload size={14} className="mr-1.5" />
+                  {isUploading ? 'Mengunggah…' : 'Pilih'}
+                </Button>
+              </div>
+            </div>
+          </SettingRow>
+
+          {/* Meta API Token */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 shrink-0 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center">
+                <KeyRound size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-sm text-slate-900">Token Meta API</h3>
+                <p className="text-xs text-slate-500 leading-snug mb-3">
+                  Dipakai untuk tarik komentar IG / link post di Input Rekap. Simpan di sini, bukan di form harian.
+                </p>
+                <textarea
+                  value={metaToken}
+                  onChange={(e) => setMetaToken(e.target.value)}
+                  placeholder="Tempel access token Meta di sini…"
+                  className="w-full h-20 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
+                />
+                <Button
+                  onClick={handleSaveMetaToken}
+                  disabled={isSavingToken || !metaToken.trim()}
                   size="sm"
-                  disabled={isUploading}
-                  className="w-full sm:w-auto bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-50 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold"
+                  className="mt-2 font-bold h-10 rounded-xl bg-slate-900 text-white w-full sm:w-auto"
                 >
-                  <Upload size={14} className="mr-2" />
-                  {isUploading ? 'Mengunggah...' : 'Pilih Logo'}
+                  {isSavingToken ? 'Menyimpan…' : 'Simpan Token'}
                 </Button>
               </div>
             </div>
           </div>
 
-          {/* Kalkulasi Ulang */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 gap-4">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 shrink-0 rounded-lg bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 flex items-center justify-center border border-orange-100 dark:border-orange-900/50">
-                <RefreshCw size={20} />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-slate-900 dark:text-slate-50">Kalkulasi Ulang Data</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                  Perbaiki rekap jika terjadi perubahan data yang tidak tersinkron.
-                </p>
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
-                    <input type="radio" value="last_day" checked={recalculateConfig.mode === 'last_day'} onChange={() => setRecalculateConfig({ mode: 'last_day' })} className="accent-slate-900 w-3.5 h-3.5" />
-                    1 Hari Terakhir
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
-                    <input type="radio" value="last_week" checked={recalculateConfig.mode === 'last_week'} onChange={() => setRecalculateConfig({ mode: 'last_week' })} className="accent-slate-900 w-3.5 h-3.5" />
-                    1 Minggu Terakhir
-                  </label>
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 shrink-0 rounded-lg bg-orange-50 text-orange-600 border border-orange-100 flex items-center justify-center">
+                  <RefreshCw size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Kalkulasi Ulang</h3>
+                  <p className="text-xs text-slate-500 mb-3 leading-snug">
+                    Cocokkan ulang raw text rekap ke master pegawai. Berjalan di perangkat Anda.
+                  </p>
+                  <div className="flex flex-wrap gap-4">
+                    <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={recalculateConfig.mode === 'last_day'}
+                        onChange={() => setRecalculateConfig({ mode: 'last_day' })}
+                        className="accent-slate-900 w-3.5 h-3.5"
+                      />
+                      1 hari terakhir
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={recalculateConfig.mode === 'last_week'}
+                        onChange={() => setRecalculateConfig({ mode: 'last_week' })}
+                        className="accent-slate-900 w-3.5 h-3.5"
+                      />
+                      1 minggu terakhir
+                    </label>
+                  </div>
                 </div>
               </div>
+              <Button
+                onClick={handleRecalculateAll}
+                disabled={isLoading}
+                size="sm"
+                className="w-full sm:w-auto bg-slate-900 text-white font-bold h-10 rounded-xl shrink-0"
+              >
+                {isLoading ? 'Memproses…' : 'Jalankan'}
+              </Button>
             </div>
-            <Button
-              onClick={handleRecalculateAll}
-              disabled={isLoading}
-              size="sm"
-              className="sm:w-auto w-full bg-slate-900 hover:bg-slate-800 text-white font-bold shrink-0 mt-2 sm:mt-0"
-            >
-              {isLoading ? 'Memproses...' : 'Kalkulasi Ulang'}
-            </Button>
           </div>
-          
         </div>
       </div>
     </motion.div>
   );
 };
-
-

@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Employee } from '../types';
 import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
-import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Trash2, Plus, UserPlus, Save, X, Download, Upload, FileSpreadsheet, Users, Instagram, Facebook, User, CreditCard, UserCircle, Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
 import { toast } from 'sonner';
 import { useAuth } from './FirebaseProvider';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { cn, getBidangColor } from '@/lib/utils';
 import { auth } from '../lib/firebase';
 
@@ -78,7 +77,6 @@ const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employe
         <div className="flex items-center gap-3">
           <motion.div 
             className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 font-mono font-bold text-[10px]"
-            whileHover={{ scale: 1.1, rotate: 5 }}
           >
             {index + 1}
           </motion.div>
@@ -148,8 +146,6 @@ const containerVariants = {
     }
   }
 };
-
-import { Variants } from 'motion/react';
 
 const itemVariants: Variants = {
   hidden: { opacity: 0, y: 15 },
@@ -239,16 +235,28 @@ export default function EmployeeManager() {
       return;
     }
 
+    const nipTaken = employees.some(
+      (emp) => emp.nip === formData.nip.trim() && emp.id !== editingId
+    );
+    if (nipTaken) {
+      toast.error("NIP sudah terdaftar pada pegawai lain");
+      return;
+    }
+
     try {
       if (editingId) {
         await updateDoc(doc(db, 'employees', editingId), {
           ...formData,
+          name: formData.name.trim(),
+          nip: formData.nip.trim(),
           updatedAt: serverTimestamp()
         });
         toast.success("Data pegawai diperbarui");
       } else {
         await addDoc(collection(db, 'employees'), {
           ...formData,
+          name: formData.name.trim(),
+          nip: formData.nip.trim(),
           createdAt: serverTimestamp()
         });
         toast.success("Pegawai ditambahkan");
@@ -430,8 +438,6 @@ export default function EmployeeManager() {
     setIsUploading(true);
     
     try {
-      const { writeBatch } = await import('firebase/firestore');
-      
       // Split into chunks of 500 (Firestore batch limit)
       const chunks = [];
       for (let i = 0; i < data.length; i += 500) {
@@ -459,6 +465,16 @@ export default function EmployeeManager() {
           const tiktokName2 = String(row.tiktokName2 || row['Nama Profil TikTok 2'] || row['TikTok 2'] || '').trim();
 
           if (name && nip) {
+            // Optional fields: on update, skip empty so import partial tidak mengosongkan handle yang sudah ada
+            const optionalFields: Record<string, string> = {};
+            if (bidang) optionalFields.bidang = bidang;
+            if (igUsername) optionalFields.igUsername = igUsername;
+            if (igUsername2) optionalFields.igUsername2 = igUsername2;
+            if (fbName) optionalFields.fbName = fbName;
+            if (fbName2) optionalFields.fbName2 = fbName2;
+            if (tiktokName) optionalFields.tiktokName = tiktokName;
+            if (tiktokName2) optionalFields.tiktokName2 = tiktokName2;
+
             // Check if it exists in the current database
             const existingEmployee = employees.find(
               emp => emp.nip === nip || emp.name.toLowerCase() === name.toLowerCase()
@@ -467,46 +483,32 @@ export default function EmployeeManager() {
             if (existingEmployee) {
               const docRef = doc(db, 'employees', existingEmployee.id);
               batch.set(docRef, {
-                name: name,
-                nip: nip,
-                bidang: bidang,
-                igUsername: igUsername,
-                igUsername2: igUsername2,
-                fbName: fbName,
-                fbName2: fbName2,
-                tiktokName: tiktokName,
-                tiktokName2: tiktokName2,
+                name,
+                nip,
+                ...optionalFields,
                 updatedAt: serverTimestamp()
               }, { merge: true });
               updatedCount++;
             } else if (newlyAddedNips.has(nip)) {
-              // It's a duplicate in the same file without being in the DB yet, update the new doc reference
               const newDocRef = newlyAddedNips.get(nip);
               batch.set(newDocRef, {
-                name: name,
-                nip: nip,
-                bidang: bidang,
-                igUsername: igUsername,
-                igUsername2: igUsername2,
-                fbName: fbName,
-                fbName2: fbName2,
-                tiktokName: tiktokName,
-                tiktokName2: tiktokName2,
+                name,
+                nip,
+                ...optionalFields,
                 updatedAt: serverTimestamp()
               }, { merge: true });
             } else {
-              // Completely new employee
               const newDocRef = doc(employeesRef);
               batch.set(newDocRef, {
-                name: name,
-                nip: nip,
-                bidang: bidang,
-                igUsername: igUsername,
-                igUsername2: igUsername2,
-                fbName: fbName,
-                fbName2: fbName2,
-                tiktokName: tiktokName,
-                tiktokName2: tiktokName2,
+                name,
+                nip,
+                bidang: bidang || '',
+                igUsername: igUsername || '',
+                igUsername2: igUsername2 || '',
+                fbName: fbName || '',
+                fbName2: fbName2 || '',
+                tiktokName: tiktokName || '',
+                tiktokName2: tiktokName2 || '',
                 createdAt: serverTimestamp()
               });
               newlyAddedNips.set(nip, newDocRef);
@@ -518,7 +520,6 @@ export default function EmployeeManager() {
         }
 
         if (chunkCount > 0) {
-          console.log(`Committing batch chunk with ${chunkCount} operations...`);
           await batch.commit();
         }
       }
@@ -538,7 +539,7 @@ export default function EmployeeManager() {
 
   return (
     <div className="space-y-6 md:space-y-8">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-xl-sm border border-slate-200">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-xl border border-slate-200">
         <div className="lg:hidden space-y-0.5">
           <h2 className="text-xl font-bold tracking-tight text-slate-900">Database Pegawai</h2>
           <p className="text-slate-500 text-xs">Kelola data pegawai untuk monitoring engagement kolektif</p>
@@ -580,7 +581,7 @@ export default function EmployeeManager() {
                 )}
               >
                 <Upload size={14} className="text-rose-600" />
-                {isUploading ? 'Uploading...' : 'Impor'}
+                {isUploading ? 'Mengunggah…' : 'Impor'}
               </label>
             </div>
             {!isAdding && (
@@ -964,40 +965,40 @@ export default function EmployeeManager() {
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deleteConfirmId && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[2px]"
+            onClick={cancelDelete}
+            role="presentation"
+          >
             <motion.div
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={{ ease: "easeOut", duration: 0.2 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-xl border border-transparent dark:border-slate-800 overflow-hidden shadow-2xl"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ ease: "easeOut", duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-sm rounded-2xl border border-slate-200 overflow-hidden shadow-xl"
             >
-              <div className="p-8 text-center space-y-4">
-                <motion.div 
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.1, ease: "easeOut" }}
-                  className="w-20 h-20 bg-rose-50 dark:bg-rose-950/40 rounded-xl flex items-center justify-center mx-auto mb-2 border border-rose-100 dark:border-rose-900/50 rotate-3"
-                >
-                  <Trash2 size={32} className="text-rose-600 dark:text-rose-400" />
-                </motion.div>
-                <h3 className="text-xl font-black text-slate-900 dark:text-slate-50 tracking-tight">Hapus Pegawai?</h3>
-                <p className="text-xs font-medium text-slate-400 leading-relaxed px-4">
-                  Tindakan ini tidak dapat dibatalkan. Data pegawai akan dihapus secara permanen dari sistem.
+              <div className="p-6 text-center space-y-3">
+                <div className="w-14 h-14 bg-rose-50 rounded-xl flex items-center justify-center mx-auto border border-rose-100">
+                  <Trash2 size={24} className="text-rose-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 tracking-tight">Hapus pegawai?</h3>
+                <p className="text-xs font-medium text-slate-500 leading-relaxed px-2">
+                  Tindakan ini tidak bisa dibatalkan. Data pegawai dihapus permanen dari sistem.
                 </p>
               </div>
-              <div className="p-5 bg-slate-50/50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-2">
                 <Button 
                   variant="outline" 
                   onClick={cancelDelete} 
-                  className="flex-1 font-bold text-xs h-12 active:scale-[0.98] transition-all"
+                  className="flex-1 font-bold text-xs h-11 rounded-xl"
                 >
                   Batal
                 </Button>
                 <Button 
                   onClick={executeDelete} 
                   variant="destructive"
-                  className="flex-1 font-bold text-xs h-12 active:scale-[0.98] transition-all border-none"
+                  className="flex-1 font-bold text-xs h-11 rounded-xl border-none"
                 >
                   Hapus
                 </Button>

@@ -1,17 +1,6 @@
 // ===============================================================
-// Assumed Data Model
-// ===============================================================
-//
-// Collection: employees
-// Document ID: auto-generated
-// Fields:
-//   - name: string (required) - Full name
-//   - nip: string (required) - Employee ID
-//   - igUsername: string (optional) - Instagram handle
-//   - fbName: string (optional) - Facebook name
-//   - createdAt: timestamp - Creation time
-//   - updatedAt: timestamp - Last update time
-//
+// ReSo Firestore Security Rules
+// Align with src/types.ts (Employee dual accounts + TikTok fields)
 // ===============================================================
 
 rules_version = '2';
@@ -25,12 +14,10 @@ service cloud.firestore {
 
     // 1. Primitive Helpers
     function isSignedIn() {
-      // Must be logged in AND email must be verified to prevent spoofing
       return request.auth != null && request.auth.token.email_verified == true;
     }
 
     function isAuthorized() {
-      // Only these 3 Google accounts have access as a secure fallback
       let allowedEmails = [
         'ngerjaindiri@gmail.com',
         'sipencil@gmail.com',
@@ -47,12 +34,29 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      // ID Poisoning Guard: prevent massive ID attacks
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
+
+    function optionalString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function optionalStringList(data, key, maxItems, maxItemLen) {
+      return !(key in data) || (
+        data[key] is list &&
+        data[key].size() <= maxItems
+      );
+    }
+
+    function optionalIdList(data, key) {
+      return !(key in data) || (
+        data[key] is list &&
+        data[key].size() <= 500
+      );
+    }
 
     // 2. Validation Blueprints
 
@@ -64,22 +68,32 @@ service cloud.firestore {
       return data.keys().hasAll(['name', 'nip']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.nip is string && data.nip.size() > 0 && data.nip.size() < 50 &&
-             (!('bidang' in data) || (data.bidang is string && data.bidang.size() <= 100)) &&
-             (!('igUsername' in data) || (data.igUsername is string && data.igUsername.size() <= 50)) &&
-             (!('fbName' in data) || (data.fbName is string && data.fbName.size() <= 100)) &&
+             optionalString(data, 'bidang', 100) &&
+             optionalString(data, 'igUsername', 50) &&
+             optionalString(data, 'igUsername2', 50) &&
+             optionalString(data, 'fbName', 100) &&
+             optionalString(data, 'fbName2', 100) &&
+             optionalString(data, 'tiktokName', 100) &&
+             optionalString(data, 'tiktokName2', 100) &&
              (!('createdAt' in data) || data.createdAt is timestamp) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
+    // Raw text limit raised for large staff lists (still bounded)
     function isValidDailyEngagement(data) {
       return data.keys().hasAll(['date']) &&
              data.date is string && data.date.size() == 10 &&
-             (!('igRawText' in data) || (data.igRawText is string && data.igRawText.size() <= 10000)) &&
-             (!('fbRawText' in data) || (data.fbRawText is string && data.fbRawText.size() <= 10000)) &&
-             (!('igLinks' in data) || (data.igLinks is list && data.igLinks.size() <= 100)) &&
-             (!('fbLinks' in data) || (data.fbLinks is list && data.fbLinks.size() <= 100)) &&
-             (!('igEngagedEmployeeIds' in data) || (data.igEngagedEmployeeIds is list && data.igEngagedEmployeeIds.size() <= 500)) &&
-             (!('fbEngagedEmployeeIds' in data) || (data.fbEngagedEmployeeIds is list && data.fbEngagedEmployeeIds.size() <= 500)) &&
+             data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             optionalString(data, 'igRawText', 50000) &&
+
+             optionalString(data, 'fbRawText', 50000) &&
+             optionalString(data, 'tiktokRawText', 50000) &&
+             optionalStringList(data, 'igLinks', 100, 2000) &&
+             optionalStringList(data, 'fbLinks', 100, 2000) &&
+             optionalStringList(data, 'tiktokLinks', 100, 2000) &&
+             optionalIdList(data, 'igEngagedEmployeeIds') &&
+             optionalIdList(data, 'fbEngagedEmployeeIds') &&
+             optionalIdList(data, 'tiktokEngagedEmployeeIds') &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
     

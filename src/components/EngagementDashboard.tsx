@@ -2,12 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, 
   PlusCircle, 
-  Download,
-  Trash2,
-  BarChart3,
-  Edit,
   Users2,
-  CheckCircle2,
   XCircle,
   X,
   Calendar as CalendarIcon,
@@ -21,8 +16,6 @@ import {
   ThumbsUp,
   FileText,
   Image as ImageIcon,
-  TrendingUp,
-  Activity,
   Menu,
   Link as LinkIcon,
   RefreshCw,
@@ -34,22 +27,17 @@ import {
 import { TiktokIcon } from './icons/TiktokIcon';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
-import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { ScrollArea } from './ui/scroll-area';
-import { Separator } from './ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Toaster } from './ui/sonner';
 import { toast } from 'sonner';
 import { DailyEngagement, Employee } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
-import { db, signIn, logout, auth } from '../lib/firebase';
-import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, limit, writeBatch, where } from 'firebase/firestore';
+import { db, logout } from '../lib/firebase';
+import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, writeBatch, where } from 'firebase/firestore';
 import { cn, getBidangColor } from '@/lib/utils';
-import { ErrorBoundary } from './ErrorBoundary';
+import { getLocalISODate, parseLocalISODate, addLocalDays } from '../lib/date';
+import { matchEmployeesToEngagement, engagedIdsEqual, mergeUniqueLines } from '../lib/matching';
 
 import { DashboardTab } from './tabs/DashboardTab';
 import { SettingsTab } from './tabs/SettingsTab';
@@ -57,34 +45,37 @@ import { SettingsTab } from './tabs/SettingsTab';
 const EngagementChart = React.lazy(() => import('./EngagementChart'));
 const EmployeeManager = React.lazy(() => import('./EmployeeManager'));
 
-const getLocalISODate = (date: Date) => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
 const containerVariants: import('motion/react').Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.05
+      staggerChildren: 0.04,
+      delayChildren: 0.02
     }
   }
 };
 
 const itemVariants: import('motion/react').Variants = {
-  hidden: { opacity: 0, y: 10 },
+  hidden: { opacity: 0, y: 6 },
   visible: { 
     opacity: 1, 
     y: 0,
     transition: {
       type: "tween",
-      ease: "easeOut", duration: 0.2
+      ease: "easeOut", duration: 0.18
     }
   }
+};
+
+const TAB_LABELS: Record<string, string> = {
+  dashboard: 'Beranda',
+  overview: 'Input Rekap',
+  'daily-report': 'Laporan Harian',
+  reports: 'Laporan Mingguan',
+  'monthly-reports': 'Laporan Bulanan',
+  employees: 'Data Pegawai',
+  settings: 'Pengaturan',
 };
 
 export default function EngagementDashboard() {
@@ -109,6 +100,7 @@ export default function EngagementDashboard() {
   const [weeklySortMode, setWeeklySortMode] = useState<'name' | 'bidang'>('bidang');
   const [monthlySortMode, setMonthlySortMode] = useState<'rank' | 'bidang' | 'name'>('rank');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
@@ -158,8 +150,7 @@ export default function EngagementDashboard() {
             registration.showNotification("Engagement sosmed Diskominfo", {
               body: "Waktunya melakukan engagement sosial media Diskominfo!",
               icon: appLogo || undefined,
-              vibrate: [200, 100, 200]
-            } as any);
+            });
           });
         } else {
           new Notification("Engagement sosmed Diskominfo", {
@@ -174,8 +165,7 @@ export default function EngagementDashboard() {
             registration.showNotification("Rekap engagement sosmed", {
               body: "Batas waktu engagement telah berakhir. Waktunya mengecek rekap engagement sosial media.",
               icon: appLogo || undefined,
-              vibrate: [200, 100, 200]
-            } as any);
+            });
           });
         } else {
           new Notification("Rekap engagement sosmed", {
@@ -190,7 +180,7 @@ export default function EngagementDashboard() {
     checkTimeAndNotify();
     const intervalId = setInterval(checkTimeAndNotify, 30000); // Check every 30 seconds
     return () => clearInterval(intervalId);
-  }, [notificationPermission]);
+  }, [notificationPermission, appLogo]);
 
   // Meta API State
   const [metaToken, setMetaToken] = useState('');
@@ -201,11 +191,17 @@ export default function EngagementDashboard() {
   useEffect(() => {
     if (loading || !user) return;
 
-    const unsubscribe = onSnapshot(doc(db, 'settings', 'meta_api'), (docSnap) => {
-      if (docSnap.exists()) {
-        setMetaToken(docSnap.data().value || '');
+    const unsubscribe = onSnapshot(
+      doc(db, 'settings', 'meta_api'),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setMetaToken(docSnap.data().value || '');
+        }
+      },
+      (err) => {
+        console.error('Gagal memuat token Meta:', err);
       }
-    });
+    );
 
     return unsubscribe;
   }, [user, loading]);
@@ -214,10 +210,16 @@ export default function EngagementDashboard() {
     if (!user) return;
     setIsSavingToken(true);
     try {
+      const trimmed = metaToken.trim();
+      if (!trimmed) {
+        toast.error('Token API Meta tidak boleh kosong');
+        return;
+      }
       await setDoc(doc(db, 'settings', 'meta_api'), {
-        value: metaToken,
+        value: trimmed,
         updatedAt: serverTimestamp()
       });
+      setMetaToken(trimmed);
       toast.success("Token API Meta berhasil disimpan ke server");
     } catch (err) {
       console.error("Error saving meta token:", err);
@@ -227,9 +229,6 @@ export default function EngagementDashboard() {
     }
   };
 
-  const igInputRef = useRef<HTMLTextAreaElement>(null);
-  const fbInputRef = useRef<HTMLTextAreaElement>(null);
-  const tiktokInputRef = useRef<HTMLTextAreaElement>(null);
   const printRef = useRef<HTMLDivElement>(null);
   const printMonthlyRef = useRef<HTMLDivElement>(null);
   const printDailyRef = useRef<HTMLDivElement>(null);
@@ -242,10 +241,17 @@ export default function EngagementDashboard() {
     }
 
     const q = query(collection(db, 'employees'), orderBy('name', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const emps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
-      setEmployees(emps);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const emps = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Employee));
+        setEmployees(emps);
+      },
+      (err) => {
+        console.error('Gagal memuat pegawai:', err);
+        toast.error('Gagal memuat data pegawai');
+      }
+    );
     return unsubscribe;
   }, [user, loading]);
 
@@ -275,10 +281,17 @@ export default function EngagementDashboard() {
       where('date', '>=', oldestRequiredDate),
       orderBy('date', 'desc')
     );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyEngagement));
-      setDailyEngagements(data);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DailyEngagement));
+        setDailyEngagements(data);
+      },
+      (err) => {
+        console.error('Gagal memuat rekap harian:', err);
+        toast.error('Gagal memuat data rekap');
+      }
+    );
     return unsubscribe;
   }, [user, loading, oldestRequiredDate]);
 
@@ -371,18 +384,20 @@ export default function EngagementDashboard() {
     try {
       if (!metaToken) throw new Error("Token API Meta tidak boleh kosong.");
 
-      // Helper function for date matching (15:00 H-1 to 15:00 D-Day WIB)
+      // Window rekap resmi: 15:00 H-1 s/d 15:00 D (WIB) = UTC 08:00
       const isWithinCustomWindow = (postDateStr: string, targetDateStr: string) => {
         if (!postDateStr) return false;
         const postTime = new Date(postDateStr).getTime();
+        if (Number.isNaN(postTime)) return false;
         const endDate = new Date(`${targetDateStr}T08:00:00Z`);
         const endTime = endDate.getTime();
         const startTime = endTime - (24 * 60 * 60 * 1000);
         return postTime >= startTime && postTime <= endTime;
       };
 
-      let fbPosts: any[] = [];
-      let igPosts: any[] = [];
+      type MetaPost = { id: string; created_time?: string; timestamp?: string; permalink_url?: string; permalink?: string };
+      let fbPosts: MetaPost[] = [];
+      let igPosts: MetaPost[] = [];
       let pageToken = metaToken;
       let pageId = "me";
 
@@ -397,7 +412,9 @@ export default function EngagementDashboard() {
           const debugRes = await fetch(`https://graph.facebook.com/v19.0/debug_token?input_token=${metaToken}&access_token=${metaToken}`, { signal: controller.signal });
           const debugData = await debugRes.json();
           if (debugData.data && debugData.data.granular_scopes) {
-            const scope = debugData.data.granular_scopes.find((s: any) => s.scope === 'pages_show_list' || s.scope === 'pages_read_engagement' || s.scope === 'pages_manage_posts');
+            const scope = debugData.data.granular_scopes.find((s: { scope: string; target_ids?: string[] }) =>
+              s.scope === 'pages_show_list' || s.scope === 'pages_read_engagement' || s.scope === 'pages_manage_posts'
+            );
             if (scope && scope.target_ids && scope.target_ids.length > 0) {
               pageId = scope.target_ids[0];
               const pageRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}?fields=access_token&access_token=${metaToken}`, { signal: controller.signal });
@@ -406,31 +423,28 @@ export default function EngagementDashboard() {
             }
           }
         }
-      } catch (e) {
+      } catch {
         // Not a user token, continuing with original token
       }
 
-      // Fetch FB Posts
       const fbPostsRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/posts?fields=id,created_time,permalink_url&access_token=${pageToken}&limit=50`, { signal: controller.signal });
       const fbPostsData = await fbPostsRes.json();
-      let latestFbPostDate = null;
+      let latestFbPostDate: string | null = null;
 
       if (!fbPostsData.error && fbPostsData.data) {
         if (fbPostsData.data.length > 0) latestFbPostDate = fbPostsData.data[0].created_time;
-        fbPosts = fbPostsData.data.filter((p: any) => isWithinCustomWindow(p.created_time, selectedDate));
+        fbPosts = fbPostsData.data.filter((p: MetaPost) => isWithinCustomWindow(p.created_time || '', selectedDate));
       }
 
-      // Fetch IG Account ID
       const igAccRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}?fields=instagram_business_account&access_token=${pageToken}`, { signal: controller.signal });
       const igAccData = await igAccRes.json();
-      const igAccountId = igAccData.instagram_business_account?.id;
+      const igAccountId = igAccData.instagram_business_account?.id as string | undefined;
 
       if (igAccountId) {
-        // Fetch IG Posts
         const igPostsRes = await fetch(`https://graph.facebook.com/v19.0/${igAccountId}/media?fields=id,timestamp,permalink&access_token=${pageToken}&limit=50`, { signal: controller.signal });
         const igPostsData = await igPostsRes.json();
         if (!igPostsData.error && igPostsData.data) {
-          igPosts = igPostsData.data.filter((p: any) => isWithinCustomWindow(p.timestamp, selectedDate));
+          igPosts = igPostsData.data.filter((p: MetaPost) => isWithinCustomWindow(p.timestamp || '', selectedDate));
         }
       }
 
@@ -438,67 +452,62 @@ export default function EngagementDashboard() {
         throw new Error(fbPostsData.error?.message || "Gagal mengakses data Page/Instagram.");
       }
 
-      const commenters: any[] = [];
-      const newFbLinks = fbPosts.map((p: any) => p.permalink_url).filter(Boolean);
-      const newIgLinks = igPosts.map((p: any) => p.permalink).filter(Boolean);
+      const commenters: { platform: 'ig'; username: string; text?: string }[] = [];
+      const newFbLinks = fbPosts.map((p) => p.permalink_url).filter((u): u is string => Boolean(u));
+      const newIgLinks = igPosts.map((p) => p.permalink).filter((u): u is string => Boolean(u));
 
-      // Fetch IG comments
       for (const post of igPosts) {
         const commentsRes = await fetch(`https://graph.facebook.com/v19.0/${post.id}/comments?fields=id,text,username,timestamp&access_token=${pageToken}&limit=100`, { signal: controller.signal });
         const commentsData = await commentsRes.json();
-        (commentsData.data || []).forEach((c: any) => {
+        (commentsData.data || []).forEach((c: { username?: string; text?: string }) => {
           commenters.push({ platform: 'ig', username: c.username || "Unknown", text: c.text });
         });
       }
 
-      clearTimeout(timeoutId);
-
-      const fbPostCount = fbPosts.length;
-      const igPostCount = igPosts.length;
-      const debug = { igLinked: !!igAccountId, latestFbPostDate };
-      
-      // Update Links
-
-      if (newIgLinks && newIgLinks.length > 0) {
+      if (newIgLinks.length > 0) {
         setIgLinks(prev => Array.from(new Set([...prev, ...newIgLinks])));
       }
-      if (newFbLinks && newFbLinks.length > 0) {
+      if (newFbLinks.length > 0) {
         setFbLinks(prev => Array.from(new Set([...prev, ...newFbLinks])));
       }
 
-      // Pisahkan username berdasarkan platform (hanya IG yang ditarik komentarnya)
-      const igUsernames = (commenters || []).filter((c: any) => c.platform === 'ig').map((c: any) => c.username);
+      const igUsernames = commenters.map((c) => c.username).filter(Boolean);
 
-      // Masukkan raw username ke dalam text area secara otomatis
       if (igUsernames.length > 0) {
-        setIgRawInput(prev => {
-          const newVal = prev ? prev + '\n' + igUsernames.join('\n') : igUsernames.join('\n');
-          if (igInputRef.current) igInputRef.current.value = newVal;
-          return newVal;
-        });
+        setIgRawInput(prev => mergeUniqueLines(prev, igUsernames));
       }
+
+      const fbPostCount = fbPosts.length;
+      const igPostCount = igPosts.length;
 
       if (fbPostCount === 0 && igPostCount === 0) {
         let msg = `Tidak ada postingan pada tanggal ${selectedDate}.`;
-        if (debug?.latestFbPostDate) {
-          const d = new Date(debug.latestFbPostDate);
+        if (latestFbPostDate) {
+          const d = new Date(latestFbPostDate);
           msg += ` Postingan FB terakhir adalah tanggal ${d.toLocaleDateString('id-ID')}.`;
         }
-        if (!debug?.igLinked) {
+        if (!igAccountId) {
           msg += ` (Akun Instagram Bisnis belum terhubung ke Halaman FB ini).`;
         }
         toast.warning(msg, { duration: 6000 });
       } else {
         toast.success(`Ditemukan ${igPostCount} post IG & ${fbPostCount} post FB. Berhasil menarik ${commenters.length} komentar IG ke dalam form.`);
       }
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && err.name === 'AbortError'
+          ? 'Permintaan Meta API melebihi batas waktu (60 detik). Coba lagi.'
+          : err instanceof Error
+            ? err.message
+            : 'Gagal menarik data Meta API';
+      toast.error(message);
     } finally {
+      clearTimeout(timeoutId);
       setIsFetchingMeta(false);
     }
   };
 
-  const handleExportPDF = async (ref: React.RefObject<HTMLDivElement>, filename: string) => {
+  const handleExportPDF = async (ref: React.RefObject<HTMLDivElement | null>, filename: string) => {
     if (!ref.current) return;
     setIsLoading(true);
     setIsExporting(true);
@@ -516,7 +525,10 @@ export default function EngagementDashboard() {
       // Calculate dimensions
       const img = new Image();
       img.src = imgData;
-      await new Promise(resolve => { img.onload = resolve; });
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Gagal memuat gambar export'));
+      });
       
       const pdf = new jsPDF({
         orientation: img.width > img.height ? 'l' : 'p',
@@ -536,7 +548,7 @@ export default function EngagementDashboard() {
     }
   };
 
-  const handleExportImage = async (ref: React.RefObject<HTMLDivElement>, filename: string) => {
+  const handleExportImage = async (ref: React.RefObject<HTMLDivElement | null>, filename: string) => {
     if (!ref.current) return;
     setIsLoading(true);
     setIsExporting(true);
@@ -567,7 +579,7 @@ export default function EngagementDashboard() {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (6 - i));
-      return d.toISOString().split('T')[0];
+      return getLocalISODate(d);
     });
 
     return last7Days.map(date => {
@@ -575,19 +587,23 @@ export default function EngagementDashboard() {
       const igCount = engagement?.igEngagedEmployeeIds?.length || 0;
       const fbCount = engagement?.fbEngagedEmployeeIds?.length || 0;
       const tiktokCount = engagement?.tiktokEngagedEmployeeIds?.length || 0;
+      // Parse as local date to avoid UTC weekday shift
+      const [y, m, day] = date.split('-').map(Number);
+      const localDate = new Date(y, m - 1, day);
       return {
-        name: new Date(date).toLocaleDateString('id-ID', { weekday: 'short' }),
+        name: localDate.toLocaleDateString('id-ID', { weekday: 'short' }),
         ig: igCount,
         fb: fbCount,
         tiktok: tiktokCount,
         total: igCount + fbCount + tiktokCount
       };
     });
-  }, [dailyEngagements]);
+  }, [dailyEngagementsMap]);
 
   const stats = useMemo(() => {
     const totalEmployees = employees.length;
-    const today = new Date().toISOString().split('T')[0];
+    // Use local date — UTC ISO breaks "today" stats after 07:00 WIB
+    const today = getLocalISODate(new Date());
     const todayEng = dailyEngagements.find(d => d.id === today);
     const todayCount = (todayEng?.igEngagedEmployeeIds?.length || 0) + (todayEng?.fbEngagedEmployeeIds?.length || 0) + (todayEng?.tiktokEngagedEmployeeIds?.length || 0);
     const totalEngagements = dailyEngagements.reduce((acc, curr) => 
@@ -609,88 +625,46 @@ export default function EngagementDashboard() {
     };
   }, [employees, dailyEngagements]);
 
-  const processEngagementInput = React.useCallback((input: string, platform: 'ig' | 'fb' | 'tiktok') => {
-    // Normalize whitespace and newlines for robust matching
-    const normalize = (str: string) => str.toLowerCase().replace(/\s+/g, ' ').trim();
-    const lowerInput = normalize(input);
-    
-    // Memecah input menjadi baris-baris mengatasi nama yang di-copy dari sosmed
-    const inputLines = input.toLowerCase().split(/[\n,;]+/).map(line => normalize(line)).filter(line => line.length > 2);
-    
-    const matchedIds = new Set<string>();
+  const processEngagementInput = React.useCallback(
+    (input: string, platform: 'ig' | 'fb' | 'tiktok') =>
+      matchEmployeesToEngagement(input, employees, platform),
+    [employees]
+  );
 
-    const isExactMatchInTarget = (text: string, targetLine: string) => {
-      if (!text || !targetLine) return false;
-      if (targetLine === text) return true;
-      // Periksa apakah text ada di dalam targetLine sebagai kata utuh atau bagian string (toleransi spasi)
-      if (targetLine.includes(text)) {
-        return true;
-      }
-      return false;
+  const matchPreview = useMemo(
+    () => ({
+      ig: matchEmployeesToEngagement(igRawInput, employees, 'ig').length,
+      fb: matchEmployeesToEngagement(fbRawInput, employees, 'fb').length,
+      tiktok: matchEmployeesToEngagement(tiktokRawInput, employees, 'tiktok').length,
+    }),
+    [igRawInput, fbRawInput, tiktokRawInput, employees]
+  );
+
+  // Lock body scroll when overlays open
+  useEffect(() => {
+    if (!isInputModalOpen && !isMoreOpen && !isSidebarOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
     };
-    
-    employees.forEach(emp => {
-      const nameMatch = normalize(emp.name);
-      const igMatch = emp.igUsername ? normalize(emp.igUsername.replace('@', '')) : '';
-      const igMatch2 = emp.igUsername2 ? normalize(emp.igUsername2.replace('@', '')) : '';
-      const fbMatch = emp.fbName ? normalize(emp.fbName) : '';
-      const fbMatch2 = emp.fbName2 ? normalize(emp.fbName2) : '';
-      const tiktokMatch = emp.tiktokName ? normalize(emp.tiktokName.replace('@', '')) : '';
-      const tiktokMatch2 = emp.tiktokName2 ? normalize(emp.tiktokName2.replace('@', '')) : '';
-      
-      let isMatch = false;
+  }, [isInputModalOpen, isMoreOpen, isSidebarOpen]);
 
-      // Pengecekan global di teks (kalau di-copy sekaligus semua namanya)
-      if (nameMatch && lowerInput.includes(nameMatch)) isMatch = true;
-      
-      // Cek khusus platform kalau field datanya ada
-      if (platform === 'ig' && igMatch && lowerInput.includes(igMatch)) isMatch = true;
-      if (platform === 'ig' && igMatch2 && lowerInput.includes(igMatch2)) isMatch = true;
-      if (platform === 'fb' && fbMatch && lowerInput.includes(fbMatch)) isMatch = true;
-      if (platform === 'fb' && fbMatch2 && lowerInput.includes(fbMatch2)) isMatch = true;
-      if (platform === 'tiktok' && tiktokMatch && lowerInput.includes(tiktokMatch)) isMatch = true;
-      if (platform === 'tiktok' && tiktokMatch2 && lowerInput.includes(tiktokMatch2)) isMatch = true;
-
-      // Pengecekan baris per baris yang lebih ketat jika teks copas terbagi-bagi baris
-      if (!isMatch) {
-        for (const line of inputLines) {
-          if (isExactMatchInTarget(nameMatch, line)) {
-            isMatch = true; break;
-          }
-          if (platform === 'ig') {
-            if (igMatch && isExactMatchInTarget(igMatch, line)) {
-              isMatch = true; break;
-            }
-            if (igMatch2 && isExactMatchInTarget(igMatch2, line)) {
-              isMatch = true; break;
-            }
-          }
-          if (platform === 'fb') {
-            if (fbMatch && isExactMatchInTarget(fbMatch, line)) {
-              isMatch = true; break;
-            }
-            if (fbMatch2 && isExactMatchInTarget(fbMatch2, line)) {
-              isMatch = true; break;
-            }
-          }
-          if (platform === 'tiktok') {
-            if (tiktokMatch && isExactMatchInTarget(tiktokMatch, line)) {
-              isMatch = true; break;
-            }
-            if (tiktokMatch2 && isExactMatchInTarget(tiktokMatch2, line)) {
-              isMatch = true; break;
-            }
-          }
-        }
+  // Escape closes topmost overlay
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (isInputModalOpen) {
+        closeInputModal();
+      } else if (isMoreOpen) {
+        setIsMoreOpen(false);
+      } else if (isSidebarOpen) {
+        setIsSidebarOpen(false);
       }
-
-      if (isMatch) {
-        matchedIds.add(emp.id);
-      }
-    });
-
-    return Array.from(matchedIds);
-  }, [employees]);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isInputModalOpen, isMoreOpen, isSidebarOpen]);
 
   const handleSaveEngagement = async () => {
     if (!user) {
@@ -700,22 +674,38 @@ export default function EngagementDashboard() {
     
     setIsLoading(true);
     try {
-      const currentIgRawInput = igInputRef.current ? igInputRef.current.value : igRawInput;
-      const currentFbRawInput = fbInputRef.current ? fbInputRef.current.value : fbRawInput;
-      const currentTiktokRawInput = tiktokInputRef.current ? tiktokInputRef.current.value : tiktokRawInput;
+      // Controlled inputs — state is source of truth (avoids stale defaultValue across dates)
+      const currentIgRawInput = igRawInput;
+      const currentFbRawInput = fbRawInput;
+      const currentTiktokRawInput = tiktokRawInput;
 
+      // Always rematch — master pegawai bisa berubah meski raw text sama
       const igEngagedIds = processEngagementInput(currentIgRawInput, 'ig');
       const fbEngagedIds = processEngagementInput(currentFbRawInput, 'fb');
       const tiktokEngagedIds = processEngagementInput(currentTiktokRawInput, 'tiktok');
 
       const docRef = doc(db, 'dailyEngagement', selectedDate);
+      const existing = dailyEngagementsMap[selectedDate];
       
-      // Check if user actually modified IG, FB, or TikTok data
-      const igChanged = currentIgRawInput !== initialIgRawInput || JSON.stringify(igLinks) !== JSON.stringify(initialIgLinks);
-      const fbChanged = currentFbRawInput !== initialFbRawInput || JSON.stringify(fbLinks) !== JSON.stringify(initialFbLinks);
-      const tiktokChanged = currentTiktokRawInput !== initialTiktokRawInput || JSON.stringify(tiktokLinks) !== JSON.stringify(initialTiktokLinks);
+      const igContentChanged = currentIgRawInput !== initialIgRawInput || JSON.stringify(igLinks) !== JSON.stringify(initialIgLinks);
+      const fbContentChanged = currentFbRawInput !== initialFbRawInput || JSON.stringify(fbLinks) !== JSON.stringify(initialFbLinks);
+      const tiktokContentChanged = currentTiktokRawInput !== initialTiktokRawInput || JSON.stringify(tiktokLinks) !== JSON.stringify(initialTiktokLinks);
+
+      const igIdsChanged = !engagedIdsEqual(existing?.igEngagedEmployeeIds || [], igEngagedIds);
+      const fbIdsChanged = !engagedIdsEqual(existing?.fbEngagedEmployeeIds || [], fbEngagedIds);
+      const tiktokIdsChanged = !engagedIdsEqual(existing?.tiktokEngagedEmployeeIds || [], tiktokEngagedIds);
+
+      const igChanged = igContentChanged || igIdsChanged;
+      const fbChanged = fbContentChanged || fbIdsChanged;
+      const tiktokChanged = tiktokContentChanged || tiktokIdsChanged;
+
+      if (!igChanged && !fbChanged && !tiktokChanged) {
+        toast.info('Tidak ada perubahan untuk disimpan');
+        closeInputModal();
+        return;
+      }
       
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         date: selectedDate,
         updatedAt: serverTimestamp()
       };
@@ -742,12 +732,13 @@ export default function EngagementDashboard() {
 
       toast.success(`Data rekap tanggal ${selectedDate} berhasil disimpan`);
       closeInputModal();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving engagement:', error);
-      if (error.code === 'permission-denied' || error.message?.includes('Missing or insufficient permissions')) {
+      const err = error as { code?: string; message?: string };
+      if (err.code === 'permission-denied' || err.message?.includes('Missing or insufficient permissions')) {
         toast.error('Akses ditolak: Anda tidak memiliki izin untuk menyimpan data ini.');
       } else {
-        toast.error(`Gagal menyimpan data: ${error.message || 'Kesalahan tidak diketahui'}`);
+        toast.error(`Gagal menyimpan data: ${err.message || 'Kesalahan tidak diketahui'}`);
       }
     } finally {
       setIsLoading(false);
@@ -765,14 +756,10 @@ export default function EngagementDashboard() {
       return;
     }
 
-    const confirmMsg = `Apakah Anda yakin ingin melakukan kalkulasi ulang data (${recalculateConfig.mode})?`;
-    
-    // Using a simpler approach: just execute since it's just recalculating.
-    // We bypass window.confirm() because it can be blocked in iframe.
-    toast.info('Memulai kalkulasi ulang data dari backend...');
+    // Client-side primary: works on Vercel free static (no Express). Same matching as save.
+    toast.info('Memulai kalkulasi ulang data...');
 
     setIsLoading(true);
-    let updatedCount = 0;
     try {
       const dateBoundaryStart = new Date();
       if (recalculateConfig.mode === 'last_day') {
@@ -783,36 +770,56 @@ export default function EngagementDashboard() {
       const isoBoundaryStart = getLocalISODate(dateBoundaryStart);
 
       const engagementsToProcess = dailyEngagements.filter(e => e.date >= isoBoundaryStart);
-      const idToken = await auth.currentUser?.getIdToken();
-
-      const response = await fetch('/api/recalculate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          engagements: engagementsToProcess,
-          employees,
-          mode: recalculateConfig.mode
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error("Gagal terhubung ke server");
-      }
-
-      const data = await response.json();
-      
-      if (data.updatedCount === 0) {
-        toast.info("Tidak ada data baru yang perlu diperbaharui.");
+      if (engagementsToProcess.length === 0) {
+        toast.info('Tidak ada data rekap pada rentang yang dipilih.');
         return;
       }
 
-      toast.success(`Kalkulasi ulang selesai via server. ${data.updatedCount} data tanggal telah diperbaharui langsung dari backend.`);
-    } catch (error: any) {
+      const updates: { id: string; ig: string[]; fb: string[]; tiktok: string[] }[] = [];
+
+      for (const eng of engagementsToProcess) {
+        const ig = matchEmployeesToEngagement(eng.igRawText || '', employees, 'ig');
+        const fb = matchEmployeesToEngagement(eng.fbRawText || '', employees, 'fb');
+        const tiktok = matchEmployeesToEngagement(eng.tiktokRawText || '', employees, 'tiktok');
+
+        const igChanged = !engagedIdsEqual(eng.igEngagedEmployeeIds || [], ig);
+        const fbChanged = !engagedIdsEqual(eng.fbEngagedEmployeeIds || [], fb);
+        const tiktokChanged = !engagedIdsEqual(eng.tiktokEngagedEmployeeIds || [], tiktok);
+
+        if (igChanged || fbChanged || tiktokChanged) {
+          updates.push({ id: eng.id, ig, fb, tiktok });
+        }
+      }
+
+      if (updates.length === 0) {
+        toast.info('Tidak ada data baru yang perlu diperbaharui.');
+        return;
+      }
+
+      // Firestore batch max 500 writes
+      for (let i = 0; i < updates.length; i += 500) {
+        const chunk = updates.slice(i, i + 500);
+        const batch = writeBatch(db);
+        for (const u of chunk) {
+          batch.set(
+            doc(db, 'dailyEngagement', u.id),
+            {
+              igEngagedEmployeeIds: u.ig,
+              fbEngagedEmployeeIds: u.fb,
+              tiktokEngagedEmployeeIds: u.tiktok,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+        await batch.commit();
+      }
+
+      toast.success(`Kalkulasi ulang selesai. ${updates.length} data tanggal diperbarui.`);
+    } catch (error: unknown) {
       console.error('Error recalculating data:', error);
-      toast.error('Gagal melakukan kalkulasi ulang: ' + error.message);
+      const message = error instanceof Error ? error.message : 'Kesalahan tidak diketahui';
+      toast.error('Gagal melakukan kalkulasi ulang: ' + message);
     } finally {
       setIsLoading(false);
     }
@@ -839,12 +846,17 @@ export default function EngagementDashboard() {
         date: dateStr,
         isCurrentMonth: true,
         isToday: dateStr === getLocalISODate(new Date()),
-        isFilled: !!engagement && ((engagement.igEngagedEmployeeIds?.length || 0) > 0 || (engagement.fbEngagedEmployeeIds?.length || 0) > 0),
-        isFuture: date > new Date()
+        isFilled: !!engagement && (
+          (engagement.igEngagedEmployeeIds?.length || 0) > 0 ||
+          (engagement.fbEngagedEmployeeIds?.length || 0) > 0 ||
+          (engagement.tiktokEngagedEmployeeIds?.length || 0) > 0 ||
+          !!(engagement.igRawText || engagement.fbRawText || engagement.tiktokRawText)
+        ),
+        isFuture: dateStr > getLocalISODate(new Date())
       });
     }
     return days;
-  }, [currentMonth, dailyEngagements]);
+  }, [currentMonth, dailyEngagementsMap]);
 
   const weeklyReports = useMemo(() => {
     if (employees.length === 0) return [];
@@ -878,7 +890,7 @@ export default function EngagementDashboard() {
       weekNumber: weekNum,
       monthName: monday.toLocaleDateString('id-ID', { month: 'long' }),
       year: monday.getFullYear(),
-      weekRange: `${new Date(weekDates[0]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${new Date(weekDates[6]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+      weekRange: `${parseLocalISODate(weekDates[0]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${parseLocalISODate(weekDates[6]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`,
       dates: weekDates,
       isCurrentWeek: weekDates.includes(todayStr)
     }];
@@ -962,7 +974,7 @@ export default function EngagementDashboard() {
     return [{
        monthName,
        year,
-       monthRange: `${new Date(monthDates[0]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${new Date(monthDates[monthDates.length - 1]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+       monthRange: `${parseLocalISODate(monthDates[0]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${parseLocalISODate(monthDates[monthDates.length - 1]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`,
        dates: monthDates,
        isCurrentMonth: monthDates.includes(todayStr)
     }];
@@ -1065,10 +1077,6 @@ export default function EngagementDashboard() {
     setCurrentMonth(newMonth);
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   const currentDailyDateStr = getLocalISODate(currentDailyDate);
   const currentDailyEngagementOptions = dailyEngagementsMap[currentDailyDateStr];
   let dailyPossible = 0;
@@ -1085,7 +1093,7 @@ export default function EngagementDashboard() {
   const dailyEngagementRate = dailyPossible > 0 ? Math.round((dailyActual / dailyPossible) * 100) : 0;
 
   return (
-    <div className="flex h-[100dvh] bg-transparent font-sans overflow-hidden relative">
+    <div className="flex h-[100dvh] bg-slate-50 font-sans overflow-hidden relative">
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -1102,24 +1110,20 @@ export default function EngagementDashboard() {
       {/* Sidebar */}
       <aside 
         className={cn(
-          "fixed inset-y-0 left-0 w-72 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 w-72 bg-white border-r border-slate-200 flex flex-col z-50 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0",
           !isSidebarOpen ? "-translate-x-full" : "translate-x-0"
         )}
       >
         <div className="p-6 flex-1 overflow-y-auto">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
-              <motion.div 
-                className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center -slate-200"
-                whileHover={{ rotate: 12, scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-              >
+              <div className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center">
                 {appLogo ? (
                   <img src={appLogo} alt="Logo" className="w-6 h-6 object-contain" />
                 ) : (
                   <Pen className="text-white" size={22} strokeWidth={2.5} />
                 )}
-              </motion.div>
+              </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">ReSo</h1>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Rekap Engagement Sosmed</p>
@@ -1135,13 +1139,13 @@ export default function EngagementDashboard() {
               active={activeTab === 'dashboard'} 
               onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }} 
               icon={<LayoutDashboard size={20} />} 
-              label="Dashboard" 
+              label="Beranda" 
             />
             <NavItem 
               active={activeTab === 'overview'} 
               onClick={() => { setActiveTab('overview'); setIsSidebarOpen(false); }} 
               icon={<CalendarIcon size={20} />} 
-              label="Input Rekap Harian" 
+              label="Input Rekap" 
             />
             <NavItem 
               active={activeTab === 'daily-report'} 
@@ -1176,36 +1180,28 @@ export default function EngagementDashboard() {
           </nav>
         </div>
 
-        {/* Login/Logout Button at bottom of sidebar */}
-        <div className="p-6 mt-auto border-t border-slate-200 bg-slate-50/50">
-          {!user ? (
-            <Button 
-              onClick={signIn} 
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white rounded-xl  font-bold text-sm h-12 transition-all active:scale-[0.98]"
-            >
-              Login dengan Google
-            </Button>
-          ) : (
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3 px-2">
+        <div className="p-5 mt-auto border-t border-slate-200 bg-slate-50/80">
+          {user && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3 px-1">
                 {user.photoURL ? (
-                  <img src={user.photoURL} alt="Profile" className="w-10 h-10 rounded-full border-2 border-white " referrerPolicy="no-referrer" />
+                  <img src={user.photoURL} alt="" className="w-9 h-9 rounded-full" referrerPolicy="no-referrer" />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-sm  border-2 border-white">
-                    {user.email?.charAt(0).toUpperCase()}
+                  <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-sm">
+                    {(user.email || '?').charAt(0).toUpperCase()}
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-slate-900 truncate">{user.displayName || user.email}</p>
-                  <p className="text-[10px] text-slate-500 truncate font-medium">{user.email}</p>
+                  <p className="text-sm font-semibold text-slate-900 truncate">{user.displayName || user.email}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
                 </div>
               </div>
               <Button 
                 onClick={logout} 
                 variant="outline" 
-                className="w-full border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-rose-600 rounded-xl font-bold text-xs h-10 transition-colors"
+                className="w-full border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-rose-600 rounded-xl font-bold text-xs h-10"
               >
-                Logout
+                Keluar
               </Button>
             </div>
           )}
@@ -1213,9 +1209,9 @@ export default function EngagementDashboard() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative pb-bottom-nav lg:pb-0">
         {/* Sticky App Header - Modern Mobile Style */}
-        <header className="sticky top-0 pt-safe z-30 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 h-[calc(4rem+env(safe-area-inset-top))] flex items-center justify-between lg:px-8 lg:h-20 lg:pt-0">
+        <header className="sticky top-0 pt-safe z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 h-[calc(4rem+env(safe-area-inset-top))] flex items-center justify-between lg:px-8 lg:h-20 lg:pt-0">
           <div className="flex items-center gap-3">
             <Button 
               variant="ghost" 
@@ -1225,49 +1221,44 @@ export default function EngagementDashboard() {
             >
               <Menu size={20} />
             </Button>
-            <div className="flex flex-col">
-              <h2 className="text-base lg:text-xl font-bold text-slate-900 tracking-tight leading-none">
-                {activeTab === 'dashboard' && 'Beranda'}
-                {activeTab === 'overview' && 'Input Rekap'}
-                {activeTab === 'daily-report' && 'Laporan Harian'}
-                {activeTab === 'reports' && 'Laporan Mingguan'}
-                {activeTab === 'monthly-reports' && 'Laporan Bulanan'}
-                {activeTab === 'employees' && 'Data Pegawai'}
-                {activeTab === 'settings' && 'Pengaturan'}
+            <div className="flex flex-col min-w-0">
+              <h2 className="text-base lg:text-xl font-bold text-slate-900 tracking-tight leading-none truncate">
+                {TAB_LABELS[activeTab] || 'ReSo'}
               </h2>
-              <span className="lg:hidden text-[9px] font-bold text-slate-900 uppercase tracking-widest mt-1">ReSo</span>
+              <span className="lg:hidden text-[10px] font-medium text-slate-400 mt-0.5">ReSo</span>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {notificationPermission !== 'granted' && (
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={requestNotificationPermission}
-                className="rounded-full w-8 h-8 md:w-10 md:h-10 text-rose-500 hover:bg-rose-50 transition-colors mr-1 md:mr-2 relative"
-                title="Aktifkan Notifikasi"
+                className="rounded-full w-9 h-9 text-slate-600 hover:bg-slate-100 relative"
+                title="Aktifkan notifikasi jam engagement"
               >
-                <Bell size={18} className="animate-pulse" />
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500"></span>
+                <Bell size={18} />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
               </Button>
             )}
-            <div className="hidden sm:flex flex-col items-end mr-2">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Status</p>
-              <div className="flex items-center gap-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[9px] font-bold text-slate-600">Online</span>
-              </div>
-            </div>
             {user && (
-              <div className="flex items-center gap-2 bg-slate-50 p-1 pr-3 rounded-full border border-slate-200">
-                <img 
-                  src={user.photoURL || ''} 
-                  alt="Profile" 
-                  className="w-7 h-7 lg:w-9 lg:h-9 rounded-full border-2 border-white" 
-                  referrerPolicy="no-referrer" 
-                />
-                <span className="hidden md:block text-xs font-bold text-slate-700">{user.displayName?.split(' ')[0]}</span>
+              <div className="flex items-center gap-2 bg-slate-50 p-1 pr-2.5 sm:pr-3 rounded-full border border-slate-200">
+                {user.photoURL ? (
+                  <img 
+                    src={user.photoURL} 
+                    alt="" 
+                    className="w-7 h-7 lg:w-8 lg:h-8 rounded-full" 
+                    referrerPolicy="no-referrer" 
+                  />
+                ) : (
+                  <div className="w-7 h-7 lg:w-8 lg:h-8 rounded-full bg-slate-200 flex items-center justify-center text-[11px] font-bold text-slate-600">
+                    {(user.displayName || user.email || '?').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="hidden md:block text-xs font-semibold text-slate-700 max-w-[100px] truncate">
+                  {user.displayName?.split(' ')[0] || 'Admin'}
+                </span>
               </div>
             )}
           </div>
@@ -1281,6 +1272,11 @@ export default function EngagementDashboard() {
                   stats={stats}
                   chartData={chartData}
                   dailyEngagements={dailyEngagements}
+                  onGoInput={() => {
+                    setSelectedDate(getLocalISODate(new Date()));
+                    setActiveTab('overview');
+                    setIsInputModalOpen(true);
+                  }}
                 />
               )}
                {activeTab === 'overview' && (
@@ -1292,10 +1288,19 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl border border-slate-200">
-                    <div className="lg:hidden space-y-0.5">
-                      <h2 className="text-xl font-bold tracking-tight text-slate-900">Rekap Harian</h2>
-                      <p className="text-slate-500 text-xs">Pilih tanggal pada kalender untuk mengisi atau melihat data rekapitulasi</p>
+                  <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 md:p-6 rounded-xl border border-slate-200">
+                    <div className="space-y-1 w-full md:w-auto">
+                      <h2 className="text-lg md:text-xl font-bold tracking-tight text-slate-900">Input rekap harian</h2>
+                      <p className="text-slate-500 text-xs">Pilih tanggal pada kalender untuk mengisi atau melihat rekap</p>
+                      {employees.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('employees')}
+                          className="mt-2 text-xs font-semibold text-slate-700 underline underline-offset-2"
+                        >
+                          Belum ada pegawai — tambah data dulu
+                        </button>
+                      )}
                     </div>
                     
                     <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full md:w-auto justify-between lg:ml-auto">
@@ -1315,12 +1320,15 @@ export default function EngagementDashboard() {
 
                   <motion.div variants={itemVariants} className="bg-white rounded-xl p-4 sm:p-6 md:p-10 border border-slate-200">
                     <div className="flex justify-end mb-4 md:mb-6">
-                      <div className="flex gap-3 md:gap-6 text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-50/50 px-3 md:px-6 py-2 md:py-3 rounded-xl border border-slate-200 w-full md:w-auto justify-center">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap gap-3 md:gap-5 text-[10px] font-semibold text-slate-500 bg-slate-50 px-3 md:px-5 py-2.5 rounded-xl border border-slate-200 w-full md:w-auto justify-center">
+                        <div className="flex items-center gap-1.5">
                           <div className="w-2.5 h-2.5 rounded-full bg-slate-900" /> Terisi
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <div className="w-2.5 h-2.5 rounded-full bg-white border-2 border-slate-200" /> Kosong
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2.5 h-2.5 rounded-full border-2 border-emerald-500 bg-white" /> Hari ini
                         </div>
                       </div>
                     </div>
@@ -1345,16 +1353,22 @@ export default function EngagementDashboard() {
                                   className={cn(
                                     "w-full h-full rounded-lg md:rounded-xl flex flex-col items-center justify-center gap-0.5 md:gap-1 transition-all relative group border",
                                     day.isFuture ? "bg-slate-50/50 cursor-not-allowed opacity-30 border-transparent" : 
-                                    day.isFilled ? "bg-slate-900 text-white border-slate-900 hover:bg-slate-800" : 
+                                    day.isToday && day.isFilled ? "bg-slate-900 text-white border-slate-900 ring-2 ring-emerald-400 ring-offset-1" :
+                                    day.isFilled ? "bg-slate-900 text-white border-slate-900 hover:bg-slate-800" :
+                                    day.isToday ? "bg-white text-slate-900 border-emerald-500 border-2 hover:bg-emerald-50" :
                                     "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
                                   )}
                                 >
                                   <span className="text-sm sm:text-base font-bold">{day.day}</span>
+                                  {day.isToday && !day.isFilled && (
+                                    <span className="text-[8px] font-bold text-emerald-600 leading-none">Hari ini</span>
+                                  )}
                                   <div className="flex gap-0.5">
                                     {day.isFilled && (
                                       <>
-                                        <div className="w-1 h-1 rounded-full bg-pink-400" />
-                                        <div className="w-1 h-1 rounded-full bg-blue-400" />
+                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-pink-300" : "bg-pink-400")} />
+                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-blue-300" : "bg-blue-400")} />
+                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-slate-300" : "bg-slate-500")} />
                                       </>
                                     )}
                                   </div>
@@ -1372,65 +1386,65 @@ export default function EngagementDashboard() {
                   {/* Input Modal */}
                   <AnimatePresence>
                     {isInputModalOpen && (
-                      <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4">
+                      <div
+                        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px] p-0 sm:p-4"
+                        onClick={closeInputModal}
+                        role="presentation"
+                      >
                         <motion.div
-                          initial={{ opacity: 0, y: 8 }}
+                          initial={{ opacity: 0, y: 12 }}
                           animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 8 }}
+                          exit={{ opacity: 0, y: 12 }}
                           transition={{ ease: "easeOut", duration: 0.2 }}
-                          className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-t-xl sm:rounded-xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[80vh] shadow-xl sm:shadow-2xl border border-transparent dark:border-slate-800"
+                          onClick={(e) => e.stopPropagation()}
+                          className="bg-white w-full max-w-xl rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[88vh] sm:max-h-[82vh] shadow-2xl border border-slate-200"
                         >
                           <div className="p-5 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
                             <div>
                               <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">Input Rekapitulasi</h3>
-                              <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                              <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
                             </div>
                             <Button variant="ghost" size="icon" onClick={closeInputModal} className="rounded-full bg-slate-100 hover:bg-slate-200 h-9 w-9">
                               <X className="text-slate-600" size={18} />
                             </Button>
                           </div>
                           
-                          <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 overflow-y-auto pb-safe">
-                            {/* Meta API Fetch Section */}
-                            <div className="bg-rose-50/50 p-4 rounded-xl border border-rose-100 space-y-4">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <RefreshCw size={16} className="text-rose-500" />
-                                  <h4 className="text-sm font-bold text-rose-900">Tarik Komentar via Meta API</h4>
+                          <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto pb-safe">
+                            {/* Meta fetch — token dikelola di Pengaturan */}
+                            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <RefreshCw size={15} className="text-slate-600 shrink-0" />
+                                  <h4 className="text-sm font-bold text-slate-800 truncate">Tarik via Meta API</h4>
                                 </div>
-                                <Badge variant="outline" className="bg-rose-100 text-rose-700 border-rose-200 text-[9px]">Otomatis</Badge>
+                                <Badge variant="outline" className="text-[10px] font-semibold border-slate-200 text-slate-500 shrink-0">
+                                  15:00 WIB
+                                </Badge>
                               </div>
-
-                              <div className="space-y-2 relative">
-                                <label className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Access Token Meta API</label>
-                                <textarea 
-                                  value={metaToken}
-                                  onChange={(e) => setMetaToken(e.target.value)}
-                                  placeholder="Paste token Meta API di sini..."
-                                  className="w-full h-16 sm:h-12 px-3 pb-8 rounded-lg border border-rose-200 bg-white text-xs focus:ring-rose-500/20 outline-none resize-none pt-2.5"
-                                />
-                                <Button 
-                                  onClick={handleSaveMetaToken}
-                                  disabled={isSavingToken || !metaToken}
-                                  variant="outline"
-                                  className="absolute right-1 bottom-1 h-7 sm:h-6 px-3 sm:px-2 text-[10px] sm:text-[9px] font-bold border-rose-200 text-rose-600 hover:bg-rose-50 bg-white rounded-lg"
+                              <Button 
+                                onClick={handleFetchRecentMeta}
+                                disabled={isFetchingMeta || !metaToken.trim()}
+                                className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl"
+                              >
+                                {isFetchingMeta
+                                  ? 'Menarik data…'
+                                  : !metaToken.trim()
+                                    ? 'Token belum diatur'
+                                    : `Tarik post (${parseLocalISODate(addLocalDays(selectedDate, -1)).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} → ${parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })})`}
+                              </Button>
+                              {!metaToken.trim() ? (
+                                <button
+                                  type="button"
+                                  onClick={() => { closeInputModal(); setActiveTab('settings'); }}
+                                  className="text-[11px] font-semibold text-slate-600 underline underline-offset-2"
                                 >
-                                  {isSavingToken ? 'Saving...' : 'Simpan ke Server'}
-                                </Button>
-                              </div>
-                              
-                              <div className="flex flex-col gap-3">
-                                <Button 
-                                  onClick={handleFetchRecentMeta}
-                                  disabled={isFetchingMeta}
-                                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 rounded-lg"
-                                >
-                                  {isFetchingMeta ? 'Menarik...' : `Tarik Postingan (15:00 ${new Date(new Date(selectedDate).getTime() - 24 * 60 * 60 * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} s/d 15:00 ${new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })})`}
-                                </Button>
-                              </div>
-                              <p className="text-[10px] text-rose-400/80 leading-relaxed mt-3">
-                                Sistem akan otomatis menarik semua komentar dari postingan Instagram yang diunggah antara jam 15:00 WIB {new Date(new Date(selectedDate).getTime() - 24 * 60 * 60 * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} hingga 15:00 WIB {new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}. Untuk Facebook, sistem hanya akan menarik link postingannya saja (karena batasan privasi API Meta).
-                              </p>
+                                  Atur token Meta di Pengaturan
+                                </button>
+                              ) : (
+                                <p className="text-[11px] text-slate-500 leading-snug">
+                                  IG: komentar + link. FB: link post. Window 15:00 H−1 s/d 15:00 hari rekap (WIB).
+                                </p>
+                              )}
                             </div>
 
                             {/* Meta Links Section */}
@@ -1438,7 +1452,7 @@ export default function EngagementDashboard() {
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <LinkIcon size={16} className="text-slate-400" />
-                                  <h4 className="text-sm font-bold text-slate-700">Link Postingan {new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</h4>
+                                  <h4 className="text-sm font-bold text-slate-700">Link Postingan {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</h4>
                                 </div>
                               </div>
                               
@@ -1458,24 +1472,21 @@ export default function EngagementDashboard() {
                                           const newFb = [...fbLinks];
                                           const newTiktok = [...tiktokLinks];
                                           urls.forEach(rawUrl => {
-                                            let url = rawUrl;
+                                            let url = rawUrl.trim();
+                                            if (!url) return;
                                             if (url.includes('instagram.com')) {
-                                              // Ubah format reel IG menjadi format post biasa (/p/)
                                               url = url.replace(/\/(?:reel|reels)\//i, '/p/');
-                                              const isDuplicate = dailyEngagements.some(d => d.igLinks?.includes(url));
-                                              if (!newIg.includes(url) && !isDuplicate) newIg.push(url);
+                                              // Hanya cegah duplikat di tanggal yang sedang diedit (bukan seluruh history)
+                                              if (!newIg.includes(url)) newIg.push(url);
                                             } else if (url.includes('facebook.com') || url.includes('fb.watch') || url.includes('fb.com')) {
-                                              // Ubah format reel FB menjadi format post biasa (/p/)
                                               if (url.match(/facebook\.com\/reel\/(\d+)/i)) {
                                                 url = url.replace(/facebook\.com\/reel\/(\d+)/i, 'facebook.com/p/$1');
                                               } else if (url.match(/facebook\.com\/share\/r\/([a-zA-Z0-9]+)/i)) {
                                                 url = url.replace(/facebook\.com\/share\/r\/([a-zA-Z0-9]+)/i, 'facebook.com/share/p/$1');
                                               }
-                                              const isDuplicate = dailyEngagements.some(d => d.fbLinks?.includes(url));
-                                              if (!newFb.includes(url) && !isDuplicate) newFb.push(url);
+                                              if (!newFb.includes(url)) newFb.push(url);
                                             } else if (url.includes('tiktok.com')) {
-                                              const isDuplicate = dailyEngagements.some(d => d.tiktokLinks?.includes(url));
-                                              if (!newTiktok.includes(url) && !isDuplicate) newTiktok.push(url);
+                                              if (!newTiktok.includes(url)) newTiktok.push(url);
                                             }
                                           });
                                           setIgLinks(newIg);
@@ -1574,60 +1585,61 @@ export default function EngagementDashboard() {
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-4">
                               <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <label className="text-xs font-semibold text-slate-500 flex items-center gap-2">
                                   <Instagram size={12} className="text-pink-500" />
                                   List IG
                                 </label>
                                 <textarea
-                                  ref={igInputRef}
-                                  defaultValue={igRawInput}
+                                  value={igRawInput}
+                                  onChange={(e) => setIgRawInput(e.target.value)}
                                   placeholder="Paste list nama atau username di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-slate-900/5 transition-all resize-none"
+                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
                                 />
                               </div>
                               <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <label className="text-xs font-semibold text-slate-500 flex items-center gap-2">
                                   <Facebook size={12} className="text-blue-500" />
                                   List FB
                                 </label>
                                 <textarea
-                                  ref={fbInputRef}
-                                  defaultValue={fbRawInput}
+                                  value={fbRawInput}
+                                  onChange={(e) => setFbRawInput(e.target.value)}
                                   placeholder="Paste list nama atau username di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-slate-900/5 transition-all resize-none"
+                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
                                 />
                               </div>
                               <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <label className="text-xs font-semibold text-slate-500 flex items-center gap-2">
                                   <TiktokIcon size={16} className="text-slate-800" />
                                   List TikTok
                                 </label>
                                 <textarea
-                                  ref={tiktokInputRef}
-                                  defaultValue={tiktokRawInput}
+                                  value={tiktokRawInput}
+                                  onChange={(e) => setTiktokRawInput(e.target.value)}
                                   placeholder="Paste list nama akun TikTok di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-slate-50/30 focus:ring-slate-900/5 transition-all resize-none"
+                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
                                 />
                               </div>
                             </div>
 
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                              <p className="text-[10px] text-slate-500 leading-relaxed">
-                                <span className="font-bold text-slate-900">Tips:</span> Sistem akan otomatis mendeteksi nama atau username yang sesuai dengan database pegawai. Anda bisa langsung menempelkan (paste) data dari sumber manapun.
-                              </p>
-                            </div>
+                            {/* Live match preview */}
+                            <MatchPreview
+                              ig={matchPreview.ig}
+                              fb={matchPreview.fb}
+                              tiktok={matchPreview.tiktok}
+                            />
                           </div>
 
-                          <div className="p-6 bg-slate-50/50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
-                            <Button variant="ghost" onClick={closeInputModal} className="font-bold text-xs rounded-xl h-11 px-6">
+                          <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                            <Button variant="ghost" onClick={closeInputModal} className="font-bold text-xs rounded-xl h-11 px-5">
                               Batal
                             </Button>
                             <Button 
                               onClick={handleSaveEngagement} 
                               disabled={isLoading}
-                              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl h-11 px-8   border-none"
+                              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl h-11 px-6 border-none"
                             >
-                              {isLoading ? 'Menyimpan...' : 'Simpan Data Rekap'}
+                              {isLoading ? 'Menyimpan…' : 'Simpan Rekap'}
                             </Button>
                           </div>
                         </motion.div>
@@ -1662,7 +1674,7 @@ export default function EngagementDashboard() {
                               {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                             </h2>
                             {getLocalISODate(currentDailyDate) === getLocalISODate(new Date()) && (
-                              <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 text-[9px] px-1.5 py-0">Hari Ini</Badge>
+                              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0 font-semibold">Hari ini</Badge>
                             )}
                           </div>
                         </div>
@@ -1674,25 +1686,25 @@ export default function EngagementDashboard() {
                                 <div className="flex bg-slate-100 p-1.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
                                   <button 
                                     onClick={() => setWeeklySortMode('bidang')}
-                                    className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                                    className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", weeklySortMode === 'bidang' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
                                   >
                                     Bidang
                                   </button>
                                   <button 
                                     onClick={() => setWeeklySortMode('name')}
-                                    className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                                    className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", weeklySortMode === 'name' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
                                   >
                                     Nama
                                   </button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                                  <Button onClick={() => handleExportPDF(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-12   font-bold text-[10px] uppercase tracking-widest border-none">
+                                  <Button onClick={() => handleExportPDF(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
                                     <FileText size={14} />
                                     PDF
                                   </Button>
-                                  <Button onClick={() => handleExportImage(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-12 font-bold text-[10px] uppercase tracking-widest">
+                                  <Button onClick={() => handleExportImage(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs">
                                     <ImageIcon size={14} />
-                                    IMG
+                                    Gambar
                                   </Button>
                                 </div>
                               </div>
@@ -1718,7 +1730,42 @@ export default function EngagementDashboard() {
                       </div>
                     </div>
 
-                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
+                    {/* Mobile card list — easier than wide table */}
+                    {!isExporting && (
+                      <div className="md:hidden space-y-2 mb-4">
+                        {sortedEmployees.map((emp) => {
+                          const dateStr = getLocalISODate(currentDailyDate);
+                          const engagement = dailyEngagementsMap[dateStr];
+                          const hasIg = engagement?.igEngagedEmployeeIds?.includes(emp.id);
+                          const hasFb = engagement?.fbEngagedEmployeeIds?.includes(emp.id);
+                          const hasTiktok = engagement?.tiktokEngagedEmployeeIds?.includes(emp.id);
+                          const score = (hasIg ? 1 : 0) + (hasFb ? 1 : 0) + (hasTiktok ? 1 : 0);
+                          return (
+                            <div key={emp.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900 truncate">{emp.name}</p>
+                                <p className="text-[11px] text-slate-500 truncate">
+                                  <span className={cn('font-medium px-1.5 py-0.5 rounded text-[10px]', getBidangColor(emp.bidang))}>
+                                    {emp.bidang || '—'}
+                                  </span>
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold border', hasIg ? 'bg-pink-50 text-pink-600 border-pink-100' : 'bg-white text-slate-300 border-slate-200')}>IG</span>
+                                <span className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold border', hasFb ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-white text-slate-300 border-slate-200')}>FB</span>
+                                <span className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold border', hasTiktok ? 'bg-slate-200 text-slate-800 border-slate-300' : 'bg-white text-slate-300 border-slate-200')}>TT</span>
+                                <span className="text-xs font-bold text-slate-600 w-6 text-right">{score}/3</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {sortedEmployees.length === 0 && (
+                          <p className="text-center text-sm text-slate-400 py-8">Belum ada data pegawai.</p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]", !isExporting && "hidden md:block")}>
                       <div className="min-w-max">
                         <Table className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
                           <TableHeader>
@@ -1819,7 +1866,7 @@ export default function EngagementDashboard() {
                     </div>
                     {isExporting && (
                       <div className="mt-2 text-[8px] text-slate-500 font-medium italic">
-                        * Note : Pencatatan dilakukan setiap pukul 15.00 WIB dan hanya mencakup komentar pada postingan 24 jam terakhir.
+                        * Catatan: pencatatan mengacu pada window 15.00 WIB (postingan 24 jam terakhir).
                       </div>
                     )}
                   </motion.div>
@@ -1850,7 +1897,7 @@ export default function EngagementDashboard() {
                           <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             <h2 className="text-xs sm:text-sm font-bold text-slate-900">Minggu ke-{weeklyReports[0]?.weekNumber}</h2>
                             {weeklyReports[0]?.isCurrentWeek && (
-                              <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 text-[9px] px-1.5 py-0">Sekarang</Badge>
+                              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0 font-semibold">Minggu ini</Badge>
                             )}
                           </div>
                           <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{weeklyReports[0]?.monthName} {weeklyReports[0]?.year}</p>
@@ -1863,25 +1910,25 @@ export default function EngagementDashboard() {
                         <div className="flex bg-slate-100 p-1.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
                           <button 
                             onClick={() => setWeeklySortMode('bidang')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'bidang' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", weeklySortMode === 'bidang' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
                           >
                             Bidang
                           </button>
                           <button 
                             onClick={() => setWeeklySortMode('name')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", weeklySortMode === 'name' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", weeklySortMode === 'name' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
                           >
                             Nama
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                          <Button onClick={() => handleExportPDF(printRef, `recaplink-mingguan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-12   font-bold text-[10px] uppercase tracking-widest border-none">
+                          <Button onClick={() => handleExportPDF(printRef, `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
                             <FileText size={14} />
                             PDF
                           </Button>
-                          <Button onClick={() => handleExportImage(printRef, `recaplink-mingguan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-12 font-bold text-[10px] uppercase tracking-widest">
+                          <Button onClick={() => handleExportImage(printRef, `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs">
                             <ImageIcon size={14} />
-                            IMG
+                            Gambar
                           </Button>
                         </div>
                       </div>
@@ -1910,7 +1957,41 @@ export default function EngagementDashboard() {
                       </div>
                     </div>
 
-                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
+                    {!isExporting && (
+                      <div className="md:hidden space-y-2 mb-4">
+                        {sortedEmployees.map((emp) => {
+                          const total = weeklyStats.employeeTotals[emp.id] || 0;
+                          const max = weeklyStats.maxEngagements || 1;
+                          const pct = Math.round((total / max) * 100);
+                          const isTop = weeklyStats.top3Ids.includes(emp.id);
+                          const isBottom = weeklyStats.bottom3Ids.includes(emp.id);
+                          return (
+                            <div
+                              key={emp.id}
+                              className={cn(
+                                'flex items-center justify-between gap-3 p-3 rounded-xl border',
+                                isTop ? 'bg-emerald-50/80 border-emerald-100' : isBottom ? 'bg-rose-50/50 border-rose-100' : 'bg-slate-50/50 border-slate-200'
+                              )}
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900 truncate">{emp.name}</p>
+                                <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', getBidangColor(emp.bidang))}>
+                                  {emp.bidang || '—'}
+                                </span>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className={cn('text-sm font-bold', isTop ? 'text-emerald-700' : isBottom ? 'text-rose-600' : 'text-slate-700')}>
+                                  {pct}%
+                                </p>
+                                <p className="text-[10px] text-slate-400">{total}/{max}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]", !isExporting && "hidden md:block")}>
                       <div className="min-w-max">
                         <Table id="engagement-table" className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
                           <TableHeader>
@@ -1924,9 +2005,9 @@ export default function EngagementDashboard() {
                                   date === getLocalISODate(new Date()) ? "text-slate-900 bg-slate-100/50" : "text-slate-400"
                                 )}>
                                   <div className="flex flex-col items-center">
-                                    <span className="opacity-50 text-[8px]">{new Date(date).toLocaleDateString('id-ID', { weekday: 'short' })}</span>
-                                    <span className="text-sm leading-tight">{new Date(date).getDate()}</span>
-                                    <span className="opacity-50 text-[8px]">{new Date(date).toLocaleDateString('id-ID', { month: 'short' })}</span>
+                                    <span className="opacity-50 text-[8px]">{parseLocalISODate(date).toLocaleDateString('id-ID', { weekday: 'short' })}</span>
+                                    <span className="text-sm leading-tight">{parseLocalISODate(date).getDate()}</span>
+                                    <span className="opacity-50 text-[8px]">{parseLocalISODate(date).toLocaleDateString('id-ID', { month: 'short' })}</span>
                                   </div>
                                 </TableHead>
                               ))}
@@ -2024,7 +2105,7 @@ export default function EngagementDashboard() {
                     </div>
                     {isExporting && (
                       <div className="mt-2 text-[8px] text-slate-500 font-medium italic">
-                        * Note : Pencatatan dilakukan setiap pukul 15.00 WIB dan hanya mencakup komentar pada postingan 24 jam terakhir.
+                        * Catatan: pencatatan mengacu pada window 15.00 WIB (postingan 24 jam terakhir).
                       </div>
                     )}
                   </motion.div>
@@ -2055,7 +2136,7 @@ export default function EngagementDashboard() {
                           <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             <h2 className="text-xs sm:text-sm font-bold text-slate-900">{monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</h2>
                             {monthlyReports[0]?.isCurrentMonth && (
-                              <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 text-[9px] px-1.5 py-0">Bulan Ini</Badge>
+                              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0 font-semibold">Bulan ini</Badge>
                             )}
                           </div>
                         </div>
@@ -2067,31 +2148,31 @@ export default function EngagementDashboard() {
                         <div className="flex bg-slate-100 p-1.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
                           <button 
                             onClick={() => setMonthlySortMode('rank')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", monthlySortMode === 'rank' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", monthlySortMode === 'rank' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
                           >
                             Peringkat
                           </button>
                           <button 
                             onClick={() => setMonthlySortMode('bidang')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", monthlySortMode === 'bidang' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", monthlySortMode === 'bidang' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
                           >
                             Bidang
                           </button>
                           <button 
                             onClick={() => setMonthlySortMode('name')}
-                            className={cn("flex-1 sm:flex-none px-4 py-2 text-[10px] font-bold rounded-lg transition-all uppercase tracking-widest", monthlySortMode === 'name' ? "bg-white text-slate-900" : "text-slate-500 hover:text-slate-700")}
+                            className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", monthlySortMode === 'name' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
                           >
                             Nama
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                          <Button onClick={() => handleExportPDF(printMonthlyRef, `recaplink-bulanan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-12   font-bold text-[10px] uppercase tracking-widest border-none">
+                          <Button onClick={() => handleExportPDF(printMonthlyRef, `recaplink-bulanan-${getLocalISODate()}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
                             <FileText size={14} />
                             PDF
                           </Button>
-                          <Button onClick={() => handleExportImage(printMonthlyRef, `recaplink-bulanan-${new Date().toISOString().split('T')[0]}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-12 font-bold text-[10px] uppercase tracking-widest">
+                          <Button onClick={() => handleExportImage(printMonthlyRef, `recaplink-bulanan-${getLocalISODate()}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs">
                             <ImageIcon size={14} />
-                            IMG
+                            Gambar
                           </Button>
                         </div>
                       </div>
@@ -2099,28 +2180,72 @@ export default function EngagementDashboard() {
                   </motion.div>
 
                   <motion.div variants={itemVariants} ref={printMonthlyRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
-                    <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
+                    <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-6 pb-5")}>
                       <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
-                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Bulanan</h3>
-                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • {monthlyReports[0]?.monthName} {monthlyReports[0]?.year}</p>
+                        <h3 className={cn("font-bold text-slate-900 tracking-tight", isExporting ? "text-[16px] leading-[1] uppercase" : "text-xl")}>Laporan Bulanan</h3>
+                        <p className={cn("font-medium text-slate-500", isExporting ? "text-[8px] leading-[1] mt-1 uppercase tracking-widest" : "text-sm")}>
+                          {monthlyReports[0]?.monthName} {monthlyReports[0]?.year}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2 md:gap-3">
                         <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
                           {monthlyStats.bidangRates?.map((br, idx) => (
                             <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-200 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
-                              <span className={cn("font-bold uppercase tracking-wider text-slate-500 leading-none", isExporting ? "text-[5px]" : "text-[7px] md:text-[8px]")}>{br.bidang}</span>
-                              <span className={cn("font-bold text-emerald-600 leading-none", isExporting ? "text-[6px]" : "text-[8px] md:text-[10px]")}>{br.rate}%</span>
+                              <span className={cn("font-semibold text-slate-500 leading-none", isExporting ? "text-[5px] uppercase" : "text-[10px]")}>{br.bidang}</span>
+                              <span className={cn("font-bold text-emerald-600 leading-none", isExporting ? "text-[6px]" : "text-[10px]")}>{br.rate}%</span>
                             </div>
                           ))}
                         </div>
                         <div className={cn("bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
-                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>ReSo</p>
+                          <p className={cn("font-bold text-slate-900 leading-none", isExporting ? "text-[8px] uppercase tracking-widest" : "text-[10px]")}>ReSo</p>
                           <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
                         </div>
                       </div>
                     </div>
 
-                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]")}>
+                    {!isExporting && (
+                      <div className="md:hidden space-y-2 mb-4">
+                        {sortedMonthlyEmployees.map((emp) => {
+                          const total = monthlyStats.employeeTotals[emp.id] || 0;
+                          const max = monthlyStats.maxEngagements || 1;
+                          const pct = Math.round((total / max) * 100);
+                          const isTop = monthlyStats.top3Ids.includes(emp.id);
+                          const isBottom = monthlyStats.bottom3Ids.includes(emp.id);
+                          const plat = monthlyStats.employeePlatformStats[emp.id];
+                          return (
+                            <div
+                              key={emp.id}
+                              className={cn(
+                                'p-3 rounded-xl border',
+                                isTop ? 'bg-emerald-50/80 border-emerald-100' : isBottom ? 'bg-rose-50/50 border-rose-100' : 'bg-slate-50/50 border-slate-200'
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-slate-900 truncate">{emp.name}</p>
+                                  <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', getBidangColor(emp.bidang))}>
+                                    {emp.bidang || '—'}
+                                  </span>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className={cn('text-sm font-bold', isTop ? 'text-emerald-700' : isBottom ? 'text-rose-600' : 'text-slate-700')}>
+                                    {pct}%
+                                  </p>
+                                  <p className="text-[10px] text-slate-400">{total}/{max}</p>
+                                </div>
+                              </div>
+                              <div className="flex gap-2 text-[10px] font-semibold">
+                                <span className="text-pink-600">IG {plat?.igPercent ?? 0}%</span>
+                                <span className="text-blue-600">FB {plat?.fbPercent ?? 0}%</span>
+                                <span className="text-slate-600">TT {plat?.tiktokPercent ?? 0}%</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]", !isExporting && "hidden md:block")}>
                       <div className="min-w-max">
                         <Table id="engagement-monthly-table" className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
                           <TableHeader>
@@ -2220,7 +2345,7 @@ export default function EngagementDashboard() {
                     </div>
                     {isExporting && (
                       <div className="mt-2 text-[8px] text-slate-500 font-medium italic">
-                        * Note : Pencatatan dilakukan setiap pukul 15.00 WIB dan hanya mencakup komentar pada postingan 24 jam terakhir.
+                        * Catatan: pencatatan mengacu pada window 15.00 WIB (postingan 24 jam terakhir).
                       </div>
                     )}
                   </motion.div>
@@ -2248,52 +2373,99 @@ export default function EngagementDashboard() {
                 handleRecalculateAll={handleRecalculateAll}
                 isLoading={isLoading}
                 containerVariants={containerVariants}
+                metaToken={metaToken}
+                setMetaToken={setMetaToken}
+                handleSaveMetaToken={handleSaveMetaToken}
+                isSavingToken={isSavingToken}
               />
             )}
           </AnimatePresence>
         </div>
       </div>
     </main>
+
+      {/* Mobile "Lainnya" sheet */}
+      <AnimatePresence>
+        {isMoreOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="lg:hidden fixed inset-0 z-[55] bg-slate-900/40"
+              onClick={() => setIsMoreOpen(false)}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'tween', ease: 'easeOut', duration: 0.22 }}
+              className="lg:hidden fixed left-0 right-0 z-[56] bg-white rounded-t-2xl border-t border-slate-200 shadow-2xl px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+              style={{ bottom: 'var(--bottom-nav-h)' }}
+            >
+              <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-4" />
+              <p className="text-xs font-bold text-slate-400 mb-2 px-1">Menu lainnya</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { id: 'reports', label: 'Laporan Mingguan', icon: <History size={18} /> },
+                  { id: 'monthly-reports', label: 'Laporan Bulanan', icon: <PieChart size={18} /> },
+                  { id: 'employees', label: 'Data Pegawai', icon: <Users2 size={18} /> },
+                  { id: 'settings', label: 'Pengaturan', icon: <Settings size={18} /> },
+                ] as const).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setIsMoreOpen(false);
+                    }}
+                    className={cn(
+                      'flex items-center gap-2.5 p-3.5 rounded-xl border text-left text-sm font-semibold transition-colors min-h-[48px]',
+                      activeTab === item.id
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    )}
+                  >
+                    {item.icon}
+                    <span className="leading-tight">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Bottom Navigation for Mobile */}
-      <motion.nav 
-        initial={{ y: 100 }}
-        animate={{ y: 0 }}
-        transition={{ ease: "easeOut", duration: 0.2 }}
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 px-4 h-[calc(5rem+env(safe-area-inset-bottom))] pb-safe flex items-center justify-around"
+      <nav 
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 px-1 h-[calc(5rem+env(safe-area-inset-bottom))] pb-safe flex items-center justify-around"
       >
         <BottomNavItem 
           active={activeTab === 'dashboard'} 
-          onClick={() => setActiveTab('dashboard')} 
+          onClick={() => { setActiveTab('dashboard'); setIsMoreOpen(false); }} 
           icon={<LayoutDashboard size={22} />} 
-          label="Home" 
+          label="Beranda" 
         />
         <BottomNavItem 
           active={activeTab === 'overview'} 
-          onClick={() => setActiveTab('overview')} 
+          onClick={() => { setActiveTab('overview'); setIsMoreOpen(false); }} 
           icon={<PlusCircle size={22} />} 
           label="Input" 
         />
         <BottomNavItem 
           active={activeTab === 'daily-report'} 
-          onClick={() => setActiveTab('daily-report')} 
+          onClick={() => { setActiveTab('daily-report'); setIsMoreOpen(false); }} 
           icon={<FileText size={22} />} 
           label="Harian" 
         />
         <BottomNavItem 
-          active={activeTab === 'reports'} 
-          onClick={() => setActiveTab('reports')} 
-          icon={<History size={22} />} 
-          label="Mingguan" 
+          active={['reports', 'monthly-reports', 'employees', 'settings'].includes(activeTab) || isMoreOpen} 
+          onClick={() => setIsMoreOpen((v) => !v)} 
+          icon={<Menu size={22} />} 
+          label="Lainnya" 
         />
-        <BottomNavItem 
-          active={activeTab === 'monthly-reports'} 
-          onClick={() => setActiveTab('monthly-reports')} 
-          icon={<PieChart size={22} />} 
-          label="Bulanan" 
-        />
-      </motion.nav>
+      </nav>
 
-      <Toaster position="bottom-center" duration={2000} />
     </div>
   );
 }
@@ -2301,90 +2473,61 @@ export default function EngagementDashboard() {
 const BottomNavItem = React.memo(function BottomNavItem({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
   return (
     <button 
+      type="button"
       onClick={onClick}
       className={cn(
-        "flex flex-col items-center justify-center gap-1 w-full h-full transition-all duration-200 relative",
-        active ? "text-rose-600" : "text-slate-400"
+        "flex flex-col items-center justify-center gap-1 w-full h-full min-h-[48px] transition-colors relative",
+        active ? "text-slate-900" : "text-slate-400"
       )}
     >
-      <div className={cn(
-        "transition-transform duration-200",
-        active ? "scale-110 -translate-y-0.5" : "scale-100"
-      )}>
-        {React.cloneElement(icon as React.ReactElement<any>, { size: active ? 22 : 20 })}
+      <div className={cn(active ? "scale-105" : "scale-100", "transition-transform duration-150")}>
+        {icon}
       </div>
-      <span className={cn("text-[9px] font-bold uppercase tracking-widest line-clamp-1 leading-none text-center px-1", active ? "opacity-100" : "opacity-70")}>{label}</span>
+      <span className={cn("text-[10px] font-semibold leading-none text-center px-0.5", active ? "opacity-100" : "opacity-80")}>
+        {label}
+      </span>
       {active && (
         <motion.div 
           layoutId="bottom-nav-indicator"
-          className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-8 h-1 bg-slate-900 rounded-b-full"
+          className="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-0.5 bg-slate-900 rounded-b-full"
         />
       )}
     </button>
   );
 });
 
-const StatCard = React.memo(function StatCard({ title, value, icon, color }: { title: string, value: string, icon: React.ReactNode, color: string }) {
-  const colorMap: Record<string, string> = {
-    rose: 'bg-rose-50 text-rose-500 border-rose-100/50',
-    sky: 'bg-sky-50 text-sky-500 border-sky-100/50',
-    violet: 'bg-violet-50 text-violet-500 border-violet-100/50',
-    emerald: 'bg-emerald-50 text-emerald-500 border-emerald-200/50'
-  };
-
+const NavItem = React.memo(function NavItem({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
   return (
-    <motion.div
-      whileHover={{ y: -5, scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-      transition={{ ease: "easeOut", duration: 0.2 }}
+    <Button 
+      variant="ghost" 
+      className={cn(
+        'w-full justify-start gap-3 h-11 rounded-xl px-4 transition-colors',
+        active 
+          ? 'bg-slate-900 text-white hover:bg-slate-800 hover:text-white' 
+          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+      )}
+      onClick={onClick}
     >
-      <Card className="border-slate-200/50 rounded-xl overflow-hidden group  transition-all bg-white relative h-full">
-        <CardContent className="p-4 md:p-6">
-          <div className="flex items-center justify-between mb-3 md:mb-4">
-            <motion.div 
-              className={`p-2 md:p-2.5 rounded-xl ${colorMap[color]} border shrink-0`}
-              whileHover={{ rotate: [0, -10, 10, 0] }}
-            >
-              {React.cloneElement(icon as React.ReactElement<any>, { size: 18 })}
-            </motion.div>
-            <div className="w-1.5 h-1.5 rounded-full bg-slate-200 absolute top-4 right-4" />
-          </div>
-          <div className="space-y-0.5">
-            <div className="text-xl md:text-2xl font-black text-slate-900 tracking-tight leading-tight">{value}</div>
-            <div className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-tighter sm:tracking-wider">{title}</div>
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
+      <span className={active ? 'text-white' : 'text-slate-400'}>{icon}</span>
+      <span className="font-semibold text-sm tracking-tight">{label}</span>
+      {active && <span className="ml-auto w-1.5 h-1.5 bg-white/80 rounded-full" />}
+    </Button>
   );
 });
 
-const NavItem = React.memo(function NavItem({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
+const MatchPreview = React.memo(function MatchPreview({ ig, fb, tiktok }: { ig: number; fb: number; tiktok: number }) {
   return (
-    <motion.div
-      whileTap={{ scale: 0.96 }}
-    >
-      <Button 
-        variant="ghost" 
-        className={`w-full justify-start gap-3 h-11 rounded-xl px-4 transition-all duration-300 relative overflow-hidden ${
-          active 
-            ? 'bg-slate-900 text-white  ' 
-            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-        }`}
-        onClick={onClick}
-      >
-        <div className={`${active ? 'text-white' : 'text-slate-400'}`}>
-          {icon}
-        </div>
-        <span className="font-semibold text-sm tracking-tight">{label}</span>
-        {active && (
-          <motion.div 
-            layoutId="nav-pill" 
-            className="ml-auto w-1 h-1 bg-white rounded-full"
-            transition={{ ease: "easeOut", duration: 0.3 }}
-          />
-        )}
-      </Button>
-    </motion.div>
+    <div className="flex flex-wrap gap-2 text-[11px] font-semibold items-center">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-pink-50 text-pink-700 border border-pink-100">
+        IG {ig}
+      </span>
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">
+        FB {fb}
+      </span>
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+        TT {tiktok}
+      </span>
+      <span className="text-slate-400 font-medium">pegawai terdeteksi</span>
+    </div>
   );
 });

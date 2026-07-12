@@ -1,20 +1,66 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# ReSo — Rekap Engagement Sosmed
 
-# Run and deploy your AI Studio app
+Aplikasi internal **Diskominfo** untuk merekap engagement pegawai ke media sosial lembaga (Instagram, Facebook, TikTok).
 
-This contains everything you need to run your app locally.
+Dokumen acuan:
 
-View your app in AI Studio: https://ai.studio/apps/fb938bba-d23a-4dfc-9bc9-1fdee767fe1d
+- [`specify.md`](./specify.md) — tujuan & domain produk  
+- [`constitution.md`](./constitution.md) — aturan pengembangan & deploy  
 
-## Run Locally
+## Stack
 
-**Prerequisites:**  Node.js
+- React 19 + TypeScript + Vite + Tailwind  
+- Firebase Auth (Google) + Firestore  
+- PWA (installable)  
+- Deploy target: **Vercel free** (`*.vercel.app`)
 
+## Menjalankan lokal
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+**Prasyarat:** Node.js 20+
+
+```bash
+npm install
+npm run dev
+```
+
+App: http://localhost:3000
+
+## Script
+
+| Command | Fungsi |
+|---------|--------|
+| `npm run dev` | Dev server (Express + Vite) |
+| `npm run build` | Build production ke `dist/` |
+| `npm run preview` | Preview build static |
+| `npm run lint` | Typecheck (`tsc --noEmit`) |
+| `npm run test:matching` | Regresi matching nama/username |
+
+## Deploy Vercel (gratis)
+
+1. Hubungkan repo ke Vercel  
+2. Framework: Vite · Output: `dist` (lihat `vercel.json`)  
+3. Deploy — SPA rewrite sudah dikonfigurasi  
+
+Production **tidak** membutuhkan Express. Recalculate berjalan di **client** (Firestore).
+
+## PWA
+
+- Installable (Chrome/Edge prompt; iOS: Bagikan → Tambah ke Layar Utama)
+- Service worker + auto-update (toast “Muat ulang” saat ada build baru)
+- App shell di-cache; **data rekap tetap butuh internet** (Firebase)
+- Notifikasi jam 14:45 / 15:00 hanya saat app terbuka (bukan push server)
+- Regenerasi ikon dari SVG: `npm run icons`
+
+## Fitur utama
+
+- Login Google (allowlist / admins)  
+- Master data pegawai + dual akun IG/FB/TikTok  
+- Input rekap harian (paste + Meta API helper)  
+- Laporan harian / mingguan / bulanan + export PDF/gambar  
+- Reminder 14:45 & 15:00 WIB  
+- Kalkulasi ulang matching (client-side)
+
+## Catatan
+
+- Mode pengembangan default: **penyempurnaan**, bukan rombak workflow (lihat constitution).  
+- Deploy rules Firestore terpisah (`firestore.rules`) ke Firebase Console jika diubah.

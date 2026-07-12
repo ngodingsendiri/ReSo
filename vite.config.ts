@@ -5,61 +5,85 @@ import {defineConfig, loadEnv} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
+  loadEnv(mode, '.', '');
   return {
     plugins: [
       react(), 
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'pwa-icon.svg', 'icon-192x192.png', 'icon-512x512.png', 'maskable-icon-512x512.png'],
+        includeAssets: [
+          'favicon.ico',
+          'pwa-icon.svg',
+          'icon-192x192.png',
+          'icon-512x512.png',
+          'maskable-icon-512x512.png',
+          'apple-touch-icon.png',
+          'apple-touch-icon-180.png',
+        ],
         workbox: {
-          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4MB
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          navigateFallback: '/index.html',
+          // App shell only — Firestore/Auth tetap butuh jaringan
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webmanifest}'],
         },
         manifest: {
+          id: '/',
           name: 'ReSo - Rekap Engagement Sosmed',
           short_name: 'ReSo',
           description: 'Aplikasi Rekapitulasi Engagement Media Sosial Diskominfo',
+          lang: 'id',
+          dir: 'ltr',
           theme_color: '#0f172a',
           background_color: '#ffffff',
           display: 'standalone',
           orientation: 'portrait',
           start_url: '/',
           scope: '/',
+          categories: ['productivity', 'business'],
           icons: [
             {
               src: 'icon-192x192.png',
               sizes: '192x192',
               type: 'image/png',
-              purpose: 'any'
+              purpose: 'any',
             },
             {
               src: 'icon-512x512.png',
               sizes: '512x512',
               type: 'image/png',
-              purpose: 'any'
+              purpose: 'any',
             },
             {
               src: 'maskable-icon-512x512.png',
               sizes: '512x512',
               type: 'image/png',
-              purpose: 'maskable'
-            }
-          ]
-        }
+              purpose: 'maskable',
+            },
+          ],
+        },
+        devOptions: {
+          enabled: false,
+        },
       })
     ],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+            motion: ['motion/react'],
+          },
+        },
+      },
+      chunkSizeWarningLimit: 600,
+    },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
     },
   };

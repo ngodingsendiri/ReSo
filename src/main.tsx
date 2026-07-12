@@ -3,12 +3,15 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { FirebaseProvider } from './components/FirebaseProvider';
-import { registerSW } from 'virtual:pwa-register';
 
-// Register service worker for PWA
-registerSW({ immediate: true });
+// Service worker is registered in <PWALifecycle /> so update toasts work with Sonner.
 
-createRoot(document.getElementById('root')!).render(
+const rootEl = document.getElementById('root');
+if (!rootEl) {
+  throw new Error('Root element #root tidak ditemukan');
+}
+
+createRoot(rootEl).render(
   <StrictMode>
     <FirebaseProvider>
       <App />

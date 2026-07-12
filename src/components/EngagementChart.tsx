@@ -9,7 +9,15 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 
-export default function EngagementChart({ data }: { data: any[] }) {
+export type EngagementChartPoint = {
+  name: string;
+  ig: number;
+  fb: number;
+  tiktok?: number;
+  total?: number;
+};
+
+export default function EngagementChart({ data }: { data: EngagementChartPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height="100%" minWidth={0}>
       <BarChart data={data}>
