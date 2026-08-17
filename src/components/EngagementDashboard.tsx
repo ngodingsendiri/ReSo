@@ -38,6 +38,7 @@ import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, w
 import { cn, getBidangColor } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate, addLocalDays } from '../lib/date';
 import { matchEmployeesToEngagement, engagedIdsEqual, mergeUniqueLines } from '../lib/matching';
+import { buildFillPatch, decideResoFill, RESO_FILL_EVENT, type ResoFillPayload, type ResoRawInputs } from '../lib/reso-bridge';
 
 import { DashboardTab } from './tabs/DashboardTab';
 import { SettingsTab } from './tabs/SettingsTab';
@@ -333,6 +334,12 @@ export default function EngagementDashboard() {
   const [initialFbLinks, setInitialFbLinks] = useState<string[]>([]);
   const [initialTiktokLinks, setInitialTiktokLinks] = useState<string[]>([]);
 
+  // Jembatan ReSoEx (Opsi A): payload ekstraksi yang menunggu diterapkan
+  // (diterapkan di load effect, SETELAH data tanggal dimuat), dan konfirmasi
+  // tanggal saran (Lapis 2 — sekali klik).
+  const [pendingResoFill, setPendingResoFill] = useState<{ payload: ResoFillPayload; date: string } | null>(null);
+  const [resoFillConfirm, setResoFillConfirm] = useState<{ payload: ResoFillPayload; suggestedDate: string; label?: string } | null>(null);
+
   // Load raw text and links for selected date if exists
   useEffect(() => {
     const existing = dailyEngagementsMap[selectedDate];
@@ -365,7 +372,61 @@ export default function EngagementDashboard() {
       setInitialFbLinks([]);
       setInitialTiktokLinks([]);
     }
-  }, [selectedDate, dailyEngagements]);
+
+    // Lapis 2 — hasil ekstraksi ReSoEx menunggu untuk tanggal ini: terapkan
+    // SETELAH data tanggal dimuat (hindari ditimpa blok load di atas).
+    if (pendingResoFill && pendingResoFill.date === selectedDate) {
+      const base: ResoRawInputs = {
+        igRawInput: existing ? existing.igRawText || '' : '',
+        fbRawInput: existing ? existing.fbRawText || '' : '',
+        tiktokRawInput: existing ? existing.tiktokRawText || '' : '',
+      };
+      const patch = buildFillPatch(base, pendingResoFill.payload);
+      if (patch) {
+        if (patch.igRawInput !== base.igRawInput) setIgRawInput(patch.igRawInput);
+        if (patch.fbRawInput !== base.fbRawInput) setFbRawInput(patch.fbRawInput);
+        if (patch.tiktokRawInput !== base.tiktokRawInput) setTiktokRawInput(patch.tiktokRawInput);
+        setIsInputModalOpen(true);
+        setActiveTab('overview');
+        const label =
+          pendingResoFill.payload.platform === 'facebook'
+            ? 'FB'
+            : pendingResoFill.payload.platform === 'instagram'
+              ? 'IG'
+              : 'TikTok';
+        toast.info(`Nama dari ReSoEx diisi ke List ${label} — review lalu simpan.`);
+      }
+      setPendingResoFill(null);
+    }
+  }, [selectedDate, dailyEngagements, pendingResoFill]);
+
+  // Jembatan ReSoEx (Opsi A): isi textarea platform dari hasil ekstraksi
+  // ekstensi (CustomEvent `reso:fill-engagement` dari content script di
+  // domain ini). Lapis 2: payload boleh membawa suggestedDate (deteksi umur
+  // post best-effort) — jika berbeda dari tanggal aktif, tampilkan konfirmasi
+  // sekali klik (banner); tanggal rekap tetap keputusan operator.
+  useEffect(() => {
+    const handleResoFill = (event: Event) => {
+      const payload = (event as CustomEvent<ResoFillPayload>).detail;
+      const decision = decideResoFill(
+        selectedDate,
+        { igRawInput, fbRawInput, tiktokRawInput },
+        payload
+      );
+      if (decision.action === 'none') return;
+      if (decision.action === 'apply') {
+        setPendingResoFill({ payload, date: selectedDate });
+        return;
+      }
+      setResoFillConfirm({
+        payload,
+        suggestedDate: decision.targetDate!,
+        label: decision.label,
+      });
+    };
+    window.addEventListener(RESO_FILL_EVENT, handleResoFill);
+    return () => window.removeEventListener(RESO_FILL_EVENT, handleResoFill);
+  }, [igRawInput, fbRawInput, tiktokRawInput, selectedDate]);
 
   const sortedEmployees = useMemo(() => {
     return employees.slice().sort((a, b) => {
@@ -2465,6 +2526,40 @@ export default function EngagementDashboard() {
           label="Lainnya" 
         />
       </nav>
+
+      {/* Jembatan ReSoEx — konfirmasi tanggal saran (Lapis 2, sekali klik) */}
+      {resoFillConfirm && (
+        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-xl">
+          <p className="text-xs font-medium text-slate-700">
+            Post ini tampaknya dari{' '}
+            <b>{resoFillConfirm.label || resoFillConfirm.suggestedDate}</b>{' '}
+            ({resoFillConfirm.suggestedDate}). Pindah rekap?
+          </p>
+          <Button
+            size="sm"
+            onClick={() => {
+              setSelectedDate(resoFillConfirm.suggestedDate);
+              setPendingResoFill({
+                payload: resoFillConfirm.payload,
+                date: resoFillConfirm.suggestedDate,
+              });
+              setResoFillConfirm(null);
+            }}
+          >
+            Pindah ke rekap {resoFillConfirm.suggestedDate}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setPendingResoFill({ payload: resoFillConfirm.payload, date: selectedDate });
+              setResoFillConfirm(null);
+            }}
+          >
+            Isi di tanggal aktif
+          </Button>
+        </div>
+      )}
 
     </div>
   );
