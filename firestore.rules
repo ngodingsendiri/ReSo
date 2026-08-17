@@ -94,6 +94,8 @@ service cloud.firestore {
              optionalIdList(data, 'igEngagedEmployeeIds') &&
              optionalIdList(data, 'fbEngagedEmployeeIds') &&
              optionalIdList(data, 'tiktokEngagedEmployeeIds') &&
+             // Waktu posting dari ReSoEx (L3) — daftar ISO lokal, max 100 per hari.
+             optionalStringList(data, 'postedAt', 100, 19) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
     

@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { getIdToken } from 'firebase/auth';
+import { createTokenHandoffHandler, rotateRefreshToken, type HandoffTokenProvider } from './lib/token-handoff';
 import { motion } from 'motion/react';
 import { Edit } from 'lucide-react';
 import EngagementDashboard from './components/EngagementDashboard';
@@ -50,34 +51,31 @@ export default function App() {
   const { user, loading, error } = useAuth();
   const [showLoading, setShowLoading] = useState(true);
 
-  // Jembatan token (Opsi C — API): content script ekstensi meminta idToken +
-  // refreshToken dari sesi login operator via CustomEvent. Zero setup: tidak
-  // ada login baru di ekstensi — reuse sesi Firebase ReSo yang sudah aktif.
+  // Jembatan token (Opsi C — API): content script ekstensi meminta token sesi
+  // Firebase operator via CustomEvent. Zero setup: tidak ada login baru di
+  // ekstensi — reuse sesi Firebase ReSo yang sudah aktif.
+  // Mitigasi paparan: token sesi utama TIDAK pernah keluar dari halaman —
+  // refresh token di-ROTASI (mint pasangan segar via REST) sebelum dikirim;
+  // saluran balasan unik per permintaan + guard sekali-pakai + cek origin
+  // (lihat src/lib/token-handoff.ts).
   useEffect(() => {
-    const onGetToken = (e: Event) => {
-      const detail = (e as CustomEvent<{ requestId?: string }>).detail || {};
-      const requestId = detail.requestId;
-      const respond = (payload: Record<string, unknown>) =>
-        window.dispatchEvent(
-          new CustomEvent('reso:token-response', { detail: { requestId, ...payload } }),
-        );
-      if (!user) {
-        respond({ error: 'no-user' });
-        return;
+    const provideTokens: HandoffTokenProvider = async () => {
+      if (!user) return null;
+      const current = (user as { refreshToken?: string }).refreshToken;
+      if (current) {
+        const rotated = await rotateRefreshToken(current);
+        if (rotated) {
+          return { ...rotated, uid: user.uid, email: user.email ?? null };
+        }
+        // Rotasi gagal (jaringan/API): kirim idToken SAJA (masa ~1 jam) —
+        // ekstensi handoff ulang saat kedaluwarsa; token sesi utama tetap
+        // tidak keluar dari halaman.
+        const idToken = await getIdToken(user);
+        return { idToken, refreshToken: '', uid: user.uid, email: user.email ?? null };
       }
-      getIdToken(user)
-        .then((idToken) =>
-          respond({
-            idToken,
-            refreshToken: (user as { refreshToken?: string }).refreshToken || null,
-            uid: user.uid,
-            email: user.email,
-          }),
-        )
-        .catch((err: unknown) =>
-          respond({ error: err instanceof Error ? err.message : String(err) }),
-        );
+      return null;
     };
+    const onGetToken = createTokenHandoffHandler(provideTokens, window.location.origin);
     window.addEventListener('reso:get-token', onGetToken);
     return () => window.removeEventListener('reso:get-token', onGetToken);
   }, [user]);

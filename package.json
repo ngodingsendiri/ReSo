@@ -10,7 +10,6 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test:matching": "tsx src/lib/matching.test.ts",
-    "test:bridge": "tsx src/lib/reso-bridge.test.ts",
     "test:api": "tsx src/lib/engagement-api.test.ts && tsx src/lib/engagement-api.handler.test.ts",
     "icons": "node scripts/generate-pwa-icons.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""

@@ -5,7 +5,11 @@ import {
   buildEngagementPatch,
   isValidDateStr,
   isDateTooFarFuture,
+  isValidPostedAt,
+  mergePostedAt,
+  collectUnverifiedAutoFilled,
   ADMIN_EMAILS,
+  type EngagementDocLike,
 } from './engagement-api';
 import type { MatchableEmployee } from './matching';
 
@@ -84,6 +88,32 @@ function ok(msg: string) {
   ok('multi-post per hari di-merge ke tanggal sama');
 }
 
+// ---- statistik added/existing konsisten dengan mergeUniqueLines ----
+{
+  // Existing ber-koma: Andi sudah ada (merge memecah koma & mendedupe) → 1 baru, 1 sudah ada
+  const r = buildEngagementPatch(
+    { fbRawText: 'Andi Wijaya, Budi Santoso FB' },
+    'facebook',
+    ['Andi Wijaya', 'Siti Aminah'],
+    employees,
+    '2026-08-17',
+  )!;
+  assert(r.patch.fbRawText === 'Andi Wijaya\nBudi Santoso FB\nSiti Aminah', 'existing koma dipecah jadi baris + dedupe');
+  assert(r.added === 1 && r.existing === 1, 'existing koma: added=1 (Siti), existing=1 (Andi dedupe)');
+
+  // Existing spasi ganda: key merge 'andi  wijaya' ≠ 'andi wijaya' → baris BARU ditambahkan
+  const r2 = buildEngagementPatch(
+    { fbRawText: 'Andi  Wijaya' },
+    'facebook',
+    ['Andi Wijaya'],
+    employees,
+    '2026-08-17',
+  )!;
+  assert(r2.patch.fbRawText === 'Andi  Wijaya\nAndi Wijaya', 'spasi ganda tetap ditambahkan oleh merge');
+  assert(r2.added === 1 && r2.existing === 0, 'spasi ganda: added=1 (konsisten dengan merge)');
+  ok('statistik added/existing konsisten dengan merge');
+}
+
 // ---- validasi input ----
 {
   assert(buildEngagementPatch(null, 'facebook', [], employees, '2026-08-17') === null, 'names kosong → null');
@@ -103,6 +133,61 @@ function ok(msg: string) {
   assert(isDateTooFarFuture('2026-08-17') === false, 'hari ini diterima');
   assert(ADMIN_EMAILS.length === 3, 'allowlist admin ada (cermin rules)');
   ok('validasi tanggal + allowlist');
+}
+
+// ---- waktu posting (L3) ----
+{
+  assert(isValidPostedAt('2026-08-17T07:30') === true, 'ISO lokal tanpa detik valid');
+  assert(isValidPostedAt('2026-08-17T07:30:00') === true, 'ISO lokal dengan detik valid');
+  assert(isValidPostedAt('2026-08-17 07:30') === false, 'spasi bukan T → invalid');
+  assert(isValidPostedAt('2026-08-17T25:30') === false, 'jam > 23 invalid');
+  assert(isValidPostedAt('2026-08-17T07:60') === false, 'menit > 59 invalid');
+  assert(isValidPostedAt('2026-02-30T07:30') === false, 'tanggal kalender palsu invalid');
+  assert(isValidPostedAt(123) === false, 'non-string invalid');
+  assert(isValidPostedAt(null) === false, 'null invalid');
+
+  assert(JSON.stringify(mergePostedAt(undefined, '2026-08-17T07:30')) === JSON.stringify(['2026-08-17T07:30']), 'existing kosong → satu entry');
+  assert(
+    JSON.stringify(mergePostedAt(['2026-08-17T07:30'], '2026-08-17T07:30')) ===
+      JSON.stringify(['2026-08-17T07:30']),
+    'duplikat → tidak bertambah (idempoten)'
+  );
+  assert(
+    JSON.stringify(mergePostedAt(['2026-08-17T07:30'], '2026-08-17T14:05')) ===
+      JSON.stringify(['2026-08-17T07:30', '2026-08-17T14:05']),
+    'kiriman kedua → append (satu hari banyak post)'
+  );
+  assert(
+    JSON.stringify(mergePostedAt(['2026-08-17T07:30', 'rusak'], '2026-08-17T14:05')) ===
+      JSON.stringify(['2026-08-17T07:30', '2026-08-17T14:05']),
+    'entry tidak valid dibuang saat merge'
+  );
+  ok('validasi + merge waktu posting');
+}
+
+// ---- status verifikasi rekap otomatis ----
+{
+  const docs: Record<string, EngagementDocLike> = {
+    '2026-08-10': { date: '2026-08-10', autoFilledAt: { seconds: 1 }, autoFilledCount: 3 },
+    '2026-08-11': { date: '2026-08-11', autoFilledAt: { seconds: 1 }, verifiedAt: { seconds: 2 } },
+    '2026-08-12': { date: '2026-08-12' },
+    '2026-08-13': { date: '2026-08-13', autoFilledAt: { seconds: 1 } },
+  };
+  const unverified = collectUnverifiedAutoFilled(docs);
+  assert(
+    JSON.stringify(unverified) === JSON.stringify(['2026-08-10', '2026-08-13']),
+    'hanya auto-filled tanpa verifiedAt, urut naik'
+  );
+  assert(collectUnverifiedAutoFilled(null)?.length === 0, 'null → kosong');
+  assert(collectUnverifiedAutoFilled({})?.length === 0, 'map kosong → kosong');
+  const onlyVerified: Record<string, EngagementDocLike> = {
+    '2026-08-14': { date: '2026-08-14', verifiedAt: { seconds: 1 } },
+  };
+  assert(
+    collectUnverifiedAutoFilled(onlyVerified)?.length === 0,
+    'verified tanpa autoFilled tidak terhitung'
+  );
+  ok('collectUnverifiedAutoFilled (filter + urut)');
 }
 
 console.log(`\nengagement-api: ${n} checks OK`);

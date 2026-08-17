@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -22,7 +22,8 @@ import {
   ExternalLink,
   PieChart,
   Bell,
-  Pen
+  Pen,
+  CheckCircle2
 } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
 import { motion, AnimatePresence } from 'motion/react';
@@ -30,20 +31,22 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { toast } from 'sonner';
-import { DailyEngagement, Employee } from '../types';
+import { DailyEngagement, Employee, UnmatchedName } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
 import { db, logout } from '../lib/firebase';
-import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, writeBatch, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
 import { cn, getBidangColor } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate, addLocalDays } from '../lib/date';
-import { matchEmployeesToEngagement, engagedIdsEqual, mergeUniqueLines } from '../lib/matching';
-import { buildFillPatch, decideResoFill, platformField, platformToCode, countDuplicates, RESO_FILL_EVENT, type ResoFillPayload, type ResoRawInputs } from '../lib/reso-bridge';
+import { matchEmployeesToEngagement, matchEngagementDetail, engagedIdsEqual, mergeUniqueLines } from '../lib/matching';
+import { collectUnverifiedAutoFilled } from '../lib/engagement-api';
 
 import { DashboardTab } from './tabs/DashboardTab';
 import { SettingsTab } from './tabs/SettingsTab';
 
 const EngagementChart = React.lazy(() => import('./EngagementChart'));
+
+const PLATFORM_LABEL: Record<UnmatchedName['platform'], string> = { ig: 'IG', fb: 'FB', tiktok: 'TikTok' };
 const EmployeeManager = React.lazy(() => import('./EmployeeManager'));
 
 const containerVariants: import('motion/react').Variants = {
@@ -78,10 +81,6 @@ const TAB_LABELS: Record<string, string> = {
   employees: 'Data Pegawai',
   settings: 'Pengaturan',
 };
-
-/** Label platform untuk pesan jembatan ReSoEx (FB/IG/TikTok). */
-const resoPlatformLabel = (p?: string) =>
-  p === 'facebook' ? 'FB' : p === 'instagram' ? 'IG' : 'TikTok';
 
 export default function EngagementDashboard() {
   const { user, loading } = useAuth();
@@ -307,6 +306,142 @@ export default function EngagementDashboard() {
     }, {} as Record<string, DailyEngagement>);
   }, [dailyEngagements]);
 
+  // Rekap otomatis dari ReSoEx yang belum diperiksa operator (autoFilledAt ada,
+  // verifiedAt belum) — sumber tombol "Terima semua rekap otomatis".
+  const unverifiedAutoFilledDates = useMemo(
+    () => collectUnverifiedAutoFilled(dailyEngagementsMap),
+    [dailyEngagementsMap]
+  );
+  const [isVerifyingAll, setIsVerifyingAll] = useState(false);
+
+  const handleVerifyAllAutoFilled = async () => {
+    if (!user) {
+      toast.error('Anda harus login untuk menyimpan data');
+      return;
+    }
+    if (!unverifiedAutoFilledDates.length) return;
+    setIsVerifyingAll(true);
+    try {
+      const batch = writeBatch(db);
+      for (const date of unverifiedAutoFilledDates) {
+        batch.set(
+          doc(db, 'dailyEngagement', date),
+          { date, verifiedAt: serverTimestamp() },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+      toast.success(`${unverifiedAutoFilledDates.length} rekap otomatis ditandai terverifikasi.`);
+    } catch (error: unknown) {
+      console.error('Error verifying auto-filled rekaps:', error);
+      toast.error('Gagal menandai terverifikasi — coba lagi.');
+    } finally {
+      setIsVerifyingAll(false);
+    }
+  };
+
+  // ---- Antrian nama belum terpetakan (review + pemetaan alias) ----
+  const [isUnmatchedReviewOpen, setIsUnmatchedReviewOpen] = useState(false);
+  const [mapSelections, setMapSelections] = useState<Record<string, string>>({});
+  const [isMapping, setIsMapping] = useState(false);
+
+  const selectedUnmatched = useMemo(() => {
+    const eng = dailyEngagementsMap[selectedDate];
+    return Array.isArray(eng?.unmatchedNames) ? (eng.unmatchedNames as UnmatchedName[]) : [];
+  }, [dailyEngagementsMap, selectedDate]);
+  // Waktu posting yang direkap otomatis dari ReSoEx (L3) — array, satu entry
+  // per kiriman (satu hari bisa banyak post).
+  const selectedPostedAt = useMemo(() => {
+    const eng = dailyEngagementsMap[selectedDate];
+    return Array.isArray(eng?.postedAt) ? (eng.postedAt as string[]) : [];
+  }, [dailyEngagementsMap, selectedDate]);
+
+  /** Hitung ulang matching ketiga platform untuk satu tanggal dari raw text-nya.
+   *  empList bisa membawa alias baru yang belum masuk state (onSnapshot async). */
+  const rematchDate = useCallback(
+    async (date: string, empList?: Employee[]): Promise<UnmatchedName[]> => {
+      const eng = dailyEngagementsMap[date];
+      const list = empList ?? employees;
+      const raw = (p: 'ig' | 'fb' | 'tiktok') =>
+        (p === 'ig' ? eng?.igRawText : p === 'fb' ? eng?.fbRawText : eng?.tiktokRawText) || '';
+      const ids = (p: 'ig' | 'fb' | 'tiktok') => matchEmployeesToEngagement(raw(p), list, p);
+      const unmatched = (['ig', 'fb', 'tiktok'] as const).flatMap((p) =>
+        matchEngagementDetail(raw(p), list, p).unmatched.map((name) => ({ name, platform: p }))
+      );
+      await setDoc(
+        doc(db, 'dailyEngagement', date),
+        {
+          igEngagedEmployeeIds: ids('ig'),
+          fbEngagedEmployeeIds: ids('fb'),
+          tiktokEngagedEmployeeIds: ids('tiktok'),
+          unmatchedNames: unmatched,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      return unmatched;
+    },
+    [dailyEngagementsMap, employees]
+  );
+
+  const handleMapUnmatched = async () => {
+    const entries = Object.entries(mapSelections).filter(([, empId]) => empId);
+    if (!entries.length) return;
+    setIsMapping(true);
+    try {
+      // Bangun daftar pegawai lokal yang sudah membawa alias baru, supaya match
+      // ulang di bawah melihatnya walau onSnapshot pegawai belum selesai.
+      const localEmployees = employees.map((e) => ({ ...e }));
+      for (const [key, empId] of entries) {
+        const name = key.slice(key.indexOf('|') + 1);
+        const emp = localEmployees.find((e) => e.id === empId);
+        if (!emp) continue;
+        // isValidEmployee mewajibkan name+nip di data masuk → kirim field lengkap.
+        await updateDoc(doc(db, 'employees', empId), {
+          name: emp.name,
+          nip: emp.nip,
+          bidang: emp.bidang || '',
+          igUsername: emp.igUsername || '',
+          igUsername2: emp.igUsername2 || '',
+          fbName: emp.fbName || '',
+          fbName2: emp.fbName2 || '',
+          tiktokName: emp.tiktokName || '',
+          tiktokName2: emp.tiktokName2 || '',
+          aliases: arrayUnion(name),
+          updatedAt: serverTimestamp(),
+        });
+        emp.aliases = [...(emp.aliases || []), name];
+      }
+      // Match ulang tanggal ini: nama yang baru dipetakan langsung keluar antrian.
+      const remaining = await rematchDate(selectedDate, localEmployees);
+      setMapSelections({});
+      if (remaining.length === 0) {
+        setIsUnmatchedReviewOpen(false);
+        toast.success(`Semua nama tanggal ${selectedDate} sudah terpetakan.`);
+      } else {
+        toast.success(`${entries.length} nama dipetakan — ${remaining.length} belum terpetakan.`);
+      }
+    } catch (error: unknown) {
+      console.error('Error mapping unmatched names:', error);
+      toast.error('Gagal memetakan nama — coba lagi.');
+    } finally {
+      setIsMapping(false);
+    }
+  };
+
+  const handleRematchOnly = async () => {
+    setIsMapping(true);
+    try {
+      const remaining = await rematchDate(selectedDate);
+      toast.info(`Match ulang selesai — ${remaining.length} nama belum terpetakan.`);
+    } catch (error: unknown) {
+      console.error('Error rematching:', error);
+      toast.error('Gagal match ulang — coba lagi.');
+    } finally {
+      setIsMapping(false);
+    }
+  };
+
   const closeInputModal = () => {
     setIsInputModalOpen(false);
     if (window.history.state?.modal === 'input') {
@@ -338,11 +473,6 @@ export default function EngagementDashboard() {
   const [initialFbLinks, setInitialFbLinks] = useState<string[]>([]);
   const [initialTiktokLinks, setInitialTiktokLinks] = useState<string[]>([]);
 
-  // Jembatan ReSoEx (Opsi A): payload ekstraksi yang menunggu diterapkan
-  // (diterapkan di load effect, SETELAH data tanggal dimuat), dan konfirmasi
-  // tanggal saran (Lapis 2 — sekali klik).
-  const [pendingResoFill, setPendingResoFill] = useState<{ date: string; patch: ResoRawInputs; message: string } | null>(null);
-  const [resoFillConfirm, setResoFillConfirm] = useState<{ payload: ResoFillPayload; suggestedDate: string; label?: string } | null>(null);
   // Notifikasi pengisian otomatis dari ReSoEx — sekali per tanggal per sesi.
   const notifiedAutoFillRef = useRef<Set<string>>(new Set());
 
@@ -380,27 +510,9 @@ export default function EngagementDashboard() {
     }
   }, [selectedDate, dailyEngagements]);
 
-  // Terapkan hasil kiriman ReSoEx SETELAH load-effect (urutan deklarasi):
-  // load memuat data tanggal dulu, lalu patch PRE-COMPUTED diterapkan.
-  // Effect TERPISAH dari load-effect — pendingResoFill bukan dep load-effect,
-  // jadi reset data tanggal (re-render kedua) TIDAK menggerus hasil kiriman.
-  useEffect(() => {
-    if (!pendingResoFill) return;
-    if (pendingResoFill.date !== selectedDate) {
-      setPendingResoFill(null);
-      return;
-    }
-    setIgRawInput(pendingResoFill.patch.igRawInput);
-    setFbRawInput(pendingResoFill.patch.fbRawInput);
-    setTiktokRawInput(pendingResoFill.patch.tiktokRawInput);
-    setIsInputModalOpen(true);
-    setActiveTab('overview');
-    toast.info(pendingResoFill.message);
-    setPendingResoFill(null);
-  }, [pendingResoFill, selectedDate]);
-
   // Data datang langsung dari ekstensi (API → Firestore). Real-time onSnapshot
-  // sudah memuatnya; di sini beri tahu operator supaya dicek lalu disimpan.
+  // sudah memuatnya; di sini beri tahu operator — data sudah tersimpan otomatis,
+  // tinggal dicek (tidak wajib simpan).
   useEffect(() => {
     const eng = dailyEngagementsMap[selectedDate];
     if (eng?.autoFilledAt && !notifiedAutoFillRef.current.has(selectedDate)) {
@@ -409,53 +521,9 @@ export default function EngagementDashboard() {
         typeof eng.autoFilledCount === 'number' && eng.autoFilledCount > 0
           ? ` (${eng.autoFilledCount} nama baru)`
           : '';
-      toast.info(`Rekap ${selectedDate} diisi otomatis dari ReSoEx${count} — cek lalu simpan.`);
+      toast.info(`Rekap ${selectedDate} diisi otomatis dari ReSoEx${count} — sudah tersimpan, cek rekapnya.`);
     }
   }, [selectedDate, dailyEngagementsMap]);
-
-  // Jembatan ReSoEx (Opsi A): isi textarea platform dari hasil ekstraksi
-  // ekstensi (CustomEvent `reso:fill-engagement` dari content script di
-  // domain ini). Lapis 2: payload boleh membawa suggestedDate (deteksi umur
-  // post best-effort) — jika berbeda dari tanggal aktif, tampilkan konfirmasi
-  // sekali klik (banner); tanggal rekap tetap keputusan operator.
-  useEffect(() => {
-    const handleResoFill = (event: Event) => {
-      const payload = (event as CustomEvent<ResoFillPayload>).detail;
-      const decision = decideResoFill(
-        selectedDate,
-        { igRawInput, fbRawInput, tiktokRawInput },
-        payload
-      );
-      if (decision.action === 'none') return;
-      if (decision.action === 'apply') {
-        // Merge aman: pertahankan isi manual operator di textarea, tambahkan
-        // hasil ekstraksi (dedupe case-insensitive) — tidak ada yang hilang.
-        const live: ResoRawInputs = { igRawInput, fbRawInput, tiktokRawInput };
-        const patch = buildFillPatch(live, payload, true);
-        if (!patch) return;
-        const code = platformToCode(payload.platform)!;
-        const field = platformField(code);
-        const additions = (payload.names as unknown[]).filter(
-          (n): n is string => typeof n === 'string' && n.trim().length > 0
-        );
-        const dup = countDuplicates(live[field], additions);
-        const label = resoPlatformLabel(payload.platform);
-        setPendingResoFill({
-          date: selectedDate,
-          patch,
-          message: `Nama dari ReSoEx digabung ke List ${label} — ${additions.length - dup} ditambahkan, ${dup} sudah ada. Review lalu simpan.`,
-        });
-        return;
-      }
-      setResoFillConfirm({
-        payload,
-        suggestedDate: decision.targetDate!,
-        label: decision.label,
-      });
-    };
-    window.addEventListener(RESO_FILL_EVENT, handleResoFill);
-    return () => window.removeEventListener(RESO_FILL_EVENT, handleResoFill);
-  }, [igRawInput, fbRawInput, tiktokRawInput, selectedDate]);
 
   const sortedEmployees = useMemo(() => {
     return employees.slice().sort((a, b) => {
@@ -790,14 +858,23 @@ export default function EngagementDashboard() {
       const tiktokChanged = tiktokContentChanged || tiktokIdsChanged;
 
       if (!igChanged && !fbChanged && !tiktokChanged) {
-        toast.info('Tidak ada perubahan untuk disimpan');
+        // Rekap otomatis dari ReSoEx sudah lengkap di DB — Simpan tanpa ubahan
+        // cukup menandai terverifikasi (menghapus kesan "wajib simpan").
+        if (existing?.autoFilledAt && !existing.verifiedAt) {
+          await setDoc(docRef, { date: selectedDate, verifiedAt: serverTimestamp() }, { merge: true });
+          toast.success('Rekap ditandai terverifikasi — data sudah lengkap dari ReSoEx.');
+        } else {
+          toast.info('Tidak ada perubahan untuk disimpan');
+        }
         closeInputModal();
         return;
       }
       
       const updateData: Record<string, unknown> = {
         date: selectedDate,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        // Menyimpan = operator sudah memeriksa rekap (termasuk yang auto-filled).
+        verifiedAt: serverTimestamp()
       };
       
       if (igChanged) {
@@ -817,6 +894,30 @@ export default function EngagementDashboard() {
         updateData.tiktokEngagedEmployeeIds = tiktokEngagedIds;
         updateData.tiktokLinks = tiktokLinks;
       }
+
+      // Antrian nama belum terpetakan: platform yang berubah dihitung ulang,
+      // platform lain dipertahankan dari dokumen (dedupe case-insensitive).
+      const prevUnmatched = Array.isArray(existing?.unmatchedNames)
+        ? (existing.unmatchedNames as UnmatchedName[])
+        : [];
+      const seenU = new Set<string>();
+      const unmatchedNames: UnmatchedName[] = [];
+      const pushU = (u: UnmatchedName) => {
+        const key = `${u.name.trim().toLowerCase()}|${u.platform}`;
+        if (seenU.has(key)) return;
+        seenU.add(key);
+        unmatchedNames.push(u);
+      };
+      for (const p of ['ig', 'fb', 'tiktok'] as const) {
+        const changed = p === 'ig' ? igChanged : p === 'fb' ? fbChanged : tiktokChanged;
+        if (changed) {
+          const raw = p === 'ig' ? currentIgRawInput : p === 'fb' ? currentFbRawInput : currentTiktokRawInput;
+          for (const name of matchEngagementDetail(raw, employees, p).unmatched) pushU({ name, platform: p });
+        } else {
+          for (const u of prevUnmatched) if (u.platform === p) pushU(u);
+        }
+      }
+      updateData.unmatchedNames = unmatchedNames;
 
       await setDoc(docRef, updateData, { merge: true });
 
@@ -924,7 +1025,7 @@ export default function EngagementDashboard() {
     const days = [];
     // Padding for start of month
     for (let i = 0; i < firstDay.getDay(); i++) {
-      days.push({ day: null, date: '', isCurrentMonth: false, isToday: false, isFilled: false, isFuture: false, isAutoFilled: false });
+      days.push({ day: null, date: '', isCurrentMonth: false, isToday: false, isFilled: false, isFuture: false, isAutoFilled: false, isVerified: false, hasUnmatched: false });
     }
     
     for (let d = 1; d <= lastDay.getDate(); d++) {
@@ -943,6 +1044,8 @@ export default function EngagementDashboard() {
           !!(engagement.igRawText || engagement.fbRawText || engagement.tiktokRawText)
         ),
         isAutoFilled: !!engagement?.autoFilledAt,
+        isVerified: !!engagement?.verifiedAt,
+        hasUnmatched: !!engagement?.unmatchedNames?.length,
         isFuture: dateStr > getLocalISODate(new Date())
       });
     }
@@ -1410,13 +1513,35 @@ export default function EngagementDashboard() {
                   </motion.div>
 
                   <motion.div variants={itemVariants} className="bg-white rounded-xl p-4 sm:p-6 md:p-10 border border-slate-200">
-                    <div className="flex justify-end mb-4 md:mb-6">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-4 md:mb-6">
+                      <div>
+                        {unverifiedAutoFilledDates.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleVerifyAllAutoFilled}
+                            disabled={isVerifyingAll}
+                            className="text-[11px] font-bold border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 h-8"
+                          >
+                            <CheckCircle2 size={13} className="mr-1.5" />
+                            {isVerifyingAll
+                              ? 'Menandai…'
+                              : `Terima ${unverifiedAutoFilledDates.length} rekap otomatis`}
+                          </Button>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-3 md:gap-5 text-[10px] font-semibold text-slate-500 bg-slate-50 px-3 md:px-5 py-2.5 rounded-xl border border-slate-200 w-full md:w-auto justify-center">
                         <div className="flex items-center gap-1.5">
                           <div className="w-2.5 h-2.5 rounded-full bg-slate-900" /> Terisi
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Dari ReSoEx
+                          <div className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Perlu review
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Terverifikasi
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black text-amber-500 leading-none">!</span> Belum terpetakan
                         </div>
                         <div className="flex items-center gap-1.5">
                           <div className="w-2.5 h-2.5 rounded-full bg-white border-2 border-slate-200" /> Kosong
@@ -1459,7 +1584,10 @@ export default function EngagementDashboard() {
                                   )}
                                   <div className="flex gap-0.5">
                                     {day.isAutoFilled && (
-                                      <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-emerald-300" : "bg-emerald-400")} />
+                                      <div className={cn("w-1 h-1 rounded-full", day.isVerified ? (day.isToday ? "bg-emerald-300" : "bg-emerald-400") : (day.isToday ? "bg-amber-300" : "bg-amber-400"))} />
+                                    )}
+                                    {day.hasUnmatched && (
+                                      <span className="text-[8px] font-black text-amber-500 leading-none" title="Ada nama belum terpetakan">!</span>
                                     )}
                                     {day.isFilled && (
                                       <>
@@ -1502,9 +1630,34 @@ export default function EngagementDashboard() {
                               <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
                                 {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 {dailyEngagementsMap[selectedDate]?.autoFilledAt && (
-                                  <Badge variant="outline" className="ml-2 text-[9px] font-bold border-emerald-300 text-emerald-700 bg-emerald-50 normal-case">
-                                    Dari ReSoEx
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      'ml-2 text-[9px] font-bold normal-case',
+                                      dailyEngagementsMap[selectedDate]?.verifiedAt
+                                        ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
+                                        : 'border-amber-300 text-amber-700 bg-amber-50'
+                                    )}
+                                  >
+                                    {dailyEngagementsMap[selectedDate]?.verifiedAt
+                                      ? 'Dari ReSoEx · Terverifikasi'
+                                      : 'Dari ReSoEx · Perlu review'}
                                   </Badge>
+                                )}
+                                {selectedUnmatched.length > 0 && (
+                                  <Badge
+                                    variant="warning"
+                                    className="ml-1.5 text-[9px] font-bold normal-case cursor-pointer hover:bg-amber-100"
+                                    onClick={() => setIsUnmatchedReviewOpen(true)}
+                                  >
+                                    {selectedUnmatched.length} belum terpetakan
+                                  </Badge>
+                                )}
+                                {selectedPostedAt.length > 0 && (
+                                  <span className="block mt-1 text-[10px] font-semibold text-slate-500">
+                                    Waktu posting:{' '}
+                                    {selectedPostedAt.map((t) => t.slice(11)).join(' · ')}
+                                  </span>
                                 )}
                               </p>
                             </div>
@@ -1744,6 +1897,88 @@ export default function EngagementDashboard() {
                               className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl h-11 px-6 border-none"
                             >
                               {isLoading ? 'Menyimpan…' : 'Simpan Rekap'}
+                            </Button>
+                          </div>
+                        </motion.div>
+                      </div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Modal review nama belum terpetakan */}
+                  <AnimatePresence>
+                    {isUnmatchedReviewOpen && (
+                      <div
+                        className="fixed inset-0 z-[65] flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px] p-0 sm:p-4"
+                        onClick={() => setIsUnmatchedReviewOpen(false)}
+                        role="presentation"
+                      >
+                        <motion.div
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 12 }}
+                          transition={{ ease: "easeOut", duration: 0.2 }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="bg-white w-full max-w-xl rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[88vh] sm:max-h-[82vh] shadow-2xl border border-slate-200"
+                        >
+                          <div className="p-5 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
+                            <div>
+                              <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">Petakan nama belum terpetakan</h3>
+                              <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                {' · '}{selectedUnmatched.length} nama tanpa pegawai
+                              </p>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => setIsUnmatchedReviewOpen(false)} className="rounded-full bg-slate-100 hover:bg-slate-200 h-9 w-9">
+                              <X className="text-slate-600" size={18} />
+                            </Button>
+                          </div>
+
+                          <div className="p-4 sm:p-6 space-y-3 overflow-y-auto pb-safe">
+                            <p className="text-xs text-slate-500">
+                              Pilih pegawai untuk tiap nama — nama tersimpan sebagai <b>alias</b> pegawai, jadi kiriman berikutnya otomatis cocok.
+                            </p>
+                            {selectedUnmatched.length === 0 ? (
+                              <div className="text-center py-10 text-sm font-semibold text-emerald-600">
+                                Semua nama sudah terpetakan 🎉
+                              </div>
+                            ) : (
+                              selectedUnmatched.map((u) => {
+                                const key = `${u.platform}|${u.name}`;
+                                return (
+                                  <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 bg-slate-50 rounded-xl border border-slate-200 p-3">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-900 text-white shrink-0">
+                                        {PLATFORM_LABEL[u.platform]}
+                                      </span>
+                                      <span className="text-sm font-semibold text-slate-800 truncate">{u.name}</span>
+                                    </div>
+                                    <select
+                                      className="w-full sm:w-56 h-9 rounded-lg border border-slate-300 text-sm px-2 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
+                                      value={mapSelections[key] || ''}
+                                      onChange={(e) => setMapSelections((m) => ({ ...m, [key]: e.target.value }))}
+                                    >
+                                      <option value="">— Pilih pegawai —</option>
+                                      {employees.map((emp) => (
+                                        <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          <div className="p-4 sm:p-6 border-t border-slate-100 flex flex-col sm:flex-row gap-2 justify-end shrink-0">
+                            <Button variant="ghost" onClick={handleRematchOnly} disabled={isMapping} className="text-xs font-bold">
+                              <RefreshCw size={14} className="mr-1.5" />
+                              Match ulang
+                            </Button>
+                            <Button
+                              onClick={handleMapUnmatched}
+                              disabled={isMapping || selectedUnmatched.length === 0 || !Object.values(mapSelections).some(Boolean)}
+                              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl h-10 px-5 border-none"
+                            >
+                              {isMapping ? 'Menyimpan…' : 'Petakan & simpan'}
                             </Button>
                           </div>
                         </motion.div>
@@ -2569,69 +2804,6 @@ export default function EngagementDashboard() {
           label="Lainnya" 
         />
       </nav>
-
-      {/* Jembatan ReSoEx — konfirmasi tanggal saran (Lapis 2, sekali klik) */}
-      {resoFillConfirm && (
-        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-xl">
-          <p className="text-xs font-medium text-slate-700">
-            Post ini tampaknya dari{' '}
-            <b>{resoFillConfirm.label || resoFillConfirm.suggestedDate}</b>{' '}
-            ({resoFillConfirm.suggestedDate}). Pindah rekap?
-          </p>
-          <Button
-            size="sm"
-            onClick={() => {
-              // "Pindah": ISI (ganti) textarea tanggal saran dengan hasil
-              // ekstraksi — data tanggal lain tidak tersentuh.
-              const target = dailyEngagementsMap[resoFillConfirm.suggestedDate];
-              const targetBase: ResoRawInputs = {
-                igRawInput: target?.igRawText || '',
-                fbRawInput: target?.fbRawText || '',
-                tiktokRawInput: target?.tiktokRawText || '',
-              };
-              const patch = buildFillPatch(targetBase, resoFillConfirm.payload, false);
-              if (!patch) return;
-              const additions = (resoFillConfirm.payload.names as unknown[]).filter(
-                (n): n is string => typeof n === 'string' && n.trim().length > 0
-              );
-              setSelectedDate(resoFillConfirm.suggestedDate);
-              setPendingResoFill({
-                date: resoFillConfirm.suggestedDate,
-                patch,
-                message: `Nama dari ReSoEx diisi ke List ${resoPlatformLabel(resoFillConfirm.payload.platform)} (${additions.length}) — review lalu simpan.`,
-              });
-              setResoFillConfirm(null);
-            }}
-          >
-            Pindah ke rekap {resoFillConfirm.suggestedDate}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              // "Isi di tanggal aktif": merge aman dengan isi manual operator.
-              const live: ResoRawInputs = { igRawInput, fbRawInput, tiktokRawInput };
-              const patch = buildFillPatch(live, resoFillConfirm.payload, true);
-              if (!patch) return;
-              const code = platformToCode(resoFillConfirm.payload.platform)!;
-              const field = platformField(code);
-              const additions = (resoFillConfirm.payload.names as unknown[]).filter(
-                (n): n is string => typeof n === 'string' && n.trim().length > 0
-              );
-              const dup = countDuplicates(live[field], additions);
-              const label = resoPlatformLabel(resoFillConfirm.payload.platform);
-              setPendingResoFill({
-                date: selectedDate,
-                patch,
-                message: `Nama dari ReSoEx digabung ke List ${label} — ${additions.length - dup} ditambahkan, ${dup} sudah ada. Review lalu simpan.`,
-              });
-              setResoFillConfirm(null);
-            }}
-          >
-            Isi di tanggal aktif
-          </Button>
-        </div>
-      )}
 
     </div>
   );

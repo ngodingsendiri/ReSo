@@ -1,7 +1,12 @@
 /**
  * Lightweight matching regression checks (run: npx tsx src/lib/matching.test.ts)
  */
-import { matchEmployeesToEngagement, engagedIdsEqual, mergeUniqueLines } from './matching';
+import {
+  matchEmployeesToEngagement,
+  matchEngagementDetail,
+  engagedIdsEqual,
+  mergeUniqueLines,
+} from './matching';
 
 const employees = [
   {
@@ -100,6 +105,49 @@ assert(
   matchEmployeesToEngagement('li', shortEmp, 'ig').includes('s1'),
   'Short token exact still matches'
 );
+
+// Aliases (hasil pemetaan admin antrian belum terpetakan) — lintas platform
+const empWithAlias = [{ id: 'e1', name: 'Budi Santoso', aliases: ['Budi S'] }];
+assert(
+  matchEmployeesToEngagement('budi s', empWithAlias, 'fb').includes('e1'),
+  'alias dicocokkan di FB'
+);
+assert(
+  matchEmployeesToEngagement('budi s', empWithAlias, 'ig').includes('e1'),
+  'alias dicocokkan di IG'
+);
+assert(
+  matchEmployeesToEngagement('Budi S', empWithAlias, 'tiktok').includes('e1'),
+  'alias case-insensitive di TikTok'
+);
+
+// matchEngagementDetail — matched ids + daftar baris yang tidak cocok
+{
+  const r = matchEngagementDetail('Budi Santoso\nOrang Lain\nandiw', employees, 'ig');
+  assert(r.matchedIds.includes('e1'), 'detail: Budi Santoso match e1');
+  assert(r.matchedIds.includes('e3'), 'detail: andiw (ig username) match e3');
+  assert(
+    JSON.stringify(r.unmatched) === JSON.stringify(['Orang Lain']),
+    `detail: hanya 'Orang Lain' yang belum terpetakan, dapat ${JSON.stringify(r.unmatched)}`
+  );
+}
+{
+  const r = matchEngagementDetail('@budi_s\nbudi_s', employees, 'ig');
+  assert(r.matchedIds.length === 1 && r.matchedIds[0] === 'e1', 'detail: duplikat baris → 1 id');
+  assert(r.unmatched.length === 0, 'detail: semua baris cocok');
+}
+{
+  const r = matchEngagementDetail('Budi Santoso\n', employees, 'fb');
+  assert(r.unmatched.length === 0, 'detail: input kosong/tidak ada baris tidak dihitung');
+}
+{
+  // Alias yang sudah dipetakan → baris tidak lagi masuk antrian
+  // (catatan: textMatches memakai substring, jadi 'Mas Bud' ⊂ 'Mas Budi'
+  // ikut match — gunakan varian yang benar-benar beda untuk menguji antrian)
+  const withAlias = [{ id: 'e1', name: 'Budi Santoso', aliases: ['Pak Bud'] }];
+  const r = matchEngagementDetail('Pak Bud\nMas Budi', withAlias, 'fb');
+  assert(r.unmatched.length === 1 && r.unmatched[0] === 'Mas Budi', 'detail: alias menghapus baris dari antrian');
+}
 
 // mergeUniqueLines
 assert(

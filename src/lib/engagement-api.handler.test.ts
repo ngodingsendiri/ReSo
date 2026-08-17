@@ -39,6 +39,7 @@ const EXISTING_DOC = {
     date: { stringValue: '2026-08-17' },
     fbRawText: { stringValue: 'Andi Wijaya\nOrang Lain' },
     fbEngagedEmployeeIds: { arrayValue: { values: [{ stringValue: 'e1' }] } },
+    postedAt: { arrayValue: { values: [{ stringValue: '2026-08-17T07:30' }] } },
   },
 };
 
@@ -126,6 +127,88 @@ function ok(msg: string) {
   assert(typeof wb.fields.updatedAt.timestampValue === 'string', 'updatedAt (timestamp) tertulis');
   assert(wb.fields.autoFilledCount.integerValue === '1', 'autoFilledCount = jumlah nama baru');
   ok('kirim pertama → create + matching ids + penanda ReSoEx');
+}
+
+// 1b. Nama tidak cocok → masuk antrian unmatchedNames (mapValue, bukan null)
+{
+  const r = await runScenario({ token: 'tok-admin', body: { platform: 'facebook', names: ['Andi Wijaya', 'Orang Lain'], date: '2026-08-17' } });
+  assert(r.status === 200, `status 200, dapat ${r.status}`);
+  const d = r.data as { unmatched: number };
+  assert(d.unmatched === 1, `unmatched=1 di respons, dapat ${d.unmatched}`);
+  const wb = JSON.parse(r.writes[1].body || '{}');
+  const un = wb.fields.unmatchedNames.arrayValue.values;
+  assert(
+    JSON.stringify(un) ===
+      JSON.stringify([
+        {
+          mapValue: {
+            fields: {
+              name: { stringValue: 'Orang Lain' },
+              platform: { stringValue: 'fb' },
+            },
+          },
+        },
+      ]),
+    `unmatchedNames tertulis sebagai mapValue (Orang Lain/fb), dapat ${JSON.stringify(un)}`
+  );
+  ok('nama belum terpetakan → unmatchedNames ditulis + dilaporkan');
+}
+
+// 1c. postedAt (L3): body membawa postedAt → tertulis sebagai array di create
+{
+  const r = await runScenario({
+    token: 'tok-admin',
+    body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17', postedAt: '2026-08-17T09:45' },
+  });
+  assert(r.status === 200, `status 200, dapat ${r.status}`);
+  const wb = JSON.parse(r.writes[1].body || '{}');
+  const arr = wb.fields.postedAt?.arrayValue?.values;
+  assert(
+    JSON.stringify(arr) === JSON.stringify([{ stringValue: '2026-08-17T09:45' }]),
+    `postedAt tertulis di create, dapat ${JSON.stringify(arr)}`
+  );
+  ok('postedAt dikirim → disimpan ke dokumen (array)');
+}
+
+// 1d. postedAt invalid → 400
+{
+  const r = await runScenario({
+    token: 'tok-admin',
+    body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17', postedAt: '17-08-2026 07:30' },
+  });
+  assert(r.status === 400, `postedAt invalid ditolak (${r.status})`);
+  ok('postedAt invalid → 400');
+}
+
+// 1e. postedAt saat doc sudah ada → append + dedupe (satu hari banyak post)
+{
+  const r = await runScenario({
+    token: 'tok-admin',
+    body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17', postedAt: '2026-08-17T14:05' },
+    existing: true,
+  });
+  assert(r.status === 200, `status 200, dapat ${r.status}`);
+  const wb = JSON.parse(r.writes[0].body || '{}');
+  const arr = wb.fields.postedAt?.arrayValue?.values;
+  assert(
+    JSON.stringify(arr) ===
+      JSON.stringify([{ stringValue: '2026-08-17T07:30' }, { stringValue: '2026-08-17T14:05' }]),
+    `postedAt append + urut, dapat ${JSON.stringify(arr)}`
+  );
+  // kirim nilai yang sama lagi → tetap dua entry (idempoten)
+  const r2 = await runScenario({
+    token: 'tok-admin',
+    body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17', postedAt: '2026-08-17T14:05' },
+    existing: true,
+  });
+  const wb2 = JSON.parse(r2.writes[0].body || '{}');
+  const arr2 = wb2.fields.postedAt?.arrayValue?.values;
+  assert(
+    JSON.stringify(arr2) ===
+      JSON.stringify([{ stringValue: '2026-08-17T07:30' }, { stringValue: '2026-08-17T14:05' }]),
+    `postedAt dedupe saat diulang, dapat ${JSON.stringify(arr2)}`
+  );
+  ok('postedAt append + dedupe (idempoten)');
 }
 
 // 2. Idempotent: doc sudah ada → PATCH, added=0 existing=1

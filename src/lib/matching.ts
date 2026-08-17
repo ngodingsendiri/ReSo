@@ -14,6 +14,8 @@ export interface MatchableEmployee {
   fbName2?: string;
   tiktokName?: string;
   tiktokName2?: string;
+  /** Nama panggilan/varian hasil pemetaan admin (antrian belum terpetakan). */
+  aliases?: string[];
 }
 
 /** Normalize for comparison: lowercase, collapse whitespace. */
@@ -84,9 +86,20 @@ export function matchEmployeesToEngagement(
       if (tiktokMatch2 && textMatches(tiktokMatch2, lowerInput)) isMatch = true;
     }
 
+    // Alias hasil pemetaan admin (antrian belum terpetakan) — lintas platform.
+    if (!isMatch && (emp.aliases || []).some((a) => textMatches(normalizeMatchText(a), lowerInput))) {
+      isMatch = true;
+    }
+
     if (!isMatch) {
       for (const line of inputLines) {
         if (textMatches(nameMatch, line)) {
+          isMatch = true;
+          break;
+        }
+        // Alias juga dicocokkan per-baris (nama yang sudah dipetakan otomatis
+        // match pada kiriman berikutnya).
+        if (!isMatch && (emp.aliases || []).some((a) => textMatches(normalizeMatchText(a), line))) {
           isMatch = true;
           break;
         }
@@ -125,6 +138,68 @@ export function matchEmployeesToEngagement(
   }
 
   return Array.from(matchedIds);
+}
+
+/**
+ * Bidang pegawai yang dicocokkan ke satu baris: nama (berlaku lintas
+ * platform), handle/username khusus platform (pola sama dengan loop per-baris
+ * di matchEmployeesToEngagement), plus alias hasil pemetaan admin.
+ * Dikembalikan ternormalisasi (lowercase, whitespace dikolaps).
+ */
+function platformFields(emp: MatchableEmployee, platform: EngagementPlatform): string[] {
+  const out: string[] = [];
+  const push = (s: string) => {
+    if (s) out.push(s);
+  };
+  push(normalizeMatchText(emp.name || ''));
+  if (platform === 'ig') {
+    push(normalizeMatchText(stripAt(emp.igUsername || '')));
+    push(normalizeMatchText(stripAt(emp.igUsername2 || '')));
+  } else if (platform === 'fb') {
+    push(normalizeMatchText(emp.fbName || ''));
+    push(normalizeMatchText(emp.fbName2 || ''));
+  } else if (platform === 'tiktok') {
+    push(normalizeMatchText(stripAt(emp.tiktokName || '')));
+    push(normalizeMatchText(stripAt(emp.tiktokName2 || '')));
+  }
+  for (const a of emp.aliases || []) push(normalizeMatchText(a));
+  return out;
+}
+
+/**
+ * Matching detail per baris: daftar id pegawai yang cocok + baris yang tidak
+ * cocok dengan pegawai mana pun (sumber antrian "nama belum terpetakan").
+ * Baris dikembalikan dalam bentuk aslinya (trim, tanpa lowercase) supaya
+ * tetap terbaca manusia di UI review.
+ */
+export function matchEngagementDetail(
+  input: string,
+  employees: MatchableEmployee[],
+  platform: EngagementPlatform
+): { matchedIds: string[]; unmatched: string[] } {
+  if (!input?.trim() || !employees?.length) return { matchedIds: [], unmatched: [] };
+
+  const lines = input
+    .split(/[\n,;]+/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  const matchedIds = new Set<string>();
+  const unmatched: string[] = [];
+
+  for (const line of lines) {
+    const norm = normalizeMatchText(line);
+    let lineMatched = false;
+    for (const emp of employees) {
+      if (platformFields(emp, platform).some((f) => textMatches(f, norm))) {
+        matchedIds.add(emp.id);
+        lineMatched = true;
+      }
+    }
+    if (!lineMatched) unmatched.push(line);
+  }
+
+  return { matchedIds: Array.from(matchedIds), unmatched };
 }
 
 /** Stable compare for engaged ID arrays (order-independent). */

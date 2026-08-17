@@ -20,6 +20,8 @@ import firebaseConfig from '../firebase-applet-config.json';
 import {
   buildEngagementPatch,
   isValidDateStr,
+  isValidPostedAt,
+  mergePostedAt,
   isDateTooFarFuture,
   ADMIN_EMAILS,
   type ExtPlatform,
@@ -61,6 +63,13 @@ function decodeValue(v: { [k: string]: unknown } | null | undefined): unknown {
   if (v.arrayValue && (v.arrayValue as { values?: unknown[] }).values) {
     return (v.arrayValue as { values: unknown[] }).values.map(decodeValue);
   }
+  if (v.mapValue && (v.mapValue as { fields?: Record<string, unknown> }).fields) {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries((v.mapValue as { fields: Record<string, unknown> }).fields)) {
+      out[k] = decodeValue(val as { [k: string]: unknown });
+    }
+    return out;
+  }
   if (v.nullValue !== undefined) return null;
   return undefined;
 }
@@ -82,6 +91,16 @@ function enc(v: unknown): Record<string, unknown> {
   if (typeof v === 'number') return { integerValue: String(v) };
   if (typeof v === 'boolean') return { booleanValue: v };
   if (Array.isArray(v)) return { arrayValue: { values: v.map(enc) } };
+  if (v && typeof v === 'object') {
+    // Objek polos (mis. entry unmatchedNames {name, platform}) → mapValue.
+    return {
+      mapValue: {
+        fields: Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, enc(val)])
+        ),
+      },
+    };
+  }
   return { nullValue: null };
 }
 
@@ -136,6 +155,7 @@ async function fetchEmployees(idToken: string): Promise<MatchableEmployee[]> {
         fbName2: d.fbName2 ? String(d.fbName2) : undefined,
         tiktokName: d.tiktokName ? String(d.tiktokName) : undefined,
         tiktokName2: d.tiktokName2 ? String(d.tiktokName2) : undefined,
+        aliases: Array.isArray(d.aliases) ? d.aliases.map((a) => String(a)) : undefined,
       });
     }
     pageToken = data.nextPageToken || '';
@@ -212,8 +232,17 @@ export default async function handler(req: unknown, res: unknown) {
       return;
     }
 
-    const body = (r.body || {}) as { platform?: string; names?: unknown; date?: string };
-    const { platform, names, date } = body;
+    const body = (r.body || {}) as {
+      platform?: string;
+      names?: unknown;
+      date?: string;
+      postedAt?: unknown;
+    };
+    const { platform, names, date, postedAt } = body;
+    if (postedAt !== undefined && !isValidPostedAt(postedAt)) {
+      error(res, 400, 'Field `postedAt` harus ISO lokal YYYY-MM-DDTHH:MM (boleh + detik).');
+      return;
+    }
     if (!isValidDateStr(date)) {
       error(res, 400, 'Field `date` harus YYYY-MM-DD yang valid.');
       return;
@@ -264,6 +293,11 @@ export default async function handler(req: unknown, res: unknown) {
     result.patch.autoFilledAt = { __ts: nowIso };
     result.patch.autoFilledCount = result.added;
 
+    // Waktu posting (L3): satu hari bisa banyak post → array, append + dedupe.
+    if (postedAt !== undefined) {
+      result.patch.postedAt = mergePostedAt(existing?.postedAt, postedAt as string);
+    }
+
     await writeEngagement(idToken, date, result.patch);
 
     json(res, 200, {
@@ -272,6 +306,7 @@ export default async function handler(req: unknown, res: unknown) {
       platform,
       added: result.added,
       existing: result.existing,
+      unmatched: result.unmatched,
       message: `Tersimpan ke rekap ${date} — ${result.added} nama baru, ${result.existing} sudah ada.`,
     });
   } catch (e) {
