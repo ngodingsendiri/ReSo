@@ -18,7 +18,7 @@
  * per handoff + token sesi utama tidak pernah terekspos, bukan pencabutan.
  */
 
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfig from '../../firebase-applet-config';
 
 export interface HandoffTokens {
   idToken: string;

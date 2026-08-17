@@ -16,7 +16,7 @@
  * Idempotent: kirim ulang = update; satu hari bisa banyak post (di-merge).
  */
 
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfig from '../firebase-applet-config';
 import {
   buildEngagementPatch,
   isValidDateStr,
