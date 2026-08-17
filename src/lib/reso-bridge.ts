@@ -15,6 +15,7 @@
  */
 
 import { parseLocalISODate } from './date';
+import { mergeUniqueLines } from './matching';
 
 export const RESO_FILL_EVENT = 'reso:fill-engagement';
 
@@ -50,23 +51,52 @@ export function platformToCode(platform: string | null | undefined): ResoPlatfor
  * Nama digabung satu per baris — format yang sama dengan paste manual
  * (matching.ts memecah pada [\n,;]+).
  */
+/** Nama field textarea untuk kode platform (ig/fb/tiktok). */
+export function platformField(code: ResoPlatformCode): keyof ResoRawInputs {
+  return code === 'ig' ? 'igRawInput' : code === 'fb' ? 'fbRawInput' : 'tiktokRawInput';
+}
+
+/**
+ * Berapa dari `additions` yang sudah ada di `existing` (case-insensitive,
+ * pemisah baris/koma/titik-koma — konsisten dengan mergeUniqueLines).
+ */
+export function countDuplicates(existing: string, additions: string[]): number {
+  const seen = new Set(
+    (existing || '')
+      .split(/[\n,;]+/)
+      .map((l) => l.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  return additions.filter((a) => seen.has(a.trim().toLowerCase())).length;
+}
+
+/**
+ * Patch textarea dari payload ekstensi.
+ *
+ * `merge = false` (default): ganti textarea platform dengan daftar nama
+ * (semantik "isi"). `merge = true`: GABUNG dengan isi yang sudah ada
+ * (case-insensitive, urutan dipertahankan, tidak ada yang hilang) — dipakai
+ * saat operator sudah mengetik/menempel manual: hasil ekstraksi ditambahkan
+ * tanpa menghapus ketikan operator.
+ */
 export function buildFillPatch(
   state: ResoRawInputs,
-  payload: ResoFillPayload | null | undefined
+  payload: ResoFillPayload | null | undefined,
+  merge = false
 ): ResoRawInputs | null {
   if (!payload || typeof payload !== 'object') return null;
   const code = platformToCode(payload.platform);
   if (!code) return null;
   if (!Array.isArray(payload.names)) return null;
-  const text = (payload.names as unknown[])
+  const incoming = (payload.names as unknown[])
     .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
-    .map((n) => n.trim())
-    .join('\n');
-  if (!text) return null;
+    .map((n) => n.trim());
+  if (!incoming.length) return null;
   const patch: ResoRawInputs = { ...state };
-  if (code === 'ig') patch.igRawInput = text;
-  else if (code === 'fb') patch.fbRawInput = text;
-  else patch.tiktokRawInput = text;
+  const field = platformField(code);
+  patch[field] = merge
+    ? mergeUniqueLines(state[field] || '', incoming)
+    : incoming.join('\n');
   return patch;
 }
 

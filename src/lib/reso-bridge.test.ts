@@ -1,7 +1,7 @@
 /**
  * Reso bridge regression checks (run: npm run test:bridge → tsx src/lib/reso-bridge.test.ts)
  */
-import { platformToCode, buildFillPatch, decideResoFill, RESO_FILL_EVENT, type ResoRawInputs } from './reso-bridge';
+import { platformToCode, buildFillPatch, decideResoFill, platformField, countDuplicates, RESO_FILL_EVENT, type ResoRawInputs } from './reso-bridge';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -73,3 +73,23 @@ assert(confirm.patch !== undefined && confirm.patch.tiktokRawInput === 'tester',
 // Payload invalid → none
 assert(decideResoFill('2026-08-12', empty, { platform: 'youtube', names: ['Andi'] }).action === 'none', 'platform tak dikenal → none');
 assert(decideResoFill('2026-08-12', empty, null).action === 'none', 'payload null → none');
+
+// ---- Kebijakan aman: merge saat operator sudah mengetik manual ----
+assert(platformField('ig') === 'igRawInput' && platformField('fb') === 'fbRawInput' && platformField('tiktok') === 'tiktokRawInput', 'platformField memetakan kode → field textarea');
+
+assert(countDuplicates('Andi\nBudi', ['andi', 'Citra', 'BUDI']) === 2, 'countDuplicates case-insensitive');
+assert(countDuplicates('', ['Andi']) === 0, 'countDuplicates existing kosong');
+
+// merge=true: ketikan manual DI-PERTAHANKAN, nama ekstensi ditambahkan, dedupe
+const typed: ResoRawInputs = { igRawInput: '', fbRawInput: 'Budi (manual)\nAndi', tiktokRawInput: '' };
+const merged = buildFillPatch(typed, { platform: 'facebook', names: ['Andi', 'Citra'] }, true);
+assert(merged !== null && merged.fbRawInput === 'Budi (manual)\nAndi\nCitra', 'merge: manual dipertahankan + tambahan, dedupe Andi');
+assert(merged !== null && merged.igRawInput === '' && merged.tiktokRawInput === '', 'merge: field lain tidak berubah');
+
+// merge=false (default): ganti penuh (semantik "isi")
+const replaced = buildFillPatch(typed, { platform: 'facebook', names: ['Citra'] });
+assert(replaced !== null && replaced.fbRawInput === 'Citra', 'replace (default): textarea diganti total');
+
+// merge dengan textarea kosong = sama dengan replace
+const mergedEmpty = buildFillPatch(empty, { platform: 'tiktok', names: ['a', 'b'] }, true);
+assert(mergedEmpty !== null && mergedEmpty.tiktokRawInput === 'a\nb', 'merge di textarea kosong = isi biasa');

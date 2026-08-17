@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { getIdToken } from 'firebase/auth';
 import { motion } from 'motion/react';
 import { Edit } from 'lucide-react';
 import EngagementDashboard from './components/EngagementDashboard';
@@ -48,6 +49,38 @@ function LoadingScreen() {
 export default function App() {
   const { user, loading, error } = useAuth();
   const [showLoading, setShowLoading] = useState(true);
+
+  // Jembatan token (Opsi C — API): content script ekstensi meminta idToken +
+  // refreshToken dari sesi login operator via CustomEvent. Zero setup: tidak
+  // ada login baru di ekstensi — reuse sesi Firebase ReSo yang sudah aktif.
+  useEffect(() => {
+    const onGetToken = (e: Event) => {
+      const detail = (e as CustomEvent<{ requestId?: string }>).detail || {};
+      const requestId = detail.requestId;
+      const respond = (payload: Record<string, unknown>) =>
+        window.dispatchEvent(
+          new CustomEvent('reso:token-response', { detail: { requestId, ...payload } }),
+        );
+      if (!user) {
+        respond({ error: 'no-user' });
+        return;
+      }
+      getIdToken(user)
+        .then((idToken) =>
+          respond({
+            idToken,
+            refreshToken: (user as { refreshToken?: string }).refreshToken || null,
+            uid: user.uid,
+            email: user.email,
+          }),
+        )
+        .catch((err: unknown) =>
+          respond({ error: err instanceof Error ? err.message : String(err) }),
+        );
+    };
+    window.addEventListener('reso:get-token', onGetToken);
+    return () => window.removeEventListener('reso:get-token', onGetToken);
+  }, [user]);
 
   useEffect(() => {
     if (loading) {

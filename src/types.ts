@@ -29,4 +29,7 @@ export interface DailyEngagement {
   fbLinks?: string[];
   tiktokLinks?: string[];
   updatedAt?: FirestoreTime;
+  // Penanda dokumen diisi otomatis oleh ekstensi ReSoEx (via /api/engagement).
+  autoFilledAt?: FirestoreTime;
+  autoFilledCount?: number;
 }
