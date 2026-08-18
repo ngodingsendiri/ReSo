@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Vercel CLI local state
+.vercel
+
+.vercel
