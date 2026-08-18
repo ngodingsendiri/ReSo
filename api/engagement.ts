@@ -1,20 +1,39 @@
 /**
- * POST /api/engagement — jalur tulis otomatis dari ekstensi ReSoEx (Opsi C).
+ * POST /api/engagement — jalur tulis otomatis dari ekstensi ReSoEx.
  *
- * Ekstensi mengirim { platform, names, date } + `Authorization: Bearer
- * <idToken Firebase>`. Fungsi ini:
- *   1. Memverifikasi idToken via identitytoolkit (accounts:lookup).
- *   2. Cek admin: allowlist email (cermin firestore.rules) atau admins/{uid}.
- *   3. Membaca data pegawai (Firestore REST memakai token operator — rules
- *      tetap berlaku), lalu buildEngagementPatch: merge nama + dedupe
- *      case-insensitive + hitung ulang engagedEmployeeIds (modul matching
- *      yang sama dengan dashboard).
- *   4. Menulis dailyEngagement/{date} (PATCH updateMask / POST create).
+ * Mendukung dua mode:
+ *   - Single: { platform, names, date, postedAt? }
+ *   - Batch:  { posts: [{ platform, names, date, postedAt? }, ...] }
  *
- * Zero env var: tidak ada service account — semua panggilan Firestore
- * memakai token operator, jadi firestore.rules tetap penjaga keamanan.
- * Idempotent: kirim ulang = update; satu hari bisa banyak post (di-merge).
+ * Zero env var, idempotent, optimistic concurrency (precondition + retry).
+ * Rate limit: in-memory per IP (60 req/menit).
  */
+
+const API_VERSION = '1.0.0';
+
+// ---- Rate limit (in-memory per IP, window 60 dtk) ----
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 60;
+const RATE_LIMIT_WINDOW = 60_000;
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= RATE_LIMIT_MAX;
+}
+
+const _rateLimitCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of rateLimitMap) {
+    if (now > val.resetAt) rateLimitMap.delete(key);
+  }
+}, 300_000);
+if (_rateLimitCleanup.unref) _rateLimitCleanup.unref();
 
 import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 import {
@@ -34,6 +53,9 @@ const API_KEY = firebaseConfig.apiKey as string;
 
 const fsBase = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/${DATABASE}/documents`;
 
+/** Maksimal retry saat write gagal karena precondition conflict (lost-update guard). */
+const MAX_WRITE_RETRIES = 2;
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -49,7 +71,7 @@ function json(res: unknown, status: number, data: unknown) {
 }
 
 function error(res: unknown, status: number, message: string) {
-  json(res, status, { ok: false, error: message });
+  json(res, status, { ok: false, error: message, version: API_VERSION });
 }
 
 // ---- Firestore REST helpers (decode/encode field format) ----
@@ -163,20 +185,34 @@ async function fetchEmployees(idToken: string): Promise<MatchableEmployee[]> {
   return out;
 }
 
-async function fetchEngagementDoc(idToken: string, date: string): Promise<Record<string, unknown> | null> {
+async function fetchEngagementDoc(idToken: string, date: string): Promise<{ doc: Record<string, unknown> | null; updateTime: string | null }> {
   const r = await fetch(`${fsBase}/dailyEngagement/${encodeURIComponent(date)}`, {
     headers: { Authorization: `Bearer ${idToken}` },
   });
-  if (r.status === 404) return null;
+  if (r.status === 404) return { doc: null, updateTime: null };
   if (!r.ok) {
     throw Object.assign(new Error('Gagal membaca rekap harian.'), { status: 502 });
   }
-  const data = (await r.json()) as { fields?: Record<string, unknown> };
-  return decodeDoc({ fields: data.fields });
+  const data = (await r.json()) as {
+    name?: string;
+    fields?: Record<string, unknown>;
+    updateTime?: string;
+  };
+  return {
+    doc: decodeDoc({ name: data.name, fields: data.fields }),
+    updateTime: data.updateTime || null,
+  };
 }
 
-async function writeEngagement(idToken: string, date: string, patch: Record<string, unknown>): Promise<void> {
-  const body = JSON.stringify({ fields: Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, enc(v)])) });
+type WriteResult = { ok: boolean; conflict: boolean; message: string };
+
+async function writeEngagement(
+  idToken: string,
+  date: string,
+  patch: Record<string, unknown>,
+  currentDocument?: { exists?: boolean; updateTime?: string },
+): Promise<WriteResult> {
+  const fields = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, enc(v)]));
   const updateMask = Object.keys(patch)
     .map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
     .join('&');
@@ -184,23 +220,44 @@ async function writeEngagement(idToken: string, date: string, patch: Record<stri
     'Content-Type': 'application/json',
     Authorization: `Bearer ${idToken}`,
   };
+
+  const buildBody = (precondition?: { exists?: boolean; updateTime?: string }) => {
+    const obj: Record<string, unknown> = { fields };
+    const cp = precondition || currentDocument;
+    if (cp) obj.currentDocument = cp;
+    return JSON.stringify(obj);
+  };
+
   let r = await fetch(`${fsBase}/dailyEngagement/${encodeURIComponent(date)}?${updateMask}`, {
     method: 'PATCH',
     headers,
-    body,
+    body: buildBody(),
   });
+
   if (r.status === 404) {
-    // Dokumen belum ada → buat lewat POST (documentId = tanggal).
+    // Dokumen belum ada → buat lewat POST (documentId = tanggal, exists:false).
     r = await fetch(`${fsBase}/dailyEngagement?documentId=${encodeURIComponent(date)}`, {
       method: 'POST',
       headers,
-      body,
+      body: buildBody({ exists: false }),
     });
   }
+
   if (!r.ok) {
     const text = await r.text().catch(() => '');
-    throw Object.assign(new Error(`Gagal menyimpan rekap (${r.status}). ${text.slice(0, 200)}`), { status: 502 });
+    const isConflict =
+      r.status === 409 ||
+      text.includes('ALREADY_EXISTS') ||
+      text.includes('ABORTED') ||
+      text.includes('FAILED_PRECONDITION');
+    return {
+      ok: false,
+      conflict: isConflict,
+      message: `Gagal menyimpan rekap (${r.status}). ${text.slice(0, 200)}`,
+    };
   }
+
+  return { ok: true, conflict: false, message: '' };
 }
 
 export default async function handler(req: unknown, res: unknown) {
@@ -237,6 +294,12 @@ export default async function handler(req: unknown, res: unknown) {
       names?: unknown;
       date?: string;
       postedAt?: unknown;
+      posts?: Array<{
+        platform?: string;
+        names?: unknown;
+        date?: string;
+        postedAt?: unknown;
+      }>;
     };
     const { platform, names, date, postedAt } = body;
     if (postedAt !== undefined && !isValidPostedAt(postedAt)) {
@@ -271,43 +334,150 @@ export default async function handler(req: unknown, res: unknown) {
       return;
     }
 
-    const employees = await fetchEmployees(idToken);
-    const existing = await fetchEngagementDoc(idToken, date);
-
-    const result = buildEngagementPatch(
-      existing as Parameters<typeof buildEngagementPatch>[0],
-      platform as ExtPlatform,
-      names,
-      employees,
-      date,
-    );
-    if (!result) {
-      error(res, 400, 'Tidak ada nama valid untuk disimpan (atau data pegawai kosong).');
+    // ---- Rate limit ----
+    const ip =
+      (r.headers?.['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      (r.headers?.['x-real-ip'] as string) ||
+      'unknown';
+    if (!checkRateLimit(ip)) {
+      error(res, 429, 'Terlalu banyak permintaan. Coba lagi dalam satu menit.');
       return;
     }
 
-    // Penanda pengisian otomatis dari ReSoEx: dashboard menampilkan badge +
-    // toast "cek lalu simpan" (tanpa ini operator tak tahu data sudah masuk).
-    const nowIso = new Date().toISOString();
-    result.patch.updatedAt = { __ts: nowIso };
-    result.patch.autoFilledAt = { __ts: nowIso };
-    result.patch.autoFilledCount = result.added;
+    const employees = await fetchEmployees(idToken);
 
-    // Waktu posting (L3): satu hari bisa banyak post → array, append + dedupe.
-    if (postedAt !== undefined) {
-      result.patch.postedAt = mergePostedAt(existing?.postedAt, postedAt as string);
+    // ---- Normalize: single → array (batch)
+    const posts = Array.isArray(body.posts)
+      ? body.posts
+      : [{ platform, names, date, postedAt }];
+
+    const results: Array<Record<string, unknown>> = [];
+
+    for (const post of posts) {
+      const p = post as {
+        platform?: string;
+        names?: unknown;
+        date?: unknown;
+        postedAt?: unknown;
+      };
+
+      // Validate each post
+      if (p.postedAt !== undefined && !isValidPostedAt(p.postedAt)) {
+        results.push({ ok: false, error: 'postedAt invalid', date: p.date, platform: p.platform });
+        continue;
+      }
+      if (!isValidDateStr(p.date)) {
+        results.push({ ok: false, error: 'date invalid', date: p.date, platform: p.platform });
+        continue;
+      }
+      if (isDateTooFarFuture(p.date as string)) {
+        results.push({ ok: false, error: 'tanggal terlalu jauh ke masa depan', date: p.date, platform: p.platform });
+        continue;
+      }
+      if (p.platform !== 'facebook' && p.platform !== 'instagram' && p.platform !== 'tiktok') {
+        results.push({ ok: false, error: 'platform harus facebook|instagram|tiktok', date: p.date, platform: p.platform });
+        continue;
+      }
+      if (!Array.isArray(p.names) || !p.names.some((n: unknown) => typeof n === 'string' && (n as string).trim())) {
+        results.push({ ok: false, error: 'names harus array minimal 1 nama', date: p.date, platform: p.platform });
+        continue;
+      }
+
+      // Optimistic concurrency: baca doc → merge → tulis dengan precondition.
+      let writeOk = false;
+      let lastErr: { status?: number; message?: string } | null = null;
+
+      for (let attempt = 0; attempt <= MAX_WRITE_RETRIES; attempt++) {
+        try {
+          const docInfo = await fetchEngagementDoc(idToken, p.date as string);
+          const existing = docInfo.doc;
+r
+          const result = buildEngagementPatch(
+            existing as Parameters<typeof buildEngagementPatch>[0],
+            p.platform as ExtPlatform,
+            p.names,
+            employees,
+            p.date as string,
+          );
+          if (!result) {
+            results.push({ ok: false, error: 'nama tidak valid atau pegawai kosong', date: p.date, platform: p.platform });
+            writeOk = true; // skip, bukan error
+            break;
+          }
+r
+          const nowIso = new Date().toISOString();
+          result.patch.updatedAt = { __ts: nowIso };
+          result.patch.autoFilledAt = { __ts: nowIso };
+          result.patch.autoFilledCount = result.added;
+
+          if (p.postedAt !== undefined) {
+            result.patch.postedAt = mergePostedAt(existing?.postedAt, p.postedAt as string);
+          }
+
+          const currentDocument = existing
+            ? { updateTime: docInfo.updateTime || undefined }
+            : { exists: false };
+
+          const writeResult = await writeEngagement(idToken, p.date as string, result.patch, currentDocument);
+
+          if (writeResult.conflict && attempt < MAX_WRITE_RETRIES) continue;
+
+          if (!writeResult.ok) {
+            results.push({ ok: false, error: writeResult.message, date: p.date, platform: p.platform });
+            writeOk = true; // error sudah di-push
+            break;
+          }
+
+          results.push({
+            ok: true,
+            date: p.date,
+            platform: p.platform,
+            added: result.added,
+            existing: result.existing,
+            unmatched: result.unmatched,
+            message: `${result.added} nama baru, ${result.existing} sudah ada.`,
+          });
+          writeOk = true;
+          break;
+        } catch (e) {
+          lastErr = e as { status?: number; message?: string };
+          if (attempt < MAX_WRITE_RETRIES) continue;
+        }
+      }
+
+      if (!writeOk) {
+        results.push({ ok: false, error: lastErr?.message || 'Gagal menyimpan', date: p.date, platform: p.platform });
+      }
     }
 
-    await writeEngagement(idToken, date, result.patch);
+    // Single mode: kembalikan flat (backwards compatible)
+    if (!Array.isArray(body.posts)) {
+      const first = results[0];
+      if (first) {
+        json(res, first.ok ? 200 : (first.error?.toString().includes('502') ? 502 : 400), {
+          ok: first.ok,
+          date: first.date,
+          platform: first.platform,
+          added: first.added,
+          existing: first.existing,
+          unmatched: first.unmatched,
+          message: first.ok
+            ? `Tersimpan ke rekap ${first.date} — ${first.added} nama baru, ${first.existing} sudah ada.`
+            : first.error,
+          version: API_VERSION,
+        });
+      } else {
+        error(res, 400, 'Tidak ada data diproses.');
+      }
+      return;
+    }
 
+    // Batch mode
     json(res, 200, {
-      ok: true,
-      date,
-      platform,
-      added: result.added,
-      existing: result.existing,
-      unmatched: result.unmatched,
-      message: `Tersimpan ke rekap ${date} — ${result.added} nama baru, ${result.existing} sudah ada.`,
+      ok: results.every((r) => r.ok),
+      processed: results.length,
+      results,
+      version: API_VERSION,
     });
   } catch (e) {
     const err = e as { status?: number; message?: string };

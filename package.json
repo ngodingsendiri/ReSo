@@ -11,6 +11,8 @@
     "lint": "tsc --noEmit",
     "test:matching": "tsx src/lib/matching.test.ts",
     "test:api": "tsx src/lib/engagement-api.test.ts && tsx src/lib/engagement-api.handler.test.ts",
+    "test:handoff": "tsx src/lib/token-handoff.test.ts",
+    "test": "npm run test:matching && npm run test:api && npm run test:handoff",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "icons": "node scripts/generate-pwa-icons.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""

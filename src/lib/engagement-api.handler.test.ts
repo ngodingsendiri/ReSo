@@ -35,12 +35,14 @@ const EMPLOYEE_DOC = {
 };
 
 const EXISTING_DOC = {
+  name: 'projects/p/databases/d/documents/dailyEngagement/2026-08-17',
   fields: {
     date: { stringValue: '2026-08-17' },
     fbRawText: { stringValue: 'Andi Wijaya\nOrang Lain' },
     fbEngagedEmployeeIds: { arrayValue: { values: [{ stringValue: 'e1' }] } },
     postedAt: { arrayValue: { values: [{ stringValue: '2026-08-17T07:30' }] } },
   },
+  updateTime: '2026-08-17T07:30:00.000Z',
 };
 
 let fetchLog: Array<{ url: string; method: string; body?: string }> = [];
@@ -50,8 +52,14 @@ async function runScenario(opts: {
   body: unknown;
   existing?: boolean;
   method?: string;
+  /** Simulasikan race: PATCH pertama gagal 409 → handler harus retry. */
+  race?: boolean;
+  /** Simulasikan create race: POST pertama gagal 409 ALREADY_EXISTS → retry PATCH. */
+  createRace?: boolean;
 }): Promise<{ status: number; data: unknown; writes: Array<{ url: string; method: string; body?: string }> }> {
   fetchLog = [];
+  let patchCount = 0;
+  let postCount = 0;
   const res = makeRes() as unknown as ReturnType<typeof makeRes> & {
     _status: number;
     _data: unknown;
@@ -78,12 +86,32 @@ async function runScenario(opts: {
     if (url.includes('/admins/')) return respond(404, { error: { message: 'NOT_FOUND' } });
     if (url.includes('/employees')) return respond(200, { documents: [EMPLOYEE_DOC] });
     if (url.includes('/dailyEngagement')) {
-      if (method === 'POST') return respond(200, {});
+      if (method === 'POST') {
+        if (opts.createRace && postCount === 0) {
+          postCount++;
+          return respond(409, { error: { message: 'ALREADY_EXISTS' } });
+        }
+        postCount++;
+        return respond(200, {});
+      }
       if (method === 'PATCH') {
-        // PATCH di dokumen yang tidak ada → 404 (memicu fallback create)
+        if (opts.race && patchCount === 0) {
+          patchCount++;
+          return respond(409, { error: { message: 'ABORTED', status: 'FAILED_PRECONDITION' } });
+        }
+        // Doc sudah dibuat writer lain → PATCH harus sukses.
+        if (opts.createRace && postCount > 0) {
+          patchCount++;
+          return respond(200, {});
+        }
+        patchCount++;
         return opts.existing ? respond(200, {}) : respond(404, { error: { message: 'NOT_FOUND' } });
       }
       // GET
+      if (opts.createRace && postCount > 0) {
+        // Doc sudah dibuat writer lain → GET menemukannya.
+        return respond(200, { ...EXISTING_DOC, updateTime: '2026-08-17T07:31:00.000Z' });
+      }
       if (opts.existing) return respond(200, EXISTING_DOC);
       return respond(404, { error: { message: 'NOT_FOUND' } });
     }
@@ -248,6 +276,44 @@ function ok(msg: string) {
   const r = await runScenario({ token: '', body: {}, method: 'OPTIONS' });
   assert(r.status === 204, `preflight OK (${r.status})`);
   ok('OPTIONS preflight → 204 + CORS');
+}
+
+// 7. Race: PATCH conflict → retry sukses (lost-update guard)
+{
+  const r = await runScenario({
+    token: 'tok-admin',
+    body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17' },
+    existing: true,
+    race: true,
+  });
+  assert(r.status === 200, `retry sukses setelah PATCH conflict (${r.status})`);
+  const d = r.data as { ok: boolean; added: number; existing: number };
+  assert(d.ok, 'ok=true');
+  assert(
+    r.writes.length === 2 && r.writes.every((w) => w.method === 'PATCH'),
+    `2 PATCH attempts (1 conflict + 1 success), got ${r.writes.length} writes`,
+  );
+  ok('race: PATCH conflict → retry → success');
+}
+
+// 8. Create race: POST ALREADY_EXISTS → retry PATCH sukses
+{
+  const r = await runScenario({
+    token: 'tok-admin',
+    body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17' },
+    createRace: true,
+  });
+  assert(r.status === 200, `retry sukses setelah POST conflict (${r.status})`);
+  const d = r.data as { ok: boolean; added: number };
+  assert(d.ok, 'ok=true');
+  assert(
+    r.writes.length === 3 &&
+    r.writes[0].method === 'PATCH' && // PATCH → 404 (doc belum ada)
+    r.writes[1].method === 'POST' && // POST → 409 ALREADY_EXISTS (race)
+    r.writes[2].method === 'PATCH', // PATCH → 200 (retry sukses)
+    `PATCH(404) + POST(409) + PATCH(200), got ${JSON.stringify(r.writes.map((w) => w.method))}`,
+  );
+  ok('create race: POST conflict → retry → PATCH success');
 }
 
 console.log(`\napi/engagement handler: ${n} checks OK`);

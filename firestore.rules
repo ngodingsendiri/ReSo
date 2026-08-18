@@ -47,14 +47,51 @@ service cloud.firestore {
     function optionalStringList(data, key, maxItems, maxItemLen) {
       return !(key in data) || (
         data[key] is list &&
-        data[key].size() <= maxItems
+        data[key].size() <= maxItems &&
+        data[key].all(v => v is string && v.size() <= maxItemLen)
       );
     }
 
     function optionalIdList(data, key) {
       return !(key in data) || (
         data[key] is list &&
-        data[key].size() <= 500
+        data[key].size() <= 500 &&
+        data[key].all(v => v is string && v.size() > 0 && v.size() <= 128)
+      );
+    }
+
+    function optionalTimestamp(data, key) {
+      return !(key in data) || data[key] is timestamp;
+    }
+
+    // Antrian "nama belum terpetakan" (ditulis dashboard + API ReSoEx):
+    // list { name: string, platform: 'ig'|'fb'|'tiktok' }. Batas sengaja
+    // sangat longgar — raw text sendiri sudah dibatasi 50000 karakter,
+    // jadi aturan ini fokus ke tipe, bukan menolak paste legit.
+    function isValidUnmatchedNames(data) {
+      return !('unmatchedNames' in data) || (
+        data.unmatchedNames is list &&
+        data.unmatchedNames.size() <= 50000 &&
+        data.unmatchedNames.all(u =>
+          u is map &&
+          u.name is string &&
+          u.platform is string &&
+          u.platform in ['ig', 'fb', 'tiktok']
+        )
+      );
+    }
+
+    // Waktu posting dari ReSoEx (L3): ISO lokal "YYYY-MM-DDTHH:MM" (boleh
+    // + detik) — cermin isValidPostedAt di src/lib/engagement-api.ts.
+    function optionalPostedAt(data) {
+      return !('postedAt' in data) || (
+        data.postedAt is list &&
+        data.postedAt.size() <= 100 &&
+        data.postedAt.all(t =>
+          t is string &&
+          t.size() <= 19 &&
+          t.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?$')
+        )
       );
     }
 
@@ -75,6 +112,8 @@ service cloud.firestore {
              optionalString(data, 'fbName2', 100) &&
              optionalString(data, 'tiktokName', 100) &&
              optionalString(data, 'tiktokName2', 100) &&
+             // Alias hasil pemetaan admin (antrian belum terpetakan) — list string.
+             optionalStringList(data, 'aliases', 500, 200) &&
              (!('createdAt' in data) || data.createdAt is timestamp) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
@@ -94,9 +133,14 @@ service cloud.firestore {
              optionalIdList(data, 'igEngagedEmployeeIds') &&
              optionalIdList(data, 'fbEngagedEmployeeIds') &&
              optionalIdList(data, 'tiktokEngagedEmployeeIds') &&
+             // Penanda ReSoEx (L3): waktu isi otomatis, jumlah nama baru, review operator.
+             optionalTimestamp(data, 'autoFilledAt') &&
+             (!('autoFilledCount' in data) || (data.autoFilledCount is int && data.autoFilledCount >= 0 && data.autoFilledCount <= 100000)) &&
+             optionalTimestamp(data, 'verifiedAt') &&
+             isValidUnmatchedNames(data) &&
              // Waktu posting dari ReSoEx (L3) — daftar ISO lokal, max 100 per hari.
-             optionalStringList(data, 'postedAt', 100, 19) &&
-             (!('updatedAt' in data) || data.updatedAt is timestamp);
+             optionalPostedAt(data) &&
+             optionalTimestamp(data, 'updatedAt');
     }
     
     function isValidSetting(data) {

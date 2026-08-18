@@ -2394,9 +2394,6 @@ export default function EngagementDashboard() {
                                   
                                   const todayStr = getLocalISODate(new Date());
                                   const isFuture = date > todayStr;
-                                  const hasIgAccount = !!emp.igUsername;
-                                  const hasFbAccount = !!emp.fbName;
-                                  const hasTiktokAccount = !!emp.tiktokName;
 
                                   return (
                                     <TableCell key={dIdx} className="border-r border-slate-50 text-center px-1.5 py-0 w-[1%] whitespace-nowrap">
