@@ -14,7 +14,7 @@ import {
   matchEngagementDetail,
   mergeUniqueLines,
   type EngagementPlatform,
-} from './matching';
+} from './matching.js';
 
 /** Platform dari sisi ekstensi (popup ReSoEx). */
 export type ExtPlatform = 'facebook' | 'instagram' | 'tiktok';

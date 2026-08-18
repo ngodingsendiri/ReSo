@@ -25,8 +25,8 @@ import {
   isDateTooFarFuture,
   ADMIN_EMAILS,
   type ExtPlatform,
-} from '../src/lib/engagement-api';
-import type { MatchableEmployee } from '../src/lib/matching';
+} from '../src/lib/engagement-api.js';
+import type { MatchableEmployee } from '../src/lib/matching.js';
 
 const PROJECT = firebaseConfig.projectId as string;
 const DATABASE = firebaseConfig.firestoreDatabaseId as string;
