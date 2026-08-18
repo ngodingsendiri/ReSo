@@ -1,0 +1,711 @@
+/* ===== ReSo Design System — Panel Facebook (fnk) ===== */
+/* Sprite sheet ikon (iconSprite shared.js): tersembunyi — id menang atas
+   aturan svg{} halaman; symbol hanya dirender saat di-<use>. */
+#rs-icon-sprite {
+  display: none;
+}
+#fnk-root {
+  all: initial;
+  --rs-bg: #f0f2f5;
+  --rs-card: #ffffff;
+  --rs-text: #1c1e21;
+  --rs-muted: #65676b;
+  --rs-line: #dddfe2;
+  --rs-accent: #1877f2;
+  --rs-accent-2: #42b72a;
+  --rs-on-accent-2: #ffffff;
+  --rs-danger: #e41e3f;
+  --rs-warn-bg: #fff4e5;
+  --rs-warn-text: #9a5b00;
+  --rs-ok-bg: #e8f8ef;
+  --rs-ok-text: #0a7a3e;
+  --rs-font: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --rs-radius: 12px;
+  --rs-radius-sm: 8px;
+  --rs-shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  /* Soft motion tokens */
+  --rs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --rs-ease-2: cubic-bezier(0.4, 0, 0.2, 1);
+  --rs-dur-fast: 140ms;
+  --rs-dur: 220ms;
+  --rs-dur-slow: 320ms;
+  font-family: var(--rs-font);
+  z-index: 2147483646;
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  pointer-events: none;
+}
+
+#fnk-root * {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+#fnk-root button {
+  font-family: inherit;
+}
+
+#fnk-root :focus-visible {
+  outline: 2px solid var(--rs-accent);
+  outline-offset: 2px;
+}
+
+/* ---- Ikon panel/FAB: SVG inline Material Symbols (bukan glyph font) ----
+   Halaman FB memblokir @font-face extension via CSP font-src, jadi ikon
+   WAJIB SVG inline (pola chip fnk-inline) — tidak ada font di halaman FB. */
+#fnk-root svg.rs-ic {
+  display: inline-block;
+  vertical-align: middle;
+  user-select: none;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  flex: none;
+}
+
+/* ---- Panel ---- */
+#fnk-root .fnk-panel,
+#fnk-root .fnk-fab {
+  pointer-events: auto;
+}
+
+#fnk-root .fnk-panel {
+  width: 300px;
+  background: var(--rs-card);
+  color: var(--rs-text);
+  border-radius: var(--rs-radius);
+  box-shadow: var(--rs-shadow);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+#fnk-root.fnk-collapsed .fnk-panel {
+  display: none;
+}
+
+/* ---- Header (flat) ---- */
+#fnk-root .fnk-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--rs-card);
+  border-bottom: 1px solid var(--rs-line);
+  color: var(--rs-text);
+}
+
+#fnk-root .fnk-logo-ic {
+  color: var(--rs-accent);
+  flex: 0 0 auto;
+}
+
+#fnk-root svg.fnk-logo-ic {
+  width: 18px;
+  height: 18px;
+}
+
+#fnk-root .fnk-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#fnk-root .fnk-min {
+  border: none;
+  background: transparent;
+  color: var(--rs-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+#fnk-root .fnk-min svg.rs-ic {
+  width: 18px;
+  height: 18px;
+}
+
+#fnk-root .fnk-min:hover {
+  background: var(--rs-bg);
+  color: var(--rs-text);
+}
+
+/* ---- Body ---- */
+#fnk-root .fnk-body {
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+#fnk-root .fnk-status {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--rs-muted);
+  min-height: 36px;
+}
+
+#fnk-root .fnk-hint {
+  font-size: 11px;
+  color: var(--rs-muted);
+  word-break: break-all;
+}
+
+#fnk-root .fnk-count {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--rs-accent);
+}
+
+/* Status-based colors */
+#fnk-root[data-status="partial"] .fnk-count {
+  color: #f7b928;
+}
+
+#fnk-root[data-status="error"] .fnk-status {
+  color: var(--rs-danger);
+}
+
+#fnk-root[data-status="done"] .fnk-count {
+  color: var(--rs-accent-2);
+}
+
+#fnk-root .fnk-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--rs-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+#fnk-root .fnk-check svg.rs-ic {
+  width: 16px;
+  height: 16px;
+  color: var(--rs-muted);
+}
+
+#fnk-root .fnk-check input {
+  margin: 0;
+  accent-color: var(--rs-accent);
+}
+
+#fnk-root .fnk-check input:checked + svg.rs-ic {
+  color: var(--rs-accent);
+}
+
+/* ---- API badge (ikon + kata pendek) ---- */
+#fnk-root .fnk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+#fnk-root .fnk-badge svg.rs-ic {
+  width: 14px;
+  height: 14px;
+}
+
+#fnk-root .fnk-badge.fnk-ok {
+  background: var(--rs-ok-bg);
+  color: var(--rs-ok-text);
+}
+
+#fnk-root .fnk-badge.fnk-warn {
+  background: var(--rs-warn-bg);
+  color: var(--rs-warn-text);
+}
+
+/* ---- Tools (search + sort) ---- */
+#fnk-root .fnk-tools {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+#fnk-root .fnk-search-ic {
+  color: var(--rs-muted);
+  pointer-events: none;
+  justify-self: end;
+}
+
+#fnk-root .fnk-search {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--rs-line);
+  background: var(--rs-bg);
+  color: var(--rs-text);
+  border-radius: 9px;
+  padding: 7px 10px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color var(--rs-dur-fast) var(--rs-ease);
+}
+
+#fnk-root .fnk-search:focus-visible {
+  border-color: var(--rs-accent);
+}
+
+/* ---- Preview daftar ---- */
+#fnk-root .fnk-list {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--rs-muted);
+  background: var(--rs-bg);
+  border: 1px dashed var(--rs-line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-top: 2px;
+}
+
+/* ---- Actions (ikon) ---- */
+#fnk-root .fnk-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+#fnk-root .fnk-btn {
+  border: 1px solid var(--rs-line);
+  background: var(--rs-card);
+  color: var(--rs-text);
+  border-radius: 9px;
+  height: 34px;
+  padding: 0;
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+#fnk-root .fnk-btn svg.rs-ic {
+  width: 18px;
+  height: 18px;
+}
+
+#fnk-root .fnk-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#fnk-root .fnk-btn.fnk-primary {
+  background: var(--rs-accent);
+  border-color: var(--rs-accent);
+  color: #fff;
+}
+
+#fnk-root .fnk-btn.fnk-success {
+  background: var(--rs-accent-2);
+  border-color: var(--rs-accent-2);
+  color: var(--rs-on-accent-2);
+}
+
+#fnk-root .fnk-btn.fnk-ghost {
+  background: transparent;
+}
+
+#fnk-root .fnk-btn.fnk-ghost:hover {
+  background: var(--rs-bg);
+}
+
+#fnk-root .fnk-btn.fnk-active {
+  color: var(--rs-accent);
+  border-color: var(--rs-accent);
+  font-variation-settings: "FILL" 1;
+}
+
+/* ===== Icon di bar Like / Comment / Share (minimal) ===== */
+#fnk-inline {
+  all: initial;
+  --rs-accent: #1877f2;
+  --rs-accent-2: #42b72a;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin: 0 2px;
+  flex: 0 0 auto;
+  order: 99;
+  line-height: 0;
+  overflow: visible;
+  z-index: 5;
+  position: relative;
+}
+
+#fnk-inline.fnk-inline-hidden {
+  display: none !important;
+}
+
+#fnk-inline .fnk-action-icon {
+  all: unset;
+  box-sizing: border-box;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  max-width: 36px;
+  max-height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #65676b;
+  background: transparent;
+  border: none;
+  padding: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+#fnk-inline .fnk-action-icon:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--rs-accent);
+}
+
+#fnk-inline .fnk-action-svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+#fnk-inline .fnk-action-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--rs-accent);
+  color: #fff;
+  font: 700 9px/14px "Segoe UI", system-ui, sans-serif;
+  text-align: center;
+  pointer-events: none;
+}
+
+#fnk-inline.fnk-inline-running .fnk-action-icon {
+  color: var(--rs-accent);
+  animation: fnk-pulse 1.1s ease-in-out infinite;
+}
+
+#fnk-inline.fnk-inline-done .fnk-action-icon {
+  color: var(--rs-accent-2);
+}
+
+#fnk-inline.fnk-inline-done .fnk-action-badge {
+  background: var(--rs-accent-2);
+}
+
+@keyframes fnk-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+/* ---- FAB (flat, ikon) ---- */
+#fnk-root .fnk-fab {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: var(--rs-accent);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  float: right;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
+}
+
+#fnk-root .fnk-fab svg.rs-ic {
+  width: 22px;
+  height: 22px;
+}
+
+#fnk-root .fnk-fab:hover {
+  transform: scale(1.06);
+}
+
+#fnk-root .fnk-fab.fnk-running {
+  animation: fnk-pulse 1.1s ease-in-out infinite;
+}
+
+#fnk-root .fnk-fab.fnk-done {
+  background: var(--rs-accent-2);
+  color: var(--rs-on-accent-2);
+}
+
+#fnk-root .fnk-fab[data-count]:not([data-count=""])::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #161823;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Dark mode ---- */
+@media (prefers-color-scheme: dark) {
+  #fnk-root {
+    --rs-bg: #18191a;
+    --rs-card: #242526;
+    --rs-text: #e4e6eb;
+    --rs-muted: #b0b3b8;
+    --rs-line: #3a3b3c;
+    --rs-shadow: 0 8px 28px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+
+  #fnk-inline .fnk-action-icon {
+    color: #b0b3b8;
+  }
+
+  #fnk-inline .fnk-action-icon:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #4599ff;
+  }
+}
+
+/* ===== Theme override (chosen in Options) ===== */
+#fnk-root[data-rs-theme="dark"] {
+  --rs-bg: #18191a;
+  --rs-card: #242526;
+  --rs-text: #e4e6eb;
+  --rs-muted: #b0b3b8;
+  --rs-line: #3a3b3c;
+  --rs-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+#fnk-root[data-rs-theme="light"] {
+  --rs-bg: #f0f2f5;
+  --rs-card: #ffffff;
+  --rs-text: #1c1e21;
+  --rs-muted: #65676b;
+  --rs-line: #dddfe2;
+  --rs-shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+/* ===== Micro-interactions & running feedback (header flat — parity dengan IG) ===== */
+#fnk-root .fnk-panel {
+  animation: fnk-rise 0.18s ease-out;
+}
+
+#fnk-root .fnk-btn {
+  transition: background 0.2s ease, border-color 0.2s ease,
+    transform 0.08s ease, box-shadow 0.2s ease;
+}
+
+#fnk-root .fnk-btn:not(:disabled):active {
+  transform: translateY(1px) scale(0.985);
+}
+
+#fnk-root .fnk-btn.fnk-primary:not(:disabled):hover,
+#fnk-root .fnk-btn.fnk-success:not(:disabled):hover {
+  filter: brightness(1.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+}
+
+#fnk-root[data-status="running"] .fnk-btn.fnk-primary {
+  background-image: linear-gradient(
+    110deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 65%
+  );
+  background-size: 220% 100%;
+  animation: fnk-shimmer 1.3s linear infinite;
+}
+
+#fnk-root[data-status="running"] .fnk-count {
+  animation: fnk-breathe 1.5s ease-in-out infinite;
+}
+
+#fnk-root[data-status="running"] .fnk-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--rs-accent);
+  animation: fnk-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes fnk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fnk-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes fnk-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes fnk-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* ===== Soft Motion System (v1.0.22) — hanya panel, bukan halaman host ===== */
+#fnk-root .fnk-panel {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--rs-dur-slow) var(--rs-ease),
+    transform var(--rs-dur-slow) var(--rs-ease),
+    visibility var(--rs-dur-slow);
+}
+
+#fnk-root.fnk-collapsed .fnk-panel {
+  display: block;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+  pointer-events: none;
+}
+
+#fnk-root .fnk-panel {
+  animation: fnk-rise 0.3s var(--rs-ease);
+}
+
+#fnk-root .fnk-min {
+  transition: background var(--rs-dur) var(--rs-ease-2);
+}
+
+#fnk-root .fnk-status {
+  transition: color var(--rs-dur) var(--rs-ease-2);
+}
+
+#fnk-root .fnk-count {
+  transition: color var(--rs-dur-slow) var(--rs-ease-2);
+}
+
+#fnk-root .fnk-badge {
+  transition: background var(--rs-dur) var(--rs-ease-2),
+    color var(--rs-dur) var(--rs-ease-2);
+}
+
+#fnk-root .fnk-btn {
+  transition: background var(--rs-dur) var(--rs-ease-2),
+    border-color var(--rs-dur) var(--rs-ease-2),
+    box-shadow var(--rs-dur) var(--rs-ease-2),
+    transform var(--rs-dur-fast) var(--rs-ease-2);
+}
+
+#fnk-root .fnk-btn:not(:disabled):active {
+  transform: translateY(1px) scale(0.97);
+}
+
+#fnk-root .fnk-fab {
+  transition: background var(--rs-dur) var(--rs-ease-2),
+    transform var(--rs-dur) var(--rs-ease),
+    box-shadow var(--rs-dur) var(--rs-ease-2);
+}
+
+#fnk-root .fnk-fab[data-count]:not([data-count=""])::after {
+  animation: fnk-pop var(--rs-dur) var(--rs-ease);
+}
+
+#fnk-inline .fnk-action-icon {
+  transition: background var(--rs-dur) var(--rs-ease-2),
+    color var(--rs-dur) var(--rs-ease-2);
+}
+
+#fnk-inline .fnk-action-badge {
+  animation: fnk-pop var(--rs-dur) var(--rs-ease);
+}
+
+@keyframes fnk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fnk-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ---- Aksesibilitas: hormati pengaturan animasi sistem (hanya panel, bukan halaman host) ---- */
+@media (prefers-reduced-motion: reduce) {
+  #fnk-root *,
+  #fnk-root *::before,
+  #fnk-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ReSo</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="brand">
+        <img class="logo" src="logo.svg" alt="ReSo" />
+        <div class="brand-txt">
+          <h1>ReSo</h1>
+          <p class="sub">Rekap komentar sosmed</p>
+        </div>
+      </div>
+
+      <label class="switch-row">
+        <span class="switch-label">Mode ReSo</span>
+        <input id="modeToggle" type="checkbox" />
+        <span class="slider" aria-hidden="true"></span>
+      </label>
+
+      <p class="hint" id="modeHint">
+        Aktif &rarr; ikon mengambang muncul di Facebook, TikTok &amp; Instagram
+      </p>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

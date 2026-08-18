@@ -10,4 +10,5 @@ coverage/
 # Vercel CLI local state
 .vercel
 
-.vercel
+# Extension dist diizinkan (built extension)
+!extension/dist/

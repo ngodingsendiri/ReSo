@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# gh release create butuh izin menulis release.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Build zip + GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Guard: tag vX.Y.Z harus sama persis dengan version di package.json —
+      # release dengan versi tidak cocok gagal di sini, bukan meng-upload zip salah nama.
+      - name: Cek tag == versi package.json
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "✗ Tag $GITHUB_REF_NAME tidak cocok dengan version package.json (v$VERSION)."
+            echo "  Naikkan versi dulu (npm version / edit manifest.json + package.json) sebelum tag."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # build + zip + verifikasi referensi manifest & integritas CRC — gagal = tidak ada release.
+      - name: Build zip (npm run zip)
+        run: npm run zip
+
+      # Ekstrak entri CHANGELOG versi ini → isi Release notes (bukan teks statis).
+      # Entri tidak ada → script exit 1, release batal (harus ada CHANGELOG dulu).
+      - name: Ekstrak Release notes dari CHANGELOG
+        run: node scripts/changelog-notes.mjs "$VERSION" "$RUNNER_TEMP/notes.md"
+
+      # Upload zip sebagai artifact GitHub Release (softprops/action-gh-release tidak dipakai —
+      # gh CLI bawaan runner cukup; nama file persis dari versi, bukan glob).
+      - name: Buat GitHub Release + upload artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ZIP="reso-ekstention-$VERSION.zip"
+          if [ ! -f "$ZIP" ]; then
+            echo "✗ $ZIP tidak ditemukan setelah npm run zip."
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" "$ZIP" \
+            --title "ReSoEx $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md"
