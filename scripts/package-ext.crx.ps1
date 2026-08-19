@@ -1,0 +1,184 @@
+#!/usr/bin/env pwsh
+<#
+.SYNOPSIS
+    Package ReSo extension as .crx with a stable extension ID.
+
+.DESCRIPTION
+    Uses Chrome's --pack-extension to produce a .crx file and a signing key.
+    The signing key ensures a stable extension ID across all installations
+    (needed for push via externally_connectable).
+
+    First run: generates key.pem + reso-extension.crx
+    Subsequent runs: reuses key.pem → same extension ID every time.
+
+.PARAMETER ExtensionDir
+    Path to the built extension directory (default: extension/dist)
+
+.PARAMETER OutputDir
+    Where to place the .crx + key.pem (default: extension/dist-crx)
+
+.EXAMPLE
+    pwsh scripts/package-ext.crx.ps1
+    pwsh scripts/package-ext.crx.ps1 -ExtensionDir extension/dist -OutputDir extension/dist-crx
+#>
+param(
+    [string]$ExtensionDir = "extension/dist",
+    [string]$OutputDir = "extension/dist-crx"
+)
+
+$ErrorActionPreference = "Stop"
+
+# ── Locate Chrome ──
+$chromePaths = @(
+    "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "${env:LOCALAPPDATA}\Google\Chrome\Application\chrome.exe"
+)
+$chrome = $chromePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if (-not $chrome) {
+    # Try PATH
+    $chrome = Get-Command chrome -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+}
+if (-not $chrome) {
+    $chrome = Get-Command "chrome.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+}
+
+if (-not $chrome) {
+    Write-Error "Chrome tidak ditemukan. Install Google Chrome atau set PATH."
+    exit 1
+}
+
+Write-Host "Chrome: $chrome" -ForegroundColor Cyan
+
+# ── Validate extension dir ──
+$extPath = (Resolve-Path $ExtensionDir).Path
+if (-not (Test-Path "$extPath\manifest.json")) {
+    Write-Error "manifest.json tidak ada di $extPath — jalankan build dulu."
+    exit 1
+}
+
+# ── Ensure output dir exists ──
+$outPath = (Resolve-Path $OutputDir -ErrorAction SilentlyContinue)
+if (-not $outPath) {
+    New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
+    $outPath = (Resolve-Path $OutputDir).Path
+}
+
+# ── Signing key ──
+$keyPath = Join-Path $outPath "reso-extension-key.pem"
+if (-not (Test-Path $keyPath)) {
+    Write-Host "Generating new signing key..." -ForegroundColor Yellow
+}
+
+# ── Pack ──
+Write-Host "Packing $extPath ..." -ForegroundColor Cyan
+
+$chromeArgs = @("--pack-extension=$extPath")
+if (Test-Path $keyPath) {
+    $chromeArgs += "--pack-extension-key=$keyPath"
+}
+
+$proc = Start-Process -FilePath $chrome -ArgumentList $chromeArgs -Wait -PassThru -NoNewWindow -WindowStyle Hidden
+
+# Chrome --pack-extension outputs the .crx next to the extension dir
+$crxName = Split-Path $extPath -Leaf
+$crxFile = Join-Path (Split-Path $extPath -Parent) "$crxName.crx"
+
+# Wait briefly for file to appear
+$retries = 0
+while (-not (Test-Path $crxFile) -and $retries -lt 10) {
+    Start-Sleep -Milliseconds 500
+    $retries++
+}
+
+if (-not (Test-Path $crxFile)) {
+    # Also check output dir
+    $altCrx = Join-Path $outPath "$crxName.crx"
+    if (Test-Path $altCrx) {
+        $crxFile = $altCrx
+    } else {
+        Write-Error "CRX file not generated. Chrome exit code: $($proc.ExitCode)"
+        exit 1
+    }
+}
+
+# ── Move .crx to output dir ──
+$destCrx = Join-Path $outPath "$crxName.crx"
+if ($crxFile -ne $destCrx) {
+    Copy-Item $crxFile $destCrx -Force
+    Remove-Item $crxFile -Force -ErrorAction SilentlyContinue
+}
+
+# ── Move key to output dir if Chrome placed it elsewhere ──
+$chromeKey = Join-Path (Split-Path $extPath -Parent) "$crxName.pem"
+if ((Test-Path $chromeKey) -and $chromeKey -ne $keyPath) {
+    Copy-Item $chromeKey $keyPath -Force
+    Remove-Item $chromeKey -Force -ErrorAction SilentlyContinue
+}
+
+# ── Extract extension ID from CRX ──
+# CRX v3 format: magic(4) + version(4) + header_size(4) + header(header_size)
+# In header: public key length is at a fixed offset; ID = SHA256(pubkey)[:16] hex
+$crxBytes = [System.IO.File]::ReadAllBytes($destCrx)
+$extId = ""
+
+if ($crxBytes.Length -ge 12) {
+    $magic = [BitConverter]::ToUInt32($crxBytes, 0)
+    $version = [BitConverter]::ToUInt32($crxBytes, 4)
+    $headerSize = [BitConverter]::ToUInt32($crxBytes, 8)
+
+    if ($version -eq 3 -and $crxBytes.Length -ge 12 + $headerSize) {
+        # CRX3 header: sizes + public key
+        # Find public key in the header (it's a protobuf, but we can extract it)
+        # Simpler: compute from the key.pem
+        if (Test-Path $keyPath) {
+            # Extract public key from PEM, compute Chrome extension ID
+            $pemContent = Get-Content $keyPath -Raw
+            $base64Key = ($pemContent -replace "-----.*-----", "" -replace "\s", "")
+            $keyBytes = [Convert]::FromBase64String($base64Key)
+
+            # SHA256 of the DER-encoded public key
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            $hash = $sha.ComputeHash($keyBytes)
+
+            # First 16 bytes → lowercase hex → Chrome extension ID
+            $extId = ($hash[0..15] | ForEach-Object { $_.ToString("x2") }) -join ""
+        }
+    }
+}
+
+Write-Host ""
+Write-Host "=== Packaging Complete ===" -ForegroundColor Green
+Write-Host "CRX:       $destCrx"
+Write-Host "Key:       $keyPath"
+if ($extId) {
+    Write-Host "Extension ID: $extId" -ForegroundColor Yellow
+
+    # ── Replace placeholder in install.html ──
+    $installSrc = Join-Path $PSScriptRoot "..\public\install.html"
+    $installDest = Join-Path $outPath "install.html"
+    if (Test-Path $installSrc) {
+        $html = Get-Content $installSrc -Raw
+        $html = $html -replace "__EXTENSION_ID__", $extId
+        Set-Content -Path $installDest -Value $html -NoNewline
+        Write-Host "Install page: $installDest" -ForegroundColor Cyan
+    }
+
+    # ── Update firebase-applet-config.json ──
+    $configPath = Join-Path $PSScriptRoot "..\firebase-applet-config.json"
+    if (Test-Path $configPath) {
+        $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        $config.extensionId = $extId
+        $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -NoNewline
+        Write-Host "Updated firebase-applet-config.json with extensionId" -ForegroundColor Green
+    }
+
+    Write-Host ""
+    Write-Host "Distribute:" -ForegroundColor Cyan
+    Write-Host "  1. Upload $destCrx + install.html to your web host"
+    Write-Host "  2. Users open install.html, click download"
+    Write-Host "  3. Drag .crx into chrome://extensions (Developer Mode ON)"
+} else {
+    Write-Host "Extension ID: (could not auto-extract — check key.pem)" -ForegroundColor Yellow
+}

@@ -5,7 +5,6 @@ type ResoConnectPayload = {
   type: "RESO_CONNECT";
   url: string;
   idToken: string;
-  refreshToken: string;
   uid: string;
   email: string | null;
 };
@@ -39,7 +38,6 @@ export async function pushTokenToExtension(user: User): Promise<void> {
     type: "RESO_CONNECT",
     url: origin,
     idToken,
-    refreshToken: "",
     uid: user.uid,
     email: user.email ?? null,
   };

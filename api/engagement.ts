@@ -29,10 +29,12 @@ import {
 import type { MatchableEmployee } from '../src/lib/matching.js';
 
 const PROJECT = firebaseConfig.projectId as string;
-const DATABASE = firebaseConfig.firestoreDatabaseId as string;
 const API_KEY = firebaseConfig.apiKey as string;
 
-const fsBase = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/${DATABASE}/documents`;
+function getFsBase(uid: string): string {
+  const dbId = `db-${uid.toLowerCase()}`;
+  return `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/${encodeURIComponent(dbId)}/documents`;
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -122,7 +124,7 @@ async function verifyIdToken(idToken: string): Promise<{ uid: string; email: str
   return { uid: u.localId as string, email: u.email || '', emailVerified: !!u.emailVerified };
 }
 
-async function isAdminUser(uid: string, email: string, idToken: string): Promise<boolean> {
+async function isAdminUser(uid: string, email: string, idToken: string, fsBase: string): Promise<boolean> {
   if (ADMIN_EMAILS.includes(email)) return true;
   const r = await fetch(`${fsBase}/admins/${encodeURIComponent(uid)}`, {
     headers: { Authorization: `Bearer ${idToken}` },
@@ -131,7 +133,7 @@ async function isAdminUser(uid: string, email: string, idToken: string): Promise
 }
 
 // ---- Data ----
-async function fetchEmployees(idToken: string): Promise<MatchableEmployee[]> {
+async function fetchEmployees(idToken: string, fsBase: string): Promise<MatchableEmployee[]> {
   const out: MatchableEmployee[] = [];
   let pageToken = '';
   do {
@@ -163,7 +165,7 @@ async function fetchEmployees(idToken: string): Promise<MatchableEmployee[]> {
   return out;
 }
 
-async function fetchEngagementDoc(idToken: string, date: string): Promise<Record<string, unknown> | null> {
+async function fetchEngagementDoc(idToken: string, date: string, fsBase: string): Promise<Record<string, unknown> | null> {
   const r = await fetch(`${fsBase}/dailyEngagement/${encodeURIComponent(date)}`, {
     headers: { Authorization: `Bearer ${idToken}` },
   });
@@ -175,7 +177,7 @@ async function fetchEngagementDoc(idToken: string, date: string): Promise<Record
   return decodeDoc({ fields: data.fields });
 }
 
-async function writeEngagement(idToken: string, date: string, patch: Record<string, unknown>): Promise<void> {
+async function writeEngagement(idToken: string, date: string, patch: Record<string, unknown>, fsBase: string): Promise<void> {
   const body = JSON.stringify({ fields: Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, enc(v)])) });
   const updateMask = Object.keys(patch)
     .map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
@@ -265,14 +267,17 @@ export default async function handler(req: unknown, res: unknown) {
       error(res, 403, 'Email belum diverifikasi.');
       return;
     }
-    const admin = await isAdminUser(user.uid, user.email, idToken);
+
+    const fsBase = getFsBase(user.uid);
+
+    const admin = await isAdminUser(user.uid, user.email, idToken, fsBase);
     if (!admin) {
       error(res, 403, 'Akun ini bukan admin ReSo.');
       return;
     }
 
-    const employees = await fetchEmployees(idToken);
-    const existing = await fetchEngagementDoc(idToken, date);
+    const employees = await fetchEmployees(idToken, fsBase);
+    const existing = await fetchEngagementDoc(idToken, date, fsBase);
 
     const result = buildEngagementPatch(
       existing as Parameters<typeof buildEngagementPatch>[0],
@@ -298,7 +303,7 @@ export default async function handler(req: unknown, res: unknown) {
       result.patch.postedAt = mergePostedAt(existing?.postedAt, postedAt as string);
     }
 
-    await writeEngagement(idToken, date, result.patch);
+    await writeEngagement(idToken, date, result.patch, fsBase);
 
     json(res, 200, {
       ok: true,
