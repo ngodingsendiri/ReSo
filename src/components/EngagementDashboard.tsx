@@ -22,7 +22,6 @@ import {
   ExternalLink,
   PieChart,
   Bell,
-  Pen,
   CheckCircle2
 } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
@@ -1313,13 +1312,7 @@ export default function EngagementDashboard() {
         <div className="p-6 flex-1 overflow-y-auto">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center">
-                {appLogo ? (
-                  <img src={appLogo} alt="Logo" className="w-6 h-6 object-contain" />
-                ) : (
-                  <Pen className="text-white" size={22} strokeWidth={2.5} />
-                )}
-              </div>
+              <img src={appLogo} alt="ReSo" className="w-10 h-10 object-contain shrink-0" />
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">ReSo</h1>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Rekap Engagement Sosmed</p>

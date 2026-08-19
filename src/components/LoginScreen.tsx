@@ -57,18 +57,12 @@ export default function LoginScreen({ externalError }: LoginScreenProps) {
       </div>
 
       <div className="relative z-10 w-full max-w-sm bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
-        <div className="w-14 h-14 bg-slate-900 rounded-xl flex items-center justify-center mx-auto mb-5 shadow-md shadow-slate-900/20">
-          {appLogo ? (
-            <img src={appLogo} alt="Logo" className="w-9 h-9 object-contain" />
-          ) : (
-            <span className="text-white font-black text-lg tracking-tight">R</span>
-          )}
-        </div>
+        <img src={appLogo} alt="ReSo" className="w-16 h-16 object-contain mx-auto mb-5" />
         <h1 className="text-2xl font-bold text-center text-slate-900 mb-1">ReSo</h1>
         <p className="text-center text-slate-500 text-sm mb-6 leading-relaxed">
           Rekap Engagement Sosmed Diskominfo.
           <br />
-          Masuk dengan akun Google yang diizinkan.
+          Masuk dengan akun Google.
         </p>
 
         {error && (

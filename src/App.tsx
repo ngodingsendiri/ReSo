@@ -7,7 +7,6 @@ import { useState, useEffect } from 'react';
 import { createTokenHandoffHandler, type HandoffTokenProvider } from './lib/token-handoff';
 import { pushTokenToExtension } from './lib/extension-bridge';
 import { motion } from 'motion/react';
-import { Edit } from 'lucide-react';
 import EngagementDashboard from './components/EngagementDashboard';
 import LoginScreen from './components/LoginScreen';
 import { useAuth } from './components/FirebaseProvider';
@@ -29,13 +28,7 @@ function LoadingScreen() {
         transition={{ duration: 0.2, ease: 'easeOut' }}
         className="bg-white p-8 rounded-2xl border border-slate-200 flex flex-col items-center w-full max-w-sm shadow-sm"
       >
-        <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-slate-900/15">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Logo" className="w-10 h-10 object-contain" />
-          ) : (
-            <Edit className="w-8 h-8 text-white" />
-          )}
-        </div>
+        <img src={logoUrl} alt="ReSo" className="w-16 h-16 object-contain mb-6" />
         <h2 className="text-xl font-bold text-slate-900 tracking-tight mb-1">
           Re<span className="text-slate-900">So</span>
         </h2>
