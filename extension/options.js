@@ -38,8 +38,15 @@ saveBtn.addEventListener("click", async () => {
     return;
   }
   try {
-    if (norm) await chrome.storage.local.set({ [KEY]: norm });
-    else await chrome.storage.local.remove(KEY);
+    if (norm) {
+      await chrome.storage.local.set({ [KEY]: norm });
+      // Minta izin host (best-effort) agar handoff bisa baca tab.url domain ini.
+      try {
+        await chrome.permissions.request({ origins: [`${norm}/*`] });
+      } catch {}
+    } else {
+      await chrome.storage.local.remove(KEY);
+    }
     savedEl.hidden = false;
     setTimeout(() => (savedEl.hidden = true), 2000);
   } catch {

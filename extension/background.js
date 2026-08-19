@@ -597,6 +597,31 @@ chrome.webRequest.onBeforeRequest.addListener(
 
 // ===================== Tab Injection on Navigation =====================
 
+// Inject content-reso.js ke domain ReSo yang dipelajari/di-pin (bukan cuma
+// reso.vercel.app) agar handoff token bisa berjalan di domain custom milik
+// user — tanpa harus deploy ulang app (app lama sudah menjawab reso:get-token).
+// Script statis di manifest hanya menutupi default reso.vercel.app.
+const RESO_DYN_CS_ID = "reso-dyn-cs";
+async function registerResoContentScript() {
+  const url = await getResoUrl();
+  try {
+    await chrome.scripting.unregisterContentScripts({ ids: [RESO_DYN_CS_ID] });
+  } catch {}
+  if (!url || url === RESO_URL) return; // default sudah di-cover script statis
+  try {
+    await chrome.scripting.registerContentScripts([
+      {
+        id: RESO_DYN_CS_ID,
+        matches: [`${url}/*`],
+        js: ["content-reso.js"],
+        run_at: "document_idle",
+      },
+    ]);
+  } catch (e) {
+    console.debug("[ReSo] gagal daftarkan content script dinamis:", e?.message);
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.storage.session.set({
     [STORAGE_KEY_FB]: { ...defaultStateFor("facebook") },
@@ -609,6 +634,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   } catch (e) {
     console.debug("[ReSo] onInstalled cleanup:", e?.message);
   }
+  registerResoContentScript().catch(() => {});
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -699,6 +725,7 @@ async function maybeFlushResoQueue() {
 }
 
 chrome.runtime.onStartup.addListener(() => {
+  registerResoContentScript().catch(() => {});
   maybeFlushResoQueue();
   try {
     chrome.alarms.create(RESO_FLUSH_ALARM, { periodInMinutes: 2 });
@@ -713,6 +740,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes[RESO_PENDING_KEY]) maybeFlushResoQueue();
+  if (area === "local" && changes.resoUrl) registerResoContentScript().catch(() => {});
 });
 
 // ===================== Message Router =====================
@@ -749,7 +777,10 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       if (!origin) return;
       if (originOf(msg.url) !== origin) return; // cross-origin → tolak
       const ok = await applyResoConnect(msg);
-      if (ok) maybeFlushResoQueue().catch(() => {});
+      if (ok) {
+        registerResoContentScript().catch(() => {});
+        maybeFlushResoQueue().catch(() => {});
+      }
       sendResponse({ ok });
     } catch {
       sendResponse({ ok: false });
