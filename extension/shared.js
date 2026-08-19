@@ -1192,6 +1192,10 @@ async function applyResoConnect(payload) {
   const url = normalizeResoUrl(payload.url);
   if (!url) return false;
   if (typeof payload.idToken !== "string" || !payload.idToken) return false;
+  // Token HARUS berasal dari project Firebase ReSo yang sama (aud = projectId),
+  // sehingga situs asing tak bisa menyuntik token project lain meski tahu ID
+  // ekstensi. Pin manual di Options tetap mengalahkan url bila tak cocok.
+  if (jwtAud(payload.idToken) !== RESO_FIREBASE.projectId) return false;
   // Pin manual (jika ada) mengalahkan url dari app — app harus cocok.
   const pinned = normalizeResoUrl((await chrome.storage.local.get(RESO_URL_KEY))[RESO_URL_KEY]);
   if (pinned && pinned !== url) return false;
@@ -1236,6 +1240,18 @@ function jwtExpSeconds(token) {
     return typeof payload.exp === "number" ? payload.exp : 0;
   } catch {
     return 0;
+  }
+}
+
+/** Ambil `aud` (projectId Firebase) dari JWT. Gagal → null. */
+function jwtAud(token) {
+  try {
+    const part = token.split(".")[1];
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(decodeURIComponent(escape(json)));
+    return typeof payload.aud === "string" ? payload.aud : null;
+  } catch {
+    return null;
   }
 }
 

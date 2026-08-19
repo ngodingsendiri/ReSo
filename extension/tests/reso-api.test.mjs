@@ -38,6 +38,11 @@ function fakeToken(expSeconds) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
   return `${b64({ alg: "none" })}.${b64({ exp: expSeconds })}.sig`;
 }
+/** JWT palsu dengan exp + aud (projectId Firebase). */
+function fakeTokenAud(expSeconds, aud) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  return `${b64({ alg: "none" })}.${b64({ exp: expSeconds, aud })}.sig`;
+}
 const FAR_FUTURE = Math.floor(Date.now() / 1000) + 3600;
 const EXPIRED = Math.floor(Date.now() / 1000) - 3600;
 
@@ -820,7 +825,11 @@ test("getResoUrl: default RESO_URL bila belum diset, lalu domain dipelajari dari
   const { restore } = mockChrome({ storage: {} });
   try {
     assert.equal(await getResoUrl(), RESO_URL, "default sebelum ada push");
-    await applyResoConnect({ url: "https://rekapsosmed.vercel.app/", idToken: "tok", refreshToken: "rt" });
+    await applyResoConnect({
+      url: "https://rekapsosmed.vercel.app/",
+      idToken: fakeTokenAud(FAR_FUTURE, RESO_FIREBASE.projectId),
+      refreshToken: "rt",
+    });
     assert.equal(await getResoUrl(), "https://rekapsosmed.vercel.app", "pakai domain dari push (strip path)");
   } finally {
     restore();
@@ -833,13 +842,35 @@ test("applyResoConnect: tolak url bukan https & tanpa idToken; simpan bila valid
     assert.equal(await applyResoConnect({ url: "ftp://x", idToken: "t" }), false, "skema salah → tolak");
     assert.equal(await applyResoConnect({ url: "https://a.vercel.app", idToken: "" }), false, "tanpa idToken → tolak");
     assert.equal(
-      await applyResoConnect({ url: "https://rekapsosmed.vercel.app", idToken: "tok", refreshToken: "rt", uid: "u", email: "e@f.g" }),
+      await applyResoConnect({
+        url: "https://rekapsosmed.vercel.app",
+        idToken: fakeTokenAud(FAR_FUTURE, RESO_FIREBASE.projectId),
+        refreshToken: "rt",
+        uid: "u",
+        email: "e@f.g",
+      }),
       true,
       "valid → tersimpan"
     );
     const a = await getResoAuth();
-    assert.equal(a.idToken, "tok");
+    assert.equal(a.idToken, fakeTokenAud(FAR_FUTURE, RESO_FIREBASE.projectId));
     assert.equal(a.refreshToken, "rt");
+  } finally {
+    restore();
+  }
+});
+
+test("applyResoConnect: tolak token dari project Firebase lain (aud != RESO_FIREBASE.projectId)", async () => {
+  const { restore } = mockChrome({ storage: {} });
+  try {
+    assert.equal(
+      await applyResoConnect({
+        url: "https://rekapsosmed.vercel.app",
+        idToken: fakeTokenAud(FAR_FUTURE, "wrong-project-id"),
+      }),
+      false,
+      "aud salah → tolak (cegah situs asing suntik token)"
+    );
   } finally {
     restore();
   }
@@ -849,7 +880,10 @@ test("applyResoConnect: pin manual (resoUrl) mengalahkan url app yang berbeda", 
   const { restore } = mockChrome({ storage: { resoUrl: "https://reso.vercel.app" } });
   try {
     assert.equal(
-      await applyResoConnect({ url: "https://rekapsosmed.vercel.app", idToken: "tok" }),
+      await applyResoConnect({
+        url: "https://rekapsosmed.vercel.app",
+        idToken: fakeTokenAud(FAR_FUTURE, RESO_FIREBASE.projectId),
+      }),
       false,
       "app push domain lain ditolak bila sudah di-pin"
     );
