@@ -1,6 +1,5 @@
 import type { User } from "firebase/auth";
 import firebaseConfig from "../../firebase-applet-config.json";
-import { rotateRefreshToken } from "./token-handoff";
 
 type ResoConnectPayload = {
   type: "RESO_CONNECT";
@@ -19,10 +18,14 @@ const EXTENSION_ID = (firebaseConfig as { extensionId?: string }).extensionId;
  * Ekstensi mempelajari domain ReSo dari `url` (window.location.origin) sendiri,
  * sehingga domain TIDAK di-hardcode — tiap deploy Vercel pakai domainnya sendiri.
  *
- * Token di-ROTASI dulu (mint pasangan segar via Firebase REST securetoken)
- * sebelum dikirim; token sesi utama halaman tidak pernah keluar. Bila
- * extensionId kosong / tidak terpasang / salah, `chrome.runtime.lastError`
- * diabaikan — ekstensi cukup tidak kehubung (handoff manual tetap ada).
+ * PENTING (keamanan sesi): ekstensi HANYA menerima idToken (masa ~1 jam),
+ * BUKAN refresh token. Firebase memutar & MENCABUT refresh token sumber tiap
+ * kali di-mint via securetoken — jadi memberi ekstensi refresh token (asli
+ * maupun hasil rotasi) akan membatalkan sesi app ReSo SENDIRI → user logout.
+ * Refresh ekstensi ditangani ulang lewat push on-focus & handoff saat tab
+ * ReSo terbuka (lihat src/lib/token-handoff.ts). Bila extensionId kosong /
+ * tidak terpasang / salah, `chrome.runtime.lastError` diabaikan — ekstensi
+ * cukup tidak kehubung (handoff manual tetap ada).
  */
 export async function pushTokenToExtension(user: User): Promise<void> {
   const ext = (globalThis as { chrome?: any }).chrome;
@@ -30,20 +33,13 @@ export async function pushTokenToExtension(user: User): Promise<void> {
     return;
   }
   const origin = window.location.origin;
-  let idToken = await user.getIdToken();
-  let refreshToken = (user as { refreshToken?: string }).refreshToken || "";
-  if (refreshToken) {
-    const rotated = await rotateRefreshToken(refreshToken);
-    if (rotated) {
-      idToken = rotated.idToken;
-      refreshToken = rotated.refreshToken;
-    }
-  }
+  // idToken segar (force refresh) — ini satu-satunya kredensial yang dikirim.
+  const idToken = await user.getIdToken(true);
   const payload: ResoConnectPayload = {
     type: "RESO_CONNECT",
     url: origin,
     idToken,
-    refreshToken,
+    refreshToken: "",
     uid: user.uid,
     email: user.email ?? null,
   };

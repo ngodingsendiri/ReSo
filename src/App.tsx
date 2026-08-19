@@ -4,8 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { getIdToken } from 'firebase/auth';
-import { createTokenHandoffHandler, rotateRefreshToken, type HandoffTokenProvider } from './lib/token-handoff';
+import { createTokenHandoffHandler, type HandoffTokenProvider } from './lib/token-handoff';
 import { pushTokenToExtension } from './lib/extension-bridge';
 import { motion } from 'motion/react';
 import { Edit } from 'lucide-react';
@@ -55,26 +54,19 @@ export default function App() {
   // Jembatan token (Opsi C — API): content script ekstensi meminta token sesi
   // Firebase operator via CustomEvent. Zero setup: tidak ada login baru di
   // ekstensi — reuse sesi Firebase ReSo yang sudah aktif.
-  // Mitigasi paparan: token sesi utama TIDAK pernah keluar dari halaman —
-  // refresh token di-ROTASI (mint pasangan segar via REST) sebelum dikirim;
-  // saluran balasan unik per permintaan + guard sekali-pakai + cek origin
-  // (lihat src/lib/token-handoff.ts).
+  // KEAMANAN SESI: ekstensi HANYA menerima idToken (masa ~1 jam), BUKAN refresh
+  // token. Firebase memutar & MENCABUT refresh token sumber tiap kali di-mint,
+  // sehingga mengirim refresh token (asli maupun hasil rotasi) ke ekstensi akan
+  // membatalkan sesi app ReSo sendiri → user logout. Ekstensi me-refresh idToken
+  // lewat push on-focus / handoff ulang saat tab ReSo terbuka (lihat
+  // src/lib/token-handoff.ts). Saluran balasan unik per permintaan + guard
+  // sekali-pakai + cek origin tetap berlaku.
   useEffect(() => {
     const provideTokens: HandoffTokenProvider = async () => {
       if (!user) return null;
-      const current = (user as { refreshToken?: string }).refreshToken;
-      if (current) {
-        const rotated = await rotateRefreshToken(current);
-        if (rotated) {
-          return { ...rotated, uid: user.uid, email: user.email ?? null };
-        }
-        // Rotasi gagal (jaringan/API): kirim idToken SAJA (masa ~1 jam) —
-        // ekstensi handoff ulang saat kedaluwarsa; token sesi utama tetap
-        // tidak keluar dari halaman.
-        const idToken = await getIdToken(user);
-        return { idToken, refreshToken: '', uid: user.uid, email: user.email ?? null };
-      }
-      return null;
+      // idToken segar (force refresh) — satu-satunya kredensial yang diberikan.
+      const idToken = await user.getIdToken(true);
+      return { idToken, refreshToken: '', uid: user.uid, email: user.email ?? null };
     };
     const onGetToken = createTokenHandoffHandler(provideTokens, window.location.origin);
     window.addEventListener('reso:get-token', onGetToken);

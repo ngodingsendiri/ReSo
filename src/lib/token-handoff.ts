@@ -1,21 +1,20 @@
 /**
- * Handoff token ReSo → ReSoEx dengan mitigasi paparan refreshToken:
- *  - ROTASI: sebelum dikirim, mint pasangan token SEGAR dari refresh token
- *    sesi (REST securetoken). Token sesi utama TIDAK pernah keluar dari
- *    halaman — ekstensi hanya menerima rantai turunan.
+ * Handoff token ReSo → ReSoEx:
  *  - Guard sekali-pakai per requestId: satu permintaan dibalas paling banyak
  *    sekali (dispatcher ulang oleh skrip lain diabaikan).
  *  - Cek origin: hanya permintaan yang mengaku berasal dari halaman ini yang
  *    dilayani.
- *  - Saluran balasan unik per permintaan (`respondTo`) disediakan oleh
+ *  - Saluran balikan unik per permintaan (`respondTo`) disediakan oleh
  *    content script ekstensi.
  *
- * Catatan jujur (batasan Firebase): refresh token Firebase adalah kredensial
- * berumur panjang dan TIDAK dinonaktifkan oleh pemakaian ulang atau re-mint;
- * satu-satunya revoke adalah Admin SDK `revokeRefreshTokens(uid)` yang
- * menandai SEMUA token user (termasuk sesi dashboard yang sedang dipakai) →
- * operator ikut logout. Karena itu "rotasi" di sini = rantai token turunan
- * per handoff + token sesi utama tidak pernah terekspos, bukan pencabutan.
+ * PENTING (keamanan sesi app): ekstensi HANYA diberi idToken (masa ~1 jam),
+ * BUKAN refresh token. Firebase `securetoken` MEMUTAR & MENCABUT refresh token
+ * sumber setiap kali di-mint — jadi memberi ekstensi refresh token (asli
+ * maupun hasil `rotateRefreshToken`) akan membatalkan sesi dashboard ReSo
+ * sendiri → operator logout. Oleh karena itu `provideTokens` di App.tsx hanya
+ * mengembalikan idToken; refresh ekstensi ditangani ulang via push on-focus /
+ * handoff ulang saat tab ReSo terbuka. Fungsi `rotateRefreshToken` tetap ada
+ * untuk keperluan lain tapi TIDAK boleh dipakai untuk memprovisioning ekstensi.
  */
 
 import firebaseConfig from '../../firebase-applet-config.json';

@@ -773,7 +773,12 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
       if (!msg || msg.type !== "RESO_CONNECT") return;
-      const origin = originOf(sender?.url);
+      // Origin pengirim bisa di `sender.url`, `sender.tab.url`, atau `sender.origin`
+      // tergantung konteks — ambil salah satu yang valid.
+      const origin =
+        originOf(sender?.url) ||
+        originOf(sender?.tab?.url) ||
+        originOf(sender?.origin);
       if (!origin) return;
       if (originOf(msg.url) !== origin) return; // cross-origin → tolak
       const ok = await applyResoConnect(msg);
