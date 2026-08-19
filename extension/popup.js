@@ -6,9 +6,12 @@
 const KEY = "rsx_enabled";
 const RESO_PENDING_KEY = "resoPending";
 const RESO_URL_KEY = "resoUrl";
+// Fallback bila user belum pin domain di Options (sama dengan RESO_URL di shared.js).
+const RESO_URL_FALLBACK = "https://reso.vercel.app";
 const toggle = document.getElementById("modeToggle");
 const hint = document.getElementById("modeHint");
 const resoStatus = document.getElementById("resoStatus");
+const resoLogin = document.getElementById("resoLogin");
 const resoRetry = document.getElementById("resoRetry");
 const resoOpen = document.getElementById("resoOpen");
 const resoReset = document.getElementById("resoReset");
@@ -52,6 +55,7 @@ async function refreshResoStatus() {
     resoStatus.textContent = text;
     resoStatus.hidden = false;
     resoOpen.hidden = !url;
+    resoLogin.hidden = r.connected;
     resoRetry.hidden = !(r.pending > 0);
     resoReset.hidden = !url && !r.authenticated;
   } catch {
@@ -80,6 +84,20 @@ resoOpen.addEventListener("click", async () => {
       /* abaikan */
     }
   }
+});
+
+// Login delegasi: buka halaman login ReSo (domain ter-pin / default) di tab
+// baru. Setelah user login, app mendorong RESO_CONNECT (push) → extension
+// terhubung otomatis; bila tak ada push, handoff dari tab terbuka tetap jalan
+// (asalkan content-reso.js ter-inject via pin + izin host).
+resoLogin.addEventListener("click", async () => {
+  const url = (await getResoUrlStored()) || RESO_URL_FALLBACK;
+  try {
+    await chrome.tabs.create({ url });
+  } catch {
+    /* abaikan */
+  }
+  await refreshResoStatus();
 });
 
 resoReset.addEventListener("click", async () => {

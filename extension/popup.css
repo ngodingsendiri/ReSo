@@ -124,7 +124,8 @@ input:checked + .slider::before {
 
 .reso-retry,
 .reso-open,
-.reso-reset {
+.reso-reset,
+.reso-login {
   flex: 1 1 auto;
   padding: 8px 12px;
   font-size: 12px;
@@ -136,7 +137,8 @@ input:checked + .slider::before {
   cursor: pointer;
 }
 
-.reso-open {
+.reso-open,
+.reso-login {
   background: #0f172a;
   color: #fff;
   border-color: #0f172a;
@@ -148,6 +150,7 @@ input:checked + .slider::before {
   background: #f1f5f9;
 }
 
-.reso-open:hover {
+.reso-open:hover,
+.reso-login:hover {
   background: #1e293b;
 }
