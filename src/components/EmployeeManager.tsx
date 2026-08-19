@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Employee } from '../types';
 import { Button, buttonVariants } from './ui/button';
@@ -171,7 +170,7 @@ export default function EmployeeManager() {
   const [isUploading, setIsUploading] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const { user, loading } = useAuth();
+  const { user, loading, db } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   type SortField = 'name' | 'bidang' | 'nip';
@@ -536,6 +535,8 @@ export default function EmployeeManager() {
       setIsUploading(false);
     }
   };
+
+  if (!db) return null;
 
   return (
     <div className="space-y-6 md:space-y-8">

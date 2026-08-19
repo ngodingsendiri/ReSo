@@ -12,3 +12,7 @@ coverage/
 
 # Extension dist diizinkan (built extension)
 !extension/dist/
+
+# CRX packaging output (berisi kunci rahasia key.pem — JANGAN di-commit)
+extension/dist-crx/
+extension/package-lock.json

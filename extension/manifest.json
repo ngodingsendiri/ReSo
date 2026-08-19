@@ -49,7 +49,7 @@
     "*://*.facebook.com/*",
     "*://*.tiktok.com/*",
     "*://*.instagram.com/*",
-    "https://reso.vercel.app/*",
+    "https://rekapsosmed.vercel.app/*",
     "https://securetoken.googleapis.com/*"
   ],
   "content_scripts": [
@@ -78,7 +78,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://reso.vercel.app/*", "http://localhost:3000/*"],
+      "matches": ["https://rekapsosmed.vercel.app/*", "http://localhost:3000/*"],
       "js": ["content-reso.js"],
       "run_at": "document_idle"
     }

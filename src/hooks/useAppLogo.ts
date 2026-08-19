@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { useAuth } from '../components/FirebaseProvider';
 
 const updateDOM = (value: string) => {
   try {
@@ -19,6 +19,7 @@ const updateDOM = (value: string) => {
 };
 
 export function useAppLogo() {
+  const { db } = useAuth();
   const [logoBase64, setLogoBase64] = useState<string | null>(() => {
     return localStorage.getItem('reso_appLogo') || null;
   });
@@ -27,6 +28,10 @@ export function useAppLogo() {
     if (logoBase64) {
       updateDOM(logoBase64);
     }
+
+    // Logo per dinas dari db-<uid>. Sebelum login (db null) tidak subscribe —
+    // cukup pakai logo lokal/hardcoded (logo.svg).
+    if (!db) return;
 
     const unsub = onSnapshot(
       doc(db, 'settings', 'appLogo'),
@@ -44,7 +49,7 @@ export function useAppLogo() {
     );
 
     return () => unsub();
-  }, []);
+  }, [db, logoBase64]);
 
   return logoBase64;
 }

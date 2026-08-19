@@ -119,7 +119,7 @@ if ((Test-Path $chromeKey) -and $chromeKey -ne $keyPath) {
 
 # ── Extract extension ID from CRX ──
 # CRX v3 format: magic(4) + version(4) + header_size(4) + header(header_size)
-# In header: public key length is at a fixed offset; ID = SHA256(pubkey)[:16] hex
+# In header: public key length is at a fixed offset; ID = SHA256(pubkey)[:16] hex → a-p alphabet
 $crxBytes = [System.IO.File]::ReadAllBytes($destCrx)
 $extId = ""
 
@@ -129,21 +129,45 @@ if ($crxBytes.Length -ge 12) {
     $headerSize = [BitConverter]::ToUInt32($crxBytes, 8)
 
     if ($version -eq 3 -and $crxBytes.Length -ge 12 + $headerSize) {
-        # CRX3 header: sizes + public key
-        # Find public key in the header (it's a protobuf, but we can extract it)
-        # Simpler: compute from the key.pem
+        # ── Method 1: Try extracting from key.pem (primary) ──
         if (Test-Path $keyPath) {
-            # Extract public key from PEM, compute Chrome extension ID
-            $pemContent = Get-Content $keyPath -Raw
-            $base64Key = ($pemContent -replace "-----.*-----", "" -replace "\s", "")
-            $keyBytes = [Convert]::FromBase64String($base64Key)
+            try {
+                $pemContent = Get-Content $keyPath -Raw
+                $base64Key = ($pemContent -replace "-----.*-----", "" -replace "\s", "")
+                $keyBytes = [Convert]::FromBase64String($base64Key)
 
-            # SHA256 of the DER-encoded public key
-            $sha = [System.Security.Cryptography.SHA256]::Create()
-            $hash = $sha.ComputeHash($keyBytes)
-
-            # First 16 bytes → lowercase hex → Chrome extension ID
-            $extId = ($hash[0..15] | ForEach-Object { $_.ToString("x2") }) -join ""
+                # .NET Framework 4.8: import RSA from PKCS#8 private key,
+                # then export public key in SPKI DER format, then SHA256 hash it.
+                # This is the correct Chrome extension ID algorithm.
+                $rsa = [System.Security.Cryptography.RSA]::Create()
+                $rsa.ImportPkcs8PrivateKey($keyBytes, [ref]$null) | out-null
+                $pubKeyDer = $rsa.ExportSubjectPublicKeyInfo()
+                $sha = [System.Security.Cryptography.SHA256]::Create()
+                $hash = $sha.ComputeHash($pubKeyDer)
+                # First 16 bytes → hex string
+                $hexChars = @()
+                for ($i = 0; $i -lt 16; $i++) {
+                    $hexChars += $hash[$i].ToString("x2")
+                }
+                $hexStr = ($hexChars -join "")
+                # Chrome maps hex char 0-9a-f → a-p
+                $alpha = 'abcdefghijklmnop'
+                $extIdChars = @()
+                for ($i = 0; $i -lt $hexStr.Length; $i++) {
+                    $c = $hexStr[$i]
+                    $val = [int]::Parse($c, 'HexNumber')
+                    $extIdChars += $alpha[$val]
+                }
+                $extId = ($extIdChars -join "")
+            } catch {
+                # Fallback to old method if RSA import fails
+                $pemContent = Get-Content $keyPath -Raw
+                $base64Key = ($pemContent -replace "-----.*-----", "" -replace "\s", "")
+                $keyBytes = [Convert]::FromBase64String($base64Key)
+                $sha = [System.Security.Cryptography.SHA256]::Create()
+                $hash = $sha.ComputeHash($keyBytes)
+                $extId = ($hash[0..15] | ForEach-Object { $_.ToString("x2") }) -join ""
+            }
         }
     }
 }

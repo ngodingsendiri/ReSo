@@ -34,7 +34,7 @@ import { toast } from 'sonner';
 import { DailyEngagement, Employee, UnmatchedName } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
-import { db, logout } from '../lib/firebase';
+import { logout } from '../lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
 import { cn, getBidangColor } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate, addLocalDays } from '../lib/date';
@@ -83,7 +83,7 @@ const TAB_LABELS: Record<string, string> = {
 };
 
 export default function EngagementDashboard() {
-  const { user, loading } = useAuth();
+  const { user, loading, db } = useAuth();
   const appLogo = useAppLogo();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [dailyEngagements, setDailyEngagements] = useState<DailyEngagement[]>([]);
@@ -239,7 +239,7 @@ export default function EngagementDashboard() {
 
   // Load employees from Firestore
   useEffect(() => {
-    if (loading || !user) {
+    if (loading || !user || !db) {
       setEmployees([]);
       return;
     }
@@ -257,7 +257,7 @@ export default function EngagementDashboard() {
       }
     );
     return unsubscribe;
-  }, [user, loading]);
+  }, [user, loading, db]);
 
   // Calculate the oldest date we need to fetch based on current views
   const oldestRequiredDate = useMemo(() => {
@@ -275,7 +275,7 @@ export default function EngagementDashboard() {
 
   // Load daily engagements
   useEffect(() => {
-    if (loading || !user) {
+    if (loading || !user || !db) {
       setDailyEngagements([]);
       return;
     }
@@ -297,7 +297,7 @@ export default function EngagementDashboard() {
       }
     );
     return unsubscribe;
-  }, [user, loading, oldestRequiredDate]);
+  }, [user, loading, oldestRequiredDate, db]);
 
   const dailyEngagementsMap = useMemo(() => {
     return dailyEngagements.reduce((acc, curr) => {
@@ -1285,6 +1285,8 @@ export default function EngagementDashboard() {
     });
   }
   const dailyEngagementRate = dailyPossible > 0 ? Math.round((dailyActual / dailyPossible) * 100) : 0;
+
+  if (!db) return null;
 
   return (
     <div className="flex h-[100dvh] bg-slate-50 font-sans overflow-hidden relative">

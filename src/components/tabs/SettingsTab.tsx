@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Settings, RefreshCw, Upload, Image as ImageIcon, Download, KeyRound } from 'lucide-react';
 import { Button } from '../ui/button';
-import { db } from '../../lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { isIosDevice, isStandaloneDisplay } from '../../lib/pwa';
+import { useAuth } from '../FirebaseProvider';
 
 interface SettingsTabProps {
   recalculateConfig: { mode: 'last_day' | 'last_week' };
@@ -35,6 +35,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   handleSaveMetaToken,
   isSavingToken,
 }) => {
+  const { db } = useAuth();
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -43,6 +44,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {
+    if (!db) return;
     const fetchLogo = async () => {
       try {
         const logoDoc = await getDoc(doc(db, 'settings', 'appLogo'));
@@ -72,7 +74,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
-  }, []);
+  }, [db]);
 
   const handleInstallClick = async () => {
     if (isStandaloneDisplay()) {
@@ -116,6 +118,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!db) return;
     const file = e.target.files?.[0];
     if (!file) return;
 

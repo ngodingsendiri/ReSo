@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth, db } from '../lib/firebase';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, userDb } from '../lib/firebase';
+import { doc, setDoc, getDoc, serverTimestamp, type Firestore } from 'firebase/firestore';
 
 const ALLOWED_EMAILS = [
   'ngerjaindiri@gmail.com',
@@ -11,6 +11,7 @@ const ALLOWED_EMAILS = [
 
 interface AuthContextType {
   user: User | null;
+  db: Firestore | null;
   loading: boolean;
   error: string | null;
   clearError: () => void;
@@ -18,6 +19,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  db: null,
   loading: true,
   error: null,
   clearError: () => {},
@@ -28,6 +30,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const clearError = () => setError(null);
+  // Database dinas untuk user yang login (multi-tenant): db-<uid>.
+  const db = useMemo(() => (user ? userDb(user.uid) : null), [user]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -44,9 +48,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
         let isAllowed = user.email ? ALLOWED_EMAILS.includes(user.email) : false;
 
+        // Cek admin di database dinas yang sama tempat API ekstensi menulis
+        // (db-<uid>) — sinkron dengan isAdminUser di api/engagement.ts.
+        const uDb = userDb(user.uid);
         if (!isAllowed) {
           try {
-            const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+            const adminSnap = await getDoc(doc(uDb, 'admins', user.uid));
             if (adminSnap.exists()) {
               isAllowed = true;
             }
@@ -67,9 +74,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setError(null);
         setLoading(false);
 
-        // Sync user to Firestore lazily
-        getDoc(doc(db, 'users', user.uid)).then(async (userSnap) => {
-          const userRef = doc(db, 'users', user.uid);
+        // Sync user to Firestore lazily (di database dinas)
+        getDoc(doc(uDb, 'users', user.uid)).then(async (userSnap) => {
+          const userRef = doc(uDb, 'users', user.uid);
           if (!userSnap.exists()) {
             await setDoc(userRef, {
               uid: user.uid,
@@ -100,7 +107,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, clearError }}>
+    <AuthContext.Provider value={{ user, db, loading, error, clearError }}>
       {children}
     </AuthContext.Provider>
   );

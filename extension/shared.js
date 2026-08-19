@@ -1131,7 +1131,7 @@ function reasonToMessage(reason, count, platform, extra) {
 // (pesan RESO_CONNECT via chrome.runtime.sendMessage — lihat applyResoConnect).
 // Domain juga BISA di-pin manual lewat `resoUrl` di storage (Options) sebagai
 // jangkar keamanan / fallback. Tanpa keduanya, dipakai RESO_URL default.
-const RESO_URL = "https://reso.vercel.app";
+const RESO_URL = "https://rekapsosmed.vercel.app";
 const RESO_DEV_URL = "http://localhost:3000";
 const RESO_MATCH_PATTERNS = [`${RESO_URL}/*`, `${RESO_DEV_URL}/*`];
 const RESO_URL_KEY = "resoUrl";
