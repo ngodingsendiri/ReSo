@@ -1618,7 +1618,19 @@ async function resoHealthReachable() {
 /** Status koneksi extension → ReSo: auth tersedia? API terjangkau? Ada antrian
  *  menunggu? Dipakai popup (indikator) & background (keputusan flush). */
 async function checkResoConnection() {
-  const auth = await getResoAuth();
+  let auth = await getResoAuth();
+  const hasValidCached =
+    auth && typeof auth.idToken === "string" && auth.idToken &&
+    jwtExpSeconds(auth.idToken) * 1000 - 60000 > Date.now();
+  // Token baru diambil lewat handoff/mint saat kirim atau flush — sehingga
+  // cukup membuka ReSo (sudah login) lalu popup menunjukkan "Belum tersambung"
+  // padahal sesi hidup. Sambungkan dulu di sini bila belum punya token valid:
+  // handoff dari tab ReSo terbuka (atau mint via refresh token). Tanpa ini
+  // indikator koneksi tidak mencerminkan kenyataan.
+  if (!hasValidCached) {
+    const idToken = await ensureResoIdToken().catch(() => null);
+    if (idToken) auth = await getResoAuth();
+  }
   let authenticated = false;
   if (auth && typeof auth.idToken === "string" && auth.idToken) {
     authenticated = jwtExpSeconds(auth.idToken) * 1000 - 60000 > Date.now();

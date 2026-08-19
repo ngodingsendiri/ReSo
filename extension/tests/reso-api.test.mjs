@@ -737,6 +737,62 @@ test("checkResoConnection: tanpa auth tapi punya refresh token → authenticated
   }
 });
 
+test("checkResoConnection: tanpa auth tersimpan tapi tab ReSo terbuka & login → handoff laku, connected", async () => {
+  const prevCache = globalThis.__RESO_HEALTH_CACHE_MS;
+  globalThis.__RESO_HEALTH_CACHE_MS = 0;
+  const restoreFetch = mockFetch({ health: true });
+  const { store, restore } = mockChrome({
+    storage: {}, // belum ada resoAuth
+    tabs: [{ id: 1, url: `${RESO_URL}/`, reply: { idToken: fakeToken(FAR_FUTURE), refreshToken: "rt-handoff", uid: "u1", email: "a@b.c" } }],
+  });
+  try {
+    const s = await checkResoConnection();
+    assert.equal(s.authenticated, true, "token di-handoff dari tab ReSo");
+    assert.equal(s.reachable, true);
+    assert.equal(s.connected, true, "buka ReSo & login → popup harus 'Terhubung'");
+    assert.ok(store.resoAuth && store.resoAuth.idToken, "hasil handoff disimpan");
+  } finally {
+    globalThis.__RESO_HEALTH_CACHE_MS = prevCache;
+    restoreFetch();
+    restore();
+  }
+});
+
+test("checkResoConnection: tanpa auth & tidak ada tab ReSo → tidak authenticated (Belum tersambung)", async () => {
+  const prevCache = globalThis.__RESO_HEALTH_CACHE_MS;
+  globalThis.__RESO_HEALTH_CACHE_MS = 0;
+  const restoreFetch = mockFetch({ health: true });
+  const { restore } = mockChrome({ storage: {}, tabs: [] });
+  try {
+    const s = await checkResoConnection();
+    assert.equal(s.authenticated, false, "tidak ada sesi yang bisa di-handoff");
+    assert.equal(s.connected, false);
+  } finally {
+    globalThis.__RESO_HEALTH_CACHE_MS = prevCache;
+    restoreFetch();
+    restore();
+  }
+});
+
+test("checkResoConnection: tab ReSo terbuka tapi belum login (no-user) → tidak authenticated", async () => {
+  const prevCache = globalThis.__RESO_HEALTH_CACHE_MS;
+  globalThis.__RESO_HEALTH_CACHE_MS = 0;
+  const restoreFetch = mockFetch({ health: true });
+  const { restore } = mockChrome({
+    storage: {},
+    tabs: [{ id: 1, url: `${RESO_URL}/`, reply: { error: "no-user" } }],
+  });
+  try {
+    const s = await checkResoConnection();
+    assert.equal(s.authenticated, false, "handoff gagal (belum login) → tetap butuh login");
+    assert.equal(s.connected, false);
+  } finally {
+    globalThis.__RESO_HEALTH_CACHE_MS = prevCache;
+    restoreFetch();
+    restore();
+  }
+});
+
 test("enqueueResoPayload: konteks content script → delegasi RESO_ENQUEUE ke background (single-writer)", async () => {
   let received = null;
   const { store, restore } = mockChrome({
