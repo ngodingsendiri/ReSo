@@ -3,12 +3,6 @@ import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, userDb } from '../lib/firebase';
 import { doc, setDoc, getDoc, serverTimestamp, type Firestore } from 'firebase/firestore';
 
-const ALLOWED_EMAILS = [
-  'ngerjaindiri@gmail.com',
-  'sipencil@gmail.com',
-  'abiemputra.asn@gmail.com'
-];
-
 interface AuthContextType {
   user: User | null;
   db: Firestore | null;
@@ -46,35 +40,26 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return;
         }
 
-        let isAllowed = user.email ? ALLOWED_EMAILS.includes(user.email) : false;
-
-        // Cek admin di database dinas yang sama tempat API ekstensi menulis
-        // (db-<uid>) — sinkron dengan isAdminUser di api/engagement.ts.
-        const uDb = userDb(user.uid);
-        if (!isAllowed) {
-          try {
-            const adminSnap = await getDoc(doc(uDb, 'admins', user.uid));
-            if (adminSnap.exists()) {
-              isAllowed = true;
-            }
-          } catch (err) {
-            console.error("Error checking dynamic admin:", err);
-          }
-        }
-
-        if (!isAllowed) {
-          setError('Akses ditolak. Akun Google Anda tidak terdaftar sebagai admin ReSo.');
-          setUser(null);
-          setLoading(false);
-          await signOut(auth);
-          return;
+        // Buka untuk semua akun Google terverifikasi: setiap user adalah admin
+        // database-nya sendiri (db-<uid>). Provision otomatis (buat database +
+        // admins/{uid}) via /api/provision; kalau service account belum diatur,
+        // user tetap masuk tapi database dibuat manual oleh admin.
+        try {
+          const idToken = await user.getIdToken();
+          await fetch('/api/provision', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${idToken}` },
+          }).catch(() => {});
+        } catch {
+          // Non-fatal: dashboard tetap tampil; provisioning diulang saat perlu.
         }
 
         setUser(user);
         setError(null);
         setLoading(false);
 
-        // Sync user to Firestore lazily (di database dinas)
+        // Sync user ke database dinas (db-<uid>) secara lazy
+        const uDb = userDb(user.uid);
         getDoc(doc(uDb, 'users', user.uid)).then(async (userSnap) => {
           const userRef = doc(uDb, 'users', user.uid);
           if (!userSnap.exists()) {
@@ -83,7 +68,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               email: user.email,
               displayName: user.displayName,
               photoURL: user.photoURL,
-              role: 'user',
+              role: 'admin',
               createdAt: serverTimestamp(),
               lastLogin: serverTimestamp()
             }).catch(console.error);

@@ -16,3 +16,6 @@ coverage/
 # CRX packaging output (berisi kunci rahasia key.pem — JANGAN di-commit)
 extension/dist-crx/
 extension/package-lock.json
+
+# Firebase CLI local state
+.freebuff/

@@ -117,58 +117,34 @@ if ((Test-Path $chromeKey) -and $chromeKey -ne $keyPath) {
     Remove-Item $chromeKey -Force -ErrorAction SilentlyContinue
 }
 
-# ── Extract extension ID from CRX ──
-# CRX v3 format: magic(4) + version(4) + header_size(4) + header(header_size)
-# In header: public key length is at a fixed offset; ID = SHA256(pubkey)[:16] hex → a-p alphabet
-$crxBytes = [System.IO.File]::ReadAllBytes($destCrx)
+# ── Extract extension ID ──
+# Chrome extension ID = SHA256(public_key_spki_der)[:16] -> hex -> map ke a-p
+# (0->a, 1->b, ..., 9->j, a->k, ..., f->p). Pakai Python + cryptography
+# (cara paling akurat; .NET Framework 4.8 tidak punya ImportPkcs8PrivateKey).
 $extId = ""
-
-if ($crxBytes.Length -ge 12) {
-    $magic = [BitConverter]::ToUInt32($crxBytes, 0)
-    $version = [BitConverter]::ToUInt32($crxBytes, 4)
-    $headerSize = [BitConverter]::ToUInt32($crxBytes, 8)
-
-    if ($version -eq 3 -and $crxBytes.Length -ge 12 + $headerSize) {
-        # ── Method 1: Try extracting from key.pem (primary) ──
-        if (Test-Path $keyPath) {
-            try {
-                $pemContent = Get-Content $keyPath -Raw
-                $base64Key = ($pemContent -replace "-----.*-----", "" -replace "\s", "")
-                $keyBytes = [Convert]::FromBase64String($base64Key)
-
-                # .NET Framework 4.8: import RSA from PKCS#8 private key,
-                # then export public key in SPKI DER format, then SHA256 hash it.
-                # This is the correct Chrome extension ID algorithm.
-                $rsa = [System.Security.Cryptography.RSA]::Create()
-                $rsa.ImportPkcs8PrivateKey($keyBytes, [ref]$null) | out-null
-                $pubKeyDer = $rsa.ExportSubjectPublicKeyInfo()
-                $sha = [System.Security.Cryptography.SHA256]::Create()
-                $hash = $sha.ComputeHash($pubKeyDer)
-                # First 16 bytes → hex string
-                $hexChars = @()
-                for ($i = 0; $i -lt 16; $i++) {
-                    $hexChars += $hash[$i].ToString("x2")
-                }
-                $hexStr = ($hexChars -join "")
-                # Chrome maps hex char 0-9a-f → a-p
-                $alpha = 'abcdefghijklmnop'
-                $extIdChars = @()
-                for ($i = 0; $i -lt $hexStr.Length; $i++) {
-                    $c = $hexStr[$i]
-                    $val = [int]::Parse($c, 'HexNumber')
-                    $extIdChars += $alpha[$val]
-                }
-                $extId = ($extIdChars -join "")
-            } catch {
-                # Fallback to old method if RSA import fails
-                $pemContent = Get-Content $keyPath -Raw
-                $base64Key = ($pemContent -replace "-----.*-----", "" -replace "\s", "")
-                $keyBytes = [Convert]::FromBase64String($base64Key)
-                $sha = [System.Security.Cryptography.SHA256]::Create()
-                $hash = $sha.ComputeHash($keyBytes)
-                $extId = ($hash[0..15] | ForEach-Object { $_.ToString("x2") }) -join ""
-            }
-        }
+$pyHelper = Join-Path $PSScriptRoot "compute_ext_id.py"
+if (Test-Path $keyPath) {
+    try {
+        $extId = (& python $pyHelper $keyPath 2>$null | Out-String).Trim()
+    } catch {
+        $extId = ""
+    }
+    if ($extId -notmatch '^[a-p]{32}$') {
+        Write-Host "  (gagal hitung ID via Python, pakai fallback hex)" -ForegroundColor Yellow
+        $extId = ""
+    }
+}
+if (-not $extId) {
+    # Fallback: hash private key bytes (bukan standar Chrome, tapi tetap 32 char)
+    try {
+        $pemContent = Get-Content $keyPath -Raw
+        $base64Key = ($pemContent -replace "-----.*-----", "" -replace "\s", "")
+        $keyBytes = [Convert]::FromBase64String($base64Key)
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $hash = $sha.ComputeHash($keyBytes)
+        $extId = ($hash[0..15] | ForEach-Object { $_.ToString("x2") }) -join ""
+    } catch {
+        $extId = ""
     }
 }
 
