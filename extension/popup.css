@@ -101,3 +101,33 @@ input:checked + .slider::before {
   color: #64748b;
   line-height: 1.5;
 }
+
+/* ---- Status koneksi ReSo ---- */
+.reso-status {
+  margin-top: 12px;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #0f172a;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+}
+
+.reso-retry {
+  margin-top: 8px;
+  padding: 8px 12px;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.reso-retry:hover {
+  background: #f1f5f9;
+}

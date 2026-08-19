@@ -167,6 +167,8 @@ async function withReSoMocks(fn, opts = {}) {
   const realFetch = globalThis.fetch;
   const realChrome = globalThis.chrome;
   const realDoc = globalThis.document;
+  const realDelay = globalThis.__RESO_RETRY_DELAY_MS;
+  globalThis.__RESO_RETRY_DELAY_MS = 0; // jangan lambatkan test dengan sleep retry
   globalThis.RS_SHARED.sendNamesToResoApi = async (platform, names, hint) => {
     sent.push({ platform, names, hint });
     if (opts.sendThrows) throw opts.sendThrows;
@@ -207,6 +209,7 @@ async function withReSoMocks(fn, opts = {}) {
     globalThis.fetch = realFetch;
     globalThis.chrome = realChrome;
     globalThis.document = realDoc;
+    globalThis.__RESO_RETRY_DELAY_MS = realDelay;
   }
 }
 

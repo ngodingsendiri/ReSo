@@ -19,6 +19,10 @@ import {
   getResoAuth,
   setResoAuth,
   mintResoIdToken,
+  enqueueResoPayload,
+  flushResoQueue,
+  checkResoConnection,
+  getResoPending,
   RESO_URL,
   RESO_DEV_URL,
   RESO_FIREBASE,
@@ -60,6 +64,9 @@ function mockFetch(routes) {
       const r = routes.api || { ok: true, date: "2026-08-17", added: 2, existing: 1 };
       return new Response(JSON.stringify(r), { status: r.ok ? 200 : r.status || 400 });
     }
+    if (u.includes("/api/health")) {
+      return new Response(JSON.stringify({ ok: true }), { status: routes.health === false ? 500 : 200 });
+    }
     return new Response(JSON.stringify({}), { status: 404 });
   };
   return () => {
@@ -67,10 +74,10 @@ function mockFetch(routes) {
   };
 }
 
-function mockChrome({ storage = {}, tabs = [] } = {}) {
+function mockChrome({ storage = {}, tabs = [], runtime = null, tabsQueryError = null } = {}) {
   const store = { ...storage };
   const orig = globalThis.chrome;
-  globalThis.chrome = {
+  const chrome = {
     storage: {
       local: {
         get: async (k) => ({ [k]: store[k] ?? null }),
@@ -80,8 +87,17 @@ function mockChrome({ storage = {}, tabs = [] } = {}) {
         },
       },
     },
-    tabs: {
-      query: async () => tabs,
+    // `runtime` opsional: konteks content script TIDAK punya chrome.tabs tapi
+    // PUNYA chrome.runtime.sendMessage (delegasi handoff ke background).
+    ...(runtime ? { runtime } : {}),
+  };
+  // `tabs === null` → simulasikan konteks content script (chrome.tabs TIDAK ada).
+  if (tabs !== null) {
+    chrome.tabs = {
+      query: async () => {
+        if (tabsQueryError) throw tabsQueryError;
+        return tabs;
+      },
       // Tab tanpa `reply` → balasan handoff standar (backward-compat);
       // `throwMsg: true` → sendMessage menolak (mis. tab tanpa content script).
       sendMessage: async (id) => {
@@ -91,8 +107,9 @@ function mockChrome({ storage = {}, tabs = [] } = {}) {
           ? t.reply
           : { idToken: "tok-handoff", refreshToken: "rt-handoff" };
       },
-    },
-  };
+    };
+  }
+  globalThis.chrome = chrome;
   return { store, restore: () => { globalThis.chrome = orig; } };
 }
 
@@ -402,6 +419,421 @@ test("handoffResoAuthFromTab: semua tab gagal → null tanpa menulis storage", a
   } finally {
     restore();
   }
+});
+
+test("handoffResoAuthFromTab: konteks content script (tanpa chrome.tabs) → delegasi ke background via runtime", async () => {
+  const { store, restore } = mockChrome({
+    storage: {},
+    tabs: null, // tabs tidak relevan: content script tidak punya chrome.tabs
+    runtime: {
+      sendMessage: async (msg) => {
+        assert.equal(msg.type, "RESO_HANDOFF_AUTH", "background diminta handoff");
+        return { ok: true, auth: { idToken: "tok-bg", refreshToken: "rt-bg" } };
+      },
+    },
+  });
+  try {
+    const auth = await handoffResoAuthFromTab();
+    assert.equal(auth.idToken, "tok-bg", "auth hasil delegasi dipakai");
+    assert.equal(store.resoAuth.idToken, "tok-bg", "hasil handoff disimpan ke storage");
+    assert.equal(store.resoAuth.refreshToken, "rt-bg");
+  } finally {
+    restore();
+  }
+});
+
+test("handoffResoAuthFromTab: delegasi balas tanpa auth → null tanpa menulis storage", async () => {
+  const { store, restore } = mockChrome({
+    storage: {},
+    tabs: null,
+    runtime: {
+      sendMessage: async () => ({ ok: true, auth: null }),
+    },
+  });
+  try {
+    const auth = await handoffResoAuthFromTab();
+    assert.equal(auth, null, "tanpa auth → null");
+    assert.equal(store.resoAuth, undefined, "storage tidak ditulis");
+  } finally {
+    restore();
+  }
+});
+
+test("handoffResoAuthFromTab: runtime.sendMessage melempar → null (tidak crash)", async () => {
+  const { store, restore } = mockChrome({
+    storage: {},
+    tabs: null,
+    runtime: {
+      sendMessage: async () => {
+        throw new Error("background down");
+      },
+    },
+  });
+  try {
+    const auth = await handoffResoAuthFromTab();
+    assert.equal(auth, null, "gagal → null, bukan TypeError");
+    assert.equal(store.resoAuth, undefined, "storage tidak ditulis");
+  } finally {
+    restore();
+  }
+});
+
+test("sendNamesToResoApi: content script (tanpa chrome.tabs) → handoff via background, lalu POST", async () => {
+  apiCalls = [];
+  const restoreFetch = mockFetch({ api: { ok: true, date: "2026-08-17", added: 1, existing: 0 } });
+  const { store, restore } = mockChrome({
+    storage: {},
+    tabs: null,
+    runtime: {
+      sendMessage: async () => ({ ok: true, auth: { idToken: "tok-bg", refreshToken: "rt-bg" } }),
+    },
+  });
+  try {
+    const out = await sendNamesToResoApi("facebook", ["Andi"], {});
+    assert.equal(out.ok, true, "ok");
+    assert.equal(apiCalls[0].init.headers.Authorization, "Bearer tok-bg", "pakai token hasil handoff background");
+    assert.equal(store.resoAuth.idToken, "tok-bg", "handoff disimpan ke storage");
+    assert.equal(store.resoAuth.refreshToken, "rt-bg");
+  } finally {
+    restoreFetch();
+    restore();
+  }
+});
+
+test("sendNamesToResoApi: error tak terduga saat ensureResoIdToken → needsLogin ramah, bukan throw", async () => {
+  apiCalls = [];
+  const restoreFetch = mockFetch({});
+  const { restore } = mockChrome({
+    storage: {},
+    tabs: [],
+    tabsQueryError: new Error("chrome.tabs down"),
+  });
+  try {
+    const out = await sendNamesToResoApi("facebook", ["Andi"], {});
+    assert.equal(out.ok, false);
+    assert.equal(out.needsLogin, true, "diubah jadi pesan needsLogin");
+    assert.match(out.message, /Buka ReSo/);
+    assert.equal(apiCalls.length, 0, "tidak ada panggilan API");
+  } finally {
+    restoreFetch();
+    restore();
+  }
+});
+
+test("sendNamesToResoApi: gagal jaringan (transien) → masuk antrian, data tidak hilang", async () => {
+  apiCalls = [];
+  const prevDelay = globalThis.__RESO_RETRY_DELAY_MS;
+  globalThis.__RESO_RETRY_DELAY_MS = 0;
+  const restoreFetch = mockFetch({});
+  const { store, restore } = mockChrome({
+    storage: { resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() } },
+    tabs: [],
+  });
+  globalThis.fetch = async () => { throw new Error("network down"); };
+  try {
+    const out = await sendNamesToResoApi("facebook", ["Andi", "budi"], { suggestedDate: "2026-08-17" });
+    assert.equal(out.ok, false);
+    assert.equal(out.retryable, true, "gagal jaringan = transien");
+    assert.ok(out.queued, "kiriman ditandai masuk antrian");
+    assert.match(out.message, /antrian ReSo/, "pesan memberi tahu antrian");
+    const pending = await getResoPending();
+    assert.equal(pending.length, 1, "satu kiriman antri");
+    assert.equal(pending[0].platform, "facebook");
+    assert.equal(pending[0].date, "2026-08-17");
+    assert.deepEqual(pending[0].names, ["Andi", "budi"]);
+    assert.equal(store.resoPending.length, 1, "antrian tersimpan di storage");
+  } finally {
+    globalThis.__RESO_RETRY_DELAY_MS = prevDelay;
+    restoreFetch();
+    restore();
+  }
+});
+
+test("sendNamesToResoApi: error 400 definitif → TIDAK masuk antrian", async () => {
+  apiCalls = [];
+  const restoreFetch = mockFetch({
+    api: { ok: false, status: 400, error: "Tanggal tidak valid" },
+  });
+  const { restore } = mockChrome({
+    storage: { resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() } },
+    tabs: [],
+  });
+  try {
+    const out = await sendNamesToResoApi("facebook", ["Andi"], { suggestedDate: "rusak" });
+    assert.equal(out.ok, false);
+    assert.equal(out.retryable, false, "4xx = definitif, jangan retry");
+    assert.equal(out.queued, undefined, "tidak di-antri");
+    const pending = await getResoPending();
+    assert.equal(pending.length, 0, "antrian tetap kosong");
+  } finally {
+    restoreFetch();
+    restore();
+  }
+});
+
+test("enqueueResoPayload: gabung nama untuk platform+date+postedAt sama (dedupe)", async () => {
+  const { store, restore } = mockChrome({ storage: {}, tabs: [] });
+  try {
+    await enqueueResoPayload({ platform: "facebook", names: ["Andi", "budi"], date: "2026-08-17", postedAt: null });
+    await enqueueResoPayload({ platform: "facebook", names: ["Budi", "Citra"], date: "2026-08-17", postedAt: null });
+    await enqueueResoPayload({ platform: "tiktok", names: ["@dito"], date: "2026-08-17", postedAt: null });
+    const pending = await getResoPending();
+    assert.equal(pending.length, 2, "fb digabung, tt terpisah");
+    const fb = pending.find((x) => x.platform === "facebook");
+    assert.deepEqual(fb.names, ["Andi", "budi", "Citra"], "nama digabung tanpa duplikat");
+  } finally {
+    restore();
+  }
+});
+
+test("flushResoQueue: kirim sukses → antrian kosong; transien dipertahankan; definitif dibuang", async () => {
+  apiCalls = [];
+  let mode = "ok";
+  const prevDelay = globalThis.__RESO_RETRY_DELAY_MS;
+  globalThis.__RESO_RETRY_DELAY_MS = 0;
+  const restoreFetch = mockFetch({});
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.includes("/api/engagement")) {
+      const body = JSON.parse(init.body);
+      apiCalls.push({ url: u, body });
+      if (mode === "ok") {
+        return new Response(JSON.stringify({ ok: true, date: body.date, added: body.names.length, existing: 0 }), { status: 200 });
+      }
+      if (mode === "transient") {
+        return new Response(JSON.stringify({ error: "boom" }), { status: 503 });
+      }
+      return new Response(JSON.stringify({ error: "bad" }), { status: 400 });
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
+  };
+  const { restore } = mockChrome({
+    storage: {
+      resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() },
+      resoPending: [
+        { platform: "facebook", names: ["Andi"], date: "2026-08-17", postedAt: null, createdAt: 1 },
+        { platform: "tiktok", names: ["@dito"], date: "2026-08-17", postedAt: null, createdAt: 2 },
+        { platform: "instagram", names: ["andiw"], date: "2026-08-17", postedAt: null, createdAt: 3 },
+      ],
+    },
+    tabs: [],
+  });
+  try {
+    mode = "ok";
+    const ok = await flushResoQueue();
+    assert.equal(ok.sent, 3, "semua terkirim");
+    assert.equal(ok.remaining, 0);
+    assert.equal((await getResoPending()).length, 0, "antrian kosong setelah sukses");
+
+    // Mode transien: 2 antri, satu gagal 503 → dipertahankan.
+    const { store: store2, restore: restore2 } = mockChrome({
+      storage: {
+        resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() },
+        resoPending: [
+          { platform: "facebook", names: ["Andi"], date: "2026-08-17", postedAt: null, createdAt: 1 },
+          { platform: "tiktok", names: ["@dito"], date: "2026-08-17", postedAt: null, createdAt: 2 },
+        ],
+      },
+      tabs: [],
+    });
+    mode = "transient";
+    const partial = await flushResoQueue();
+    assert.equal(partial.sent, 0);
+    assert.equal(partial.remaining, 2, "gagal transien → antrian dipertahankan");
+    assert.equal(store2.resoPending.length, 2);
+    restore2();
+
+    // Mode definitif: 400 → item dibuang (tidak ada gunanya retry).
+    const { store: store3, restore: restore3 } = mockChrome({
+      storage: {
+        resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() },
+        resoPending: [
+          { platform: "facebook", names: ["Andi"], date: "2026-08-17", postedAt: null, createdAt: 1 },
+        ],
+      },
+      tabs: [],
+    });
+    mode = "definitive";
+    const drop = await flushResoQueue();
+    assert.equal(drop.remaining, 0, "definitif dibuang");
+    assert.equal(store3.resoPending.length, 0);
+    restore3();
+  } finally {
+    globalThis.__RESO_RETRY_DELAY_MS = prevDelay;
+    restoreFetch();
+    restore();
+  }
+});
+
+test("flushResoQueue: tanpa token valid → antrian dipertahankan, needsLogin", async () => {
+  apiCalls = [];
+  const restoreFetch = mockFetch({});
+  const { store, restore } = mockChrome({
+    storage: {
+      resoPending: [{ platform: "facebook", names: ["Andi"], date: "2026-08-17", postedAt: null, createdAt: 1 }],
+    },
+    tabs: [],
+  });
+  try {
+    const out = await flushResoQueue();
+    assert.equal(out.needsLogin, true);
+    assert.equal(out.sent, 0);
+    assert.equal(out.remaining, 1, "antrian dipertahankan");
+    assert.equal(store.resoPending.length, 1);
+    assert.equal(apiCalls.length, 0, "tanpa token tidak menyentuh API");
+  } finally {
+    restoreFetch();
+    restore();
+  }
+});
+
+test("checkResoConnection: token valid + API sehat → connected; pending dihitung", async () => {
+  const prevCache = globalThis.__RESO_HEALTH_CACHE_MS;
+  globalThis.__RESO_HEALTH_CACHE_MS = 0; // matikan cache probe di test
+  const restoreFetch = mockFetch({ health: true });
+  const { restore } = mockChrome({
+    storage: {
+      resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() },
+      resoPending: [
+        { platform: "facebook", names: ["Andi"], date: "2026-08-17", postedAt: null, createdAt: 1 },
+        { platform: "tiktok", names: ["@dito"], date: "2026-08-17", postedAt: null, createdAt: 2 },
+      ],
+    },
+    tabs: [],
+  });
+  try {
+    const s = await checkResoConnection();
+    assert.equal(s.connected, true);
+    assert.equal(s.authenticated, true);
+    assert.equal(s.reachable, true);
+    assert.equal(s.pending, 2, "jumlah antrian dihitung");
+  } finally {
+    globalThis.__RESO_HEALTH_CACHE_MS = prevCache;
+    restoreFetch();
+    restore();
+  }
+});
+
+test("checkResoConnection: tanpa auth tapi punya refresh token → authenticated; API mati → tidak connected", async () => {
+  const prevCache = globalThis.__RESO_HEALTH_CACHE_MS;
+  globalThis.__RESO_HEALTH_CACHE_MS = 0;
+  const restoreFetch = mockFetch({ health: false });
+  const { restore } = mockChrome({
+    storage: {
+      resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: "rt-oke", savedAt: Date.now() },
+    },
+    tabs: [],
+  });
+  try {
+    const s = await checkResoConnection();
+    assert.equal(s.authenticated, true, "refresh token = sesi bisa hidup lagi");
+    assert.equal(s.reachable, false, "API down");
+    assert.equal(s.connected, false, "API tak terjangkau → tidak connected");
+    assert.equal(s.pending, 0);
+  } finally {
+    globalThis.__RESO_HEALTH_CACHE_MS = prevCache;
+    restoreFetch();
+    restore();
+  }
+});
+
+test("enqueueResoPayload: konteks content script → delegasi RESO_ENQUEUE ke background (single-writer)", async () => {
+  let received = null;
+  const { store, restore } = mockChrome({
+    storage: {},
+    tabs: null, // content script: chrome.tabs TIDAK ada
+    runtime: {
+      sendMessage: async (msg) => { received = msg; return { ok: true }; },
+    },
+  });
+  try {
+    await enqueueResoPayload({ platform: "facebook", names: ["Andi", "budi"], date: "2026-08-17", postedAt: null });
+    assert.equal(received.type, "RESO_ENQUEUE", "background yang menulis");
+    assert.equal(received.payload.platform, "facebook");
+    assert.equal(received.payload.date, "2026-08-17");
+    assert.equal(store.resoPending, undefined, "content script tidak menulis storage langsung");
+  } finally {
+    restore();
+  }
+});
+
+test("enqueueResoPayload: delegasi gagal → fallback tulis lokal (data tidak hilang)", async () => {
+  const { store, restore } = mockChrome({
+    storage: {},
+    tabs: null,
+    runtime: {
+      sendMessage: async () => { throw new Error("background down"); },
+    },
+  });
+  try {
+    await enqueueResoPayload({ platform: "tiktok", names: ["@dito"], date: "2026-08-17", postedAt: null });
+    assert.equal(store.resoPending.length, 1, "fallback menulis lokal");
+    assert.equal(store.resoPending[0].platform, "tiktok");
+    assert.deepEqual(store.resoPending[0].names, ["@dito"]);
+  } finally {
+    restore();
+  }
+});
+
+test("sendNamesToResoApi: 401 (token basi) → retryable + masuk antrian (tidak hilang)", async () => {
+  apiCalls = [];
+  const restoreFetch = mockFetch({
+    api: { ok: false, status: 401, error: "Token ReSo tidak valid atau kedaluwarsa." },
+  });
+  const { restore } = mockChrome({
+    storage: { resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() } },
+    tabs: [],
+  });
+  try {
+    const out = await sendNamesToResoApi("facebook", ["Andi"], {});
+    assert.equal(out.ok, false);
+    assert.equal(out.retryable, true, "401 = bisa me-mint ulang → retryable");
+    assert.equal(out.queued, true, "di-antri supaya di-flush dengan token segar");
+    assert.equal((await getResoPending()).length, 1);
+  } finally {
+    restoreFetch();
+    restore();
+  }
+});
+
+test("flushResoQueue: 401 di tengah flush → item dipertahankan & berhenti (re-auth, data tidak hilang)", async () => {
+  apiCalls = [];
+  const restoreFetch = mockFetch({});
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/api/engagement")) {
+      return new Response(JSON.stringify({ error: "Token basi" }), { status: 401 });
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
+  };
+  const { store, restore } = mockChrome({
+    storage: {
+      resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() },
+      resoPending: [
+        { platform: "facebook", names: ["Andi"], date: "2026-08-17", postedAt: null, createdAt: 1 },
+        { platform: "tiktok", names: ["@dito"], date: "2026-08-17", postedAt: null, createdAt: 2 },
+      ],
+    },
+    tabs: [],
+  });
+  try {
+    const out = await flushResoQueue();
+    assert.equal(out.sent, 0);
+    assert.equal(out.needsLogin, true, "token basi → berhenti, minta re-auth");
+    assert.equal(out.remaining, 2, "antrian penuh dipertahankan");
+    assert.equal(store.resoPending.length, 2, "tidak ada item yang dibuang");
+  } finally {
+    restoreFetch();
+    restore();
+  }
+});
+
+test("config ReSoEx: RESO_FIREBASE selaras dengan firebase-applet-config.json repo (anti-drift)", () => {
+  const cfg = JSON.parse(
+    readFileSync(new URL("../../firebase-applet-config.json", import.meta.url), "utf8")
+  );
+  assert.equal(RESO_FIREBASE.projectId, cfg.projectId, "projectId sinkron dengan repo");
+  assert.equal(RESO_FIREBASE.databaseId, cfg.firestoreDatabaseId, "firestoreDatabaseId sinkron");
+  assert.equal(RESO_FIREBASE.apiKey, cfg.apiKey, "apiKey sinkron");
 });
 
 /** Muat content-reso.js ke window stub. Kembalikan { win, listener }. */

@@ -22,7 +22,7 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "scripting", "tabs", "webRequest", "cookies"],
+  "permissions": ["storage", "scripting", "tabs", "webRequest", "cookies", "alarms"],
   "commands": {
     "run-extract": {
       "suggested_key": {

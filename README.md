@@ -60,6 +60,13 @@ Production **tidak** membutuhkan Express. Recalculate berjalan di **client** (Fi
 - Reminder 14:45 & 15:00 WIB  
 - Kalkulasi ulang matching (client-side)
 
+## API (Vercel Functions)
+
+| Endpoint | Fungsi |
+|----------|--------|
+| `POST /api/engagement` | Jalur tulis otomatis dari ekstensi ReSoEx — verifikasi token Firebase, cek admin, merge nama ke `dailyEngagement/{date}` (dedupe + hitung ulang `engagedEmployeeIds` server-side). Idempoten. |
+| `GET /api/health` | Probe konektivitas untuk indikator "Terhubung" di ekstensi ReSoEx (nol env var, tidak menyentuh Firestore). |
+
 ## Catatan
 
 - Mode pengembangan default: **penyempurnaan**, bukan rombak workflow (lihat constitution).  

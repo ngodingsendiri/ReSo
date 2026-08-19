@@ -31,6 +31,14 @@ import {
   sanitizeInstagramTemplateUrl,
   isInstagramTemplateValid,
   sanitizeEngineOptions,
+  handoffResoAuthFromTab,
+  flushResoQueue,
+  enqueueResoPayload,
+  checkResoConnection,
+  getResoPending,
+  RESO_PENDING_KEY,
+  RESO_URL,
+  RESO_DEV_URL,
 } from "./shared-module.js";
 
 const PLATFORMS = ["facebook", "tiktok", "instagram"];
@@ -641,6 +649,71 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 chrome.tabs.onActivated.addListener(() => {
   updateBadge().catch(() => {});
+  maybeFlushResoQueue();
+});
+
+// Tab ReSo selesai dimuat = sesi segar mungkin tersedia → coba flush.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (
+    changeInfo.status === "complete" &&
+    tab &&
+    typeof tab.url === "string" &&
+    (tab.url.startsWith(RESO_URL) || tab.url.startsWith(RESO_DEV_URL))
+  ) {
+    maybeFlushResoQueue();
+  }
+});
+
+// ===================== Jembatan ReSo — antrian & konektivitas =====================
+// Extension → ReSo dibuat TANGGUH: kiriman yang gagal karena masalah transien
+// disimpan ke antrian `resoPending` (oleh content script), lalu background
+// mengirim ulang otomatis — dari alarm berkala, saat antrian berubah, saat tab
+// ReSo selesai dimuat, dan saat user pindah tab. Data tidak pernah hilang.
+
+const RESO_FLUSH_ALARM = "reso-flush";
+const RESO_FLUSH_COOLDOWN_MS = 20000; // jangan hantam API saat banyak event
+let lastResoFlushAt = 0;
+
+// Background = SATU-SATUNYA penulis antrian kiriman (content script
+// mendelegasikan via RESO_ENQUEUE). Lock rantaian-Promise meng-serialize
+// semua mutasi antrian supaya tidak ada lost-update (enqueue vs flush).
+let resoQueueOp = Promise.resolve();
+function withResoQueueLock(fn) {
+  const next = resoQueueOp.then(fn, fn);
+  resoQueueOp = next.catch(() => {});
+  return next;
+}
+
+/** Flush antrian kiriman ke ReSo dengan cooldown. Hanya jalan bila ada yang
+ *  antri (cek storage murah), jadi offline/tanpa kiriman = nol beban. */
+async function maybeFlushResoQueue() {
+  try {
+    const pending = await getResoPending();
+    if (!pending.length) return;
+    const now = Date.now();
+    if (now - lastResoFlushAt < RESO_FLUSH_COOLDOWN_MS) return;
+    lastResoFlushAt = now;
+    await withResoQueueLock(() => flushResoQueue());
+  } catch {
+    /* flush best-effort — jangan pernah menggagalkan jalur lain */
+  }
+}
+
+chrome.runtime.onStartup.addListener(() => {
+  maybeFlushResoQueue();
+  try {
+    chrome.alarms.create(RESO_FLUSH_ALARM, { periodInMinutes: 2 });
+  } catch {
+    /* alarms tak tersedia — event lain tetap mem-flush */
+  }
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm && alarm.name === RESO_FLUSH_ALARM) maybeFlushResoQueue();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[RESO_PENDING_KEY]) maybeFlushResoQueue();
 });
 
 // ===================== Message Router =====================
@@ -1141,6 +1214,33 @@ async function handleMessage(msg, sender) {
         }
       }
       return { ok: true };
+    }
+
+    case "RESO_HANDOFF_AUTH": {
+      // Content script tidak punya chrome.tabs → background yang melakukan
+      // handoff token sesi ReSo atas namanya (shared.js mendelegasikan di
+      // handoffResoAuthFromTab saat konteks content-script).
+      const auth = await handoffResoAuthFromTab();
+      return { ok: true, auth };
+    }
+
+    case "RESO_CONN_STATUS": {
+      // Status koneksi extension → ReSo untuk popup (auth, reachability, antrian).
+      return checkResoConnection();
+    }
+
+    case "RESO_ENQUEUE": {
+      // Content script menyerahkan tulis antrian ke background (single-writer):
+      // menghindari lost-update saat enqueue & flush berjalan bersamaan.
+      await withResoQueueLock(() => enqueueResoPayload(msg.payload));
+      return { ok: true };
+    }
+
+    case "RESO_FLUSH_NOW": {
+      // Kirim ulang antrian sekarang (popup/user menekan "kirim ulang").
+      await maybeFlushResoQueue();
+      const pending = await getResoPending();
+      return { ok: true, pending: pending.length };
     }
 
     default:

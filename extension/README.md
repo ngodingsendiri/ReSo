@@ -18,6 +18,27 @@ Tanpa dependensi, tanpa backend, tanpa API key. Semua berjalan di browser Anda.
 - 🛡️ **Proteksi rate-limit, sesi & checkpoint (FB + IG)** — backoff adaptif saat HTTP 429 (mengikuti `Retry-After`), deteksi sesi tidak aktif (FB redirect login) & checkpoint (IG) dengan pesan jelas, batas request per run (top-level + balasan), retry halaman kosong, dan penghentian aman saat akun butuh verifikasi.
 - 🌗 Mendukung mode gelap; antarmuka bahasa Indonesia.
 
+## Jembatan ReSo (Rekap + Kirim)
+
+Tombol **Rekap + Kirim** di panel mengirim nama hasil ekstraksi langsung ke
+database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
+
+- **Sesi**: token Firebase diambil sekali dari tab ReSo yang sudah login,
+  lalu di-refresh otomatis tanpa tab (mint via Firebase REST). Saat handoff
+  dipicu dari content script, query `chrome.tabs` didelegasikan ke background
+  (`chrome.tabs` tidak tersedia di content script).
+- **Data tidak pernah hilang**: jika kiriman gagal karena masalah sementara
+  (jaringan, server 5xx/429, token basi), nama **masuk antrian** `resoPending`
+  di `chrome.storage.local` lalu dikirim ulang otomatis oleh background —
+  alarm berkala 2 menit, saat antrian berubah, saat tab ReSo selesai dimuat,
+  atau lewat tombol **"Kirim ulang antrian"** di popup. Error permanen
+  (400/403) tidak di-antri.
+- **Status koneksi di popup**: indikator *"ReSo: Terhubung / Belum tersambung /
+  N kiriman antri"* (probe `GET /api/health` + validitas sesi, hasil di-cache),
+  plus tombol kirim ulang saat ada antrian.
+- **Idempoten**: kirim ulang hanya meng-update rekap (dedupe nama
+  case-insensitive + hitung ulang pegawai terlibat di sisi server).
+
 ## Cara Pasang (Load Unpacked)
 
 1. Buka `chrome://extensions`.

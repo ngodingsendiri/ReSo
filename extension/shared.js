@@ -1236,8 +1236,28 @@ async function mintResoIdToken(refreshToken) {
 /** Handoff token dari tab ReSo yang terbuka (content-reso.js → CustomEvent).
  *  Coba SEMUA tab ReSo, prefer produksi di atas dev (localhost:3000) — tab
  *  dev usang dengan sesi mati tidak boleh menaungi sesi produksi. Tab tanpa
- *  content script/balasan dilewati, bukan menghentikan handoff. */
+ *  content script/balasan dilewati, bukan menghentikan handoff.
+ *
+ *  Jalankan di dua konteks: (a) popup/background/options — `chrome.tabs`
+ *  tersedia, query + sendMessage langsung; (b) CONTENT SCRIPT (panel
+ *  Rekap+Kirim) — `chrome.tabs` TIDAK tersedia di sana, jadi handoff
+ *  didelegasikan ke background via `chrome.runtime.sendMessage`
+ *  (RESO_HANDOFF_AUTH). Tanpa ini `chrome.tabs.query` melempar TypeError
+ *  mentah di panel. */
 async function handoffResoAuthFromTab() {
+  if (typeof chrome.tabs?.query !== "function") {
+    // Content script: minta background yang punya akses chrome.tabs.
+    try {
+      const r = await chrome.runtime.sendMessage({ type: "RESO_HANDOFF_AUTH" });
+      if (r && r.ok && r.auth) {
+        await setResoAuth(r.auth);
+        return r.auth;
+      }
+    } catch {
+      // background mati/tidak membalas — biarkan pemanggil tahu null.
+    }
+    return null;
+  }
   const tabs = await chrome.tabs.query({ url: RESO_MATCH_PATTERNS });
   if (!tabs.length) return null;
   const prod = [];
@@ -1311,13 +1331,25 @@ async function ensureResoIdToken() {
  * Kirim nama hasil ekstraksi ke ReSo via API (Opsi C). Tidak membuka tab;
  * tanggal = saran umur post (lapis 2) atau hari ini. Idempotent: kirim ulang
  * hanya update (dedupe server-side).
+ *
+ * Kegagalan TRANSIEN (jaringan / 5xx / 429) tidak membuang data: kiriman
+ * disimpan ke antrian `resoPending` lalu di-flush otomatis oleh background
+ * (alarm + event). Error definitif (4xx: data rusak / bukan admin) TIDAK
+ * di-antri — operator harus perbaiki dulu.
  * @param {"facebook"|"instagram"|"tiktok"} platform
  * @param {string[]} names
  * @param {{suggestedDate?: string, suggestedIso?: string, label?: string}} [hint]
- * @returns {Promise<{ok: boolean, date?: string, added?: number, existing?: number, unmatched?: number, message: string}>}
+ * @returns {Promise<{ok: boolean, date?: string, added?: number, existing?: number, unmatched?: number, message: string, queued?: boolean}>}
  */
 async function sendNamesToResoApi(platform, names, hint) {
-  const idToken = await ensureResoIdToken();
+  let idToken;
+  try {
+    idToken = await ensureResoIdToken();
+  } catch {
+    // Error tak terduga saat menyambungkan sesi (mis. chrome.tabs tidak ada /
+    // handoff gagal): tampilkan pesan ramah, jangan TypeError mentah.
+    idToken = null;
+  }
   if (!idToken) {
     return {
       ok: false,
@@ -1339,48 +1371,269 @@ async function sendNamesToResoApi(platform, names, hint) {
     hint && typeof hint.suggestedIso === "string" && isValidPostedIso(hint.suggestedIso)
       ? hint.suggestedIso
       : undefined;
-  const body = { platform, names: clean, date, ...(postedAt ? { postedAt } : {}) };
-  try {
-    const r = await fetch(`${RESO_URL}/api/engagement`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      return { ok: false, message: data?.error || `Gagal kirim ke ReSo (${r.status}).` };
+  const out = await postResoEngagement(platform, clean, date, postedAt, idToken);
+  if (!out.ok && out.retryable) {
+    try {
+      await enqueueResoPayload({ platform, names: clean, date, postedAt });
+      out.message += " Kiriman masuk antrian ReSo — akan dikirim otomatis.";
+      out.queued = true;
+    } catch {
+      // Antrian tak bisa ditulis — data tetap dilaporkan gagal, bukan throw.
     }
-    const added = typeof data.added === "number" ? data.added : clean.length;
-    const existing = typeof data.existing === "number" ? data.existing : 0;
-    // Nama yang belum terpetakan ke pegawai (hitung dari respons API): kalau
-    // > 0, operator diberi tahu di pesan sukses supaya bisa memetakan sekali
-    // di dashboard — kiriman berikutnya otomatis match.
-    const unmatched =
-      typeof data.unmatched === "number" && data.unmatched > 0 ? data.unmatched : 0;
-    let message =
-      `Terkirim ke rekap ${data.date || date} — ${added} nama baru, ` +
-      `${existing} sudah ada. Sudah tersimpan di DB — cek rekapnya di ReSo.`;
-    if (unmatched > 0) {
-      message +=
-        ` ${unmatched} nama belum terpetakan di ReSo — buka dashboard untuk memetakan.`;
-    }
-    return {
-      ok: true,
-      date: data.date || date,
-      added,
-      existing,
-      unmatched,
-      message,
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      message: `Gagal kirim ke ReSo: ${e && e.message ? e.message : e}`,
-    };
   }
+  return out;
+}
+
+/** Penundaan retry internal POST /api/engagement (ms). Override untuk test:
+ *  `globalThis.__RESO_RETRY_DELAY_MS = 0`. */
+function resoRetryDelayMs() {
+  const v = globalThis.__RESO_RETRY_DELAY_MS;
+  return typeof v === "number" && v >= 0 ? v : 800;
+}
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * POST /api/engagement SATU kiriman — tanpa persiapan auth & tanpa antrian.
+ * Dipakai sendNamesToResoApi (menambah antrian saat gagal transien) dan
+ * flushResoQueue (flushing tanpa double-enqueue). Retry cepat 1× untuk blip
+ * jaringan / 5xx / 429. `retryable:false` = error definitif (400/401/403/404)
+ * — jangan diulang.
+ */
+async function postResoEngagement(platform, clean, date, postedAt, idToken) {
+  const body = { platform, names: clean, date, ...(postedAt ? { postedAt } : {}) };
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${idToken}`,
+  };
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const r = await fetch(`${RESO_URL}/api/engagement`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        // 401 = token basi (bisa me-mint ulang) → retryable supaya di-antri &
+        // di-flush dengan token segar. 403/404/400 = definitif (bukan admin /
+        // data rusak) → jangan diulang.
+        const retryable = r.status === 401 || r.status === 408 || r.status === 425 || r.status === 429 || r.status >= 500;
+        if (retryable && attempt < maxAttempts) {
+          await sleepMs(resoRetryDelayMs());
+          continue;
+        }
+        return {
+          ok: false,
+          retryable,
+          status: r.status,
+          message: data?.error || `Gagal kirim ke ReSo (${r.status}).`,
+        };
+      }
+      const added = typeof data.added === "number" ? data.added : clean.length;
+      const existing = typeof data.existing === "number" ? data.existing : 0;
+      // Nama yang belum terpetakan ke pegawai (hitung dari respons API): kalau
+      // > 0, operator diberi tahu di pesan sukses supaya bisa memetakan sekali
+      // di dashboard — kiriman berikutnya otomatis match.
+      const unmatched =
+        typeof data.unmatched === "number" && data.unmatched > 0 ? data.unmatched : 0;
+      let message =
+        `Terkirim ke rekap ${data.date || date} — ${added} nama baru, ` +
+        `${existing} sudah ada. Sudah tersimpan di DB — cek rekapnya di ReSo.`;
+      if (unmatched > 0) {
+        message +=
+          ` ${unmatched} nama belum terpetakan di ReSo — buka dashboard untuk memetakan.`;
+      }
+      return {
+        ok: true,
+        date: data.date || date,
+        added,
+        existing,
+        unmatched,
+        message,
+      };
+    } catch (e) {
+      if (attempt < maxAttempts) {
+        await sleepMs(resoRetryDelayMs());
+        continue;
+      }
+      return {
+        ok: false,
+        retryable: true,
+        message: `Gagal kirim ke ReSo: ${e && e.message ? e.message : e}`,
+      };
+    }
+  }
+  return { ok: false, retryable: true, message: "Gagal kirim ke ReSo." };
+}
+
+// ===== Antrian kiriman tertunda (tangguh: data tidak pernah hilang) =====
+// Kiriman yang gagal karena masalah TRANSIEN (jaringan turun, API 5xx/429,
+// token sementara tidak tersedia) disimpan di chrome.storage.local lalu
+// di-flush otomatis oleh background (alarm + event). Dedupe di sisi API
+// (merge + hitung ulang engagedEmployeeIds) membuat kirim ulang aman.
+
+const RESO_PENDING_KEY = "resoPending";
+
+async function getResoPending() {
+  try {
+    const d = await chrome.storage.local.get(RESO_PENDING_KEY);
+    return Array.isArray(d[RESO_PENDING_KEY]) ? d[RESO_PENDING_KEY] : [];
+  } catch {
+    return [];
+  }
+}
+
+async function setResoPending(list) {
+  await chrome.storage.local.set({ [RESO_PENDING_KEY]: list });
+}
+
+/** Tambah kiriman ke antrian; gabung nama untuk platform+date+postedAt yang
+ *  sama supaya antrian tidak menggembung (API idempotent).
+ *
+ *  Penulis antrian adalah SATU konteks (background) untuk menghindari
+ *  lost-update: content script (panel Rekap+Kirim) mendelegasikan lewat pesan
+ *  `RESO_ENQUEUE`, dan background meng-serialize semua mutasi antrian dengan
+ *  lock. Konteks popup/background/options (chrome.tabs tersedia) menulis
+ *  langsung. Gagal menghubungi background → fallback tulis lokal (best-effort,
+ *  data tetap tersimpan walau ada window race yang sangat sempit). */
+async function enqueueResoPayload(payload) {
+  if (typeof chrome.tabs?.query !== "function") {
+    try {
+      await chrome.runtime.sendMessage({ type: "RESO_ENQUEUE", payload });
+      return;
+    } catch {
+      // background mati — lanjut tulis lokal agar data tidak hilang.
+    }
+  }
+  const list = await getResoPending();
+  const names = Array.isArray(payload.names)
+    ? payload.names.filter((n) => typeof n === "string" && n.trim()).map((n) => n.trim())
+    : [];
+  if (!names.length) return;
+  const key = { platform: payload.platform, date: payload.date, postedAt: payload.postedAt || null };
+  const idx = list.findIndex(
+    (x) => x.platform === key.platform && x.date === key.date && x.postedAt === key.postedAt
+  );
+  if (idx >= 0) {
+    list[idx] = {
+      ...list[idx],
+      names: mergeNames(list[idx].names || [], names),
+      createdAt: list[idx].createdAt || Date.now(),
+    };
+  } else {
+    list.push({
+      platform: payload.platform,
+      names,
+      date: payload.date,
+      postedAt: payload.postedAt || null,
+      createdAt: Date.now(),
+    });
+  }
+  await setResoPending(list);
+}
+
+/** Kirim ulang semua antrian yang bisa dikirim. Error definitif (400/403/404:
+ *  data rusak / bukan admin) di buang — tidak ada gunanya retry. Error token
+ *  basi (401) → item DI-PERTAHANKAN dan flush berhenti: flush berikutnya
+ *  me-mint token segar lalu mencoba lagi (data tidak hilang). Tanpa token
+ *  valid → stop (antrian dipertahankan). Kembalikan ringkasan. */
+async function flushResoQueue() {
+  const pending = await getResoPending();
+  if (!pending.length) return { attempted: 0, sent: 0, remaining: 0 };
+  let idToken = null;
+  try {
+    idToken = await ensureResoIdToken();
+  } catch {
+    idToken = null;
+  }
+  if (!idToken) {
+    return { attempted: 0, sent: 0, remaining: pending.length, needsLogin: true };
+  }
+  const kept = [];
+  let sent = 0;
+  let reauth = false;
+  for (let i = 0; i < pending.length; i++) {
+    const item = pending[i];
+    const out = await postResoEngagement(
+      item.platform,
+      item.names || [],
+      item.date,
+      item.postedAt || undefined,
+      idToken
+    );
+    if (out.ok) {
+      sent++;
+      continue;
+    }
+    if (out.status === 401) {
+      // Token basi di tengah flush → jangan buang data. Pertahankan item ini
+      // DAN semua sisa antrian (token yang sama pasti gagal juga), lalu
+      // hentikan: flush berikutnya me-mint token segar lalu mencoba lagi.
+      kept.push(item);
+      for (let j = i + 1; j < pending.length; j++) kept.push(pending[j]);
+      reauth = true;
+      break;
+    }
+    if (out.retryable) kept.push(item);
+  }
+  await setResoPending(kept);
+  return {
+    attempted: pending.length,
+    sent,
+    remaining: kept.length,
+    needsLogin: reauth ? true : undefined,
+  };
+}
+
+// Cache probe /api/health 30 dtk: popup dibuka berulang tidak menunggu
+// 4 dtk timeout setiap kali (reachability jarang berubah secepat itu).
+// Override untuk test: `globalThis.__RESO_HEALTH_CACHE_MS = 0`.
+const RESO_HEALTH_CACHE_MS = 30000;
+let lastResoHealthAt = 0;
+let lastResoHealth = false;
+
+async function resoHealthReachable() {
+  const cacheMs = globalThis.__RESO_HEALTH_CACHE_MS ?? RESO_HEALTH_CACHE_MS;
+  const now = Date.now();
+  if (cacheMs > 0 && now - lastResoHealthAt < cacheMs) return lastResoHealth;
+  let reachable = false;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(`${RESO_URL}/api/health`, { signal: ctl.signal });
+    clearTimeout(t);
+    reachable = r.ok;
+  } catch {
+    reachable = false;
+  }
+  lastResoHealthAt = now;
+  lastResoHealth = reachable;
+  return reachable;
+}
+
+/** Status koneksi extension → ReSo: auth tersedia? API terjangkau? Ada antrian
+ *  menunggu? Dipakai popup (indikator) & background (keputusan flush). */
+async function checkResoConnection() {
+  const auth = await getResoAuth();
+  let authenticated = false;
+  if (auth && typeof auth.idToken === "string" && auth.idToken) {
+    authenticated = jwtExpSeconds(auth.idToken) * 1000 - 60000 > Date.now();
+  }
+  if (!authenticated && auth && typeof auth.refreshToken === "string" && auth.refreshToken) {
+    authenticated = true; // bisa mint tanpa tab → sesi hidup
+  }
+  const reachable = await resoHealthReachable();
+  const pending = (await getResoPending()).length;
+  return {
+    authenticated,
+    reachable,
+    pending,
+    connected: authenticated && reachable,
+  };
 }
 
 // ===== Lapis 2 — saran tanggal dari umur post (best-effort) =====
@@ -1787,6 +2040,12 @@ globalThis.RS_SHARED = {
   handoffResoAuthFromTab,
   ensureResoIdToken,
   sendNamesToResoApi,
+  postResoEngagement,
+  enqueueResoPayload,
+  flushResoQueue,
+  checkResoConnection,
+  getResoPending,
+  RESO_PENDING_KEY,
   parsePostAgeText,
   scanPageForPostDate,
   createTimeFromRehydration,
