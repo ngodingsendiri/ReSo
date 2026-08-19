@@ -146,6 +146,144 @@ async function writeAdmin(accessToken: string, dbId: string, uid: string, email:
   }
 }
 
+// ===== Rules keamanan (cermin firestore.rules) — dipakai saat membuat database
+// baru supaya db-<uid> langsung terproteksi (default deny-all + admin via
+// admins/{uid} + bootstrap allowlist). JAGA SINKRON dengan firestore.rules.
+const RULES_SOURCE = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function isAuthorized() {
+      let allowedEmails = [
+        'ngerjaindiri@gmail.com',
+        'sipencil@gmail.com',
+        'abiemputra.asn@gmail.com'
+      ];
+      return isSignedIn() && (
+        request.auth.token.email in allowedEmails ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+    function isAdmin() { return isAuthorized(); }
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() { return request.resource.data; }
+    function optionalString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+    function optionalStringList(data, key, maxItems) {
+      return !(key in data) || (data[key] is list && data[key].size() <= maxItems);
+    }
+    function optionalIdList(data, key) {
+      return !(key in data) || (data[key] is list && data[key].size() <= 500);
+    }
+    function isValidUser(data) {
+      return (!('role' in data) || (data.role is string && data.role in ['user', 'admin']));
+    }
+    function isValidEmployee(data) {
+      return data.keys().hasAll(['name', 'nip']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.nip is string && data.nip.size() > 0 && data.nip.size() < 50 &&
+             optionalString(data, 'bidang', 100) &&
+             optionalString(data, 'igUsername', 50) &&
+             optionalString(data, 'igUsername2', 50) &&
+             optionalString(data, 'fbName', 100) &&
+             optionalString(data, 'fbName2', 100) &&
+             optionalString(data, 'tiktokName', 100) &&
+             optionalString(data, 'tiktokName2', 100);
+    }
+    function isValidDailyEngagement(data) {
+      return data.keys().hasAll(['date']) &&
+             data.date is string && data.date.size() == 10 &&
+             data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             optionalString(data, 'igRawText', 50000) &&
+             optionalString(data, 'fbRawText', 50000) &&
+             optionalString(data, 'tiktokRawText', 50000) &&
+             optionalStringList(data, 'igLinks', 100) &&
+             optionalStringList(data, 'fbLinks', 100) &&
+             optionalStringList(data, 'tiktokLinks', 100) &&
+             optionalIdList(data, 'igEngagedEmployeeIds') &&
+             optionalIdList(data, 'fbEngagedEmployeeIds') &&
+             optionalIdList(data, 'tiktokEngagedEmployeeIds') &&
+             optionalStringList(data, 'postedAt', 100);
+    }
+    function isValidSetting(data) {
+      return (!('value' in data) || (data.value is string && data.value.size() <= 5000000));
+    }
+    match /users/{userId} {
+      allow read: if isAuthorized() && request.auth.uid == userId;
+      allow create: if isAuthorized() && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isAuthorized() && request.auth.uid == userId && isValidUser(incoming()) &&
+                       (!('role' in incoming()) || incoming().role == existing().role);
+      allow delete: if isAdmin();
+    }
+    match /admins/{adminId} {
+      allow read: if isAuthorized();
+      allow create, update: if isAdmin() && isValidId(adminId) &&
+                            incoming().keys().hasAll(['email']) &&
+                            incoming().email is string && incoming().email.size() > 0 && incoming().email.size() < 100;
+      allow delete: if isAdmin() && isValidId(adminId);
+    }
+    match /employees/{employeeId} {
+      allow list, get: if isAuthorized();
+      allow create: if isAdmin() && isValidId(employeeId) && isValidEmployee(incoming());
+      allow update: if isAdmin() && isValidId(employeeId) && isValidEmployee(incoming());
+      allow delete: if isAdmin() && isValidId(employeeId);
+    }
+    match /dailyEngagement/{dateId} {
+      allow list, get: if isAuthorized();
+      allow create: if isAdmin() && isValidId(dateId) && isValidDailyEngagement(incoming());
+      allow update: if isAdmin() && isValidId(dateId) && isValidDailyEngagement(incoming());
+      allow delete: if isAdmin() && isValidId(dateId);
+    }
+    match /settings/{settingId} {
+      allow list: if isAuthorized();
+      allow get: if isAuthorized() || settingId == 'appLogo';
+      allow create: if isAdmin() && isValidId(settingId) && isValidSetting(incoming());
+      allow update: if isAdmin() && isValidId(settingId) && isValidSetting(incoming());
+      allow delete: if isAdmin() && isValidId(settingId);
+    }
+  }
+}`;
+
+async function deployRules(accessToken: string, dbId: string): Promise<void> {
+  // 1. Buat ruleset
+  const rs = await fetch(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}/rulesets`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source: { files: [{ name: 'firestore.rules', content: RULES_SOURCE }] },
+    }),
+  });
+  const rsData = (await rs.json().catch(() => ({}))) as { name?: string };
+  if (!rs.ok || !rsData.name) {
+    throw Object.assign(new Error('Gagal membuat ruleset untuk database baru.'), { status: 502 });
+  }
+  // 2. Pasang release ke database
+  const release = `cloud.firestore/${encodeURIComponent(dbId)}`;
+  const rel = await fetch(
+    `https://firebaserules.googleapis.com/v1/projects/${PROJECT}/releases/${release}`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: `projects/${PROJECT}/releases/${release}`,
+        rulesetName: rsData.name,
+      }),
+    },
+  );
+  if (!rel.ok) {
+    const text = await rel.text().catch(() => '');
+    throw Object.assign(new Error(`Gagal deploy rules: ${text.slice(0, 200)}`), { status: 502 });
+  }
+}
+
 export default async function handler(req: unknown, res: unknown) {
   const r = req as { method?: string; headers?: { authorization?: string }; body?: unknown };
 
@@ -201,6 +339,9 @@ export default async function handler(req: unknown, res: unknown) {
       created = true;
     }
     await writeAdmin(accessToken, dbId, user.uid, user.email);
+    // Pasang rules keamanan ke database ini (baru maupun yang sudah ada) —
+    // memastikan db-<uid> selalu terlindungi.
+    await deployRules(accessToken, dbId);
 
     json(res, 200, {
       ok: true,

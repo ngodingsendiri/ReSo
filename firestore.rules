@@ -1,6 +1,13 @@
 // ===============================================================
 // ReSo Firestore Security Rules
-// Align with src/types.ts (Employee dual accounts + TikTok fields)
+// Model MULTI-TENANT open-registration:
+//  - 1 project, tiap dinas/user = 1 database `db-<uid>` (dibuat otomatis
+//    oleh /api/provision + admins/{uid} ditulis via Admin SDK).
+//  - `isAuthorized()`: bootstrap allowlist email (super-admin) ATAU user
+//    punya dokumen admins/{uid} di database-nya sendiri → tiap user adalah
+//    admin database-nya, TIDAK bisa akses db-<uid> lain.
+//  - `$(database)` membuat aturan berlaku per-database.
+// JAGA SINKRON dengan RULES_SOURCE di api/provision.ts.
 // ===============================================================
 
 rules_version = '2';
