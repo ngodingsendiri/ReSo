@@ -179,12 +179,15 @@ Write-Host "Key:       $keyPath"
 if ($extId) {
     Write-Host "Extension ID: $extId" -ForegroundColor Yellow
 
-    # ── Replace placeholder in install.html ──
+    # ── Replace placeholder / ID lama di install.html dengan ID baru ──
     $installSrc = Join-Path $PSScriptRoot "..\public\install.html"
     $installDest = Join-Path $outPath "install.html"
     if (Test-Path $installSrc) {
         $html = Get-Content $installSrc -Raw
-        $html = $html -replace "__EXTENSION_ID__", $extId
+        # Ganti placeholder (baru) atau ID 32 karakter lama (a-p/hex) supaya selalu
+        # sinkron dengan key saat ini — aman dipakai ulang berkali-kali.
+        $html = $html -replace "extId\s*=\s*['""]__EXTENSION_ID__['""]", "extId = '$extId'"
+        $html = $html -replace "extId\s*=\s*['""][a-p0-9]{32}['""]", "extId = '$extId'"
         Set-Content -Path $installDest -Value $html -NoNewline
         Write-Host "Install page: $installDest" -ForegroundColor Cyan
     }
