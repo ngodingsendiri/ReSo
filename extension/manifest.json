@@ -10,7 +10,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "ReSo Ekstention",
+    "default_title": "ReSo Ekstensi",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -18,11 +18,15 @@
       "128": "icons/icon128.png"
     }
   },
+  "options_page": "options.html",
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "permissions": ["storage", "scripting", "tabs", "webRequest", "cookies", "alarms"],
+  "externally_connectable": {
+    "matches": ["https://*/*", "http://localhost/*"]
+  },
   "commands": {
     "run-extract": {
       "suggested_key": {

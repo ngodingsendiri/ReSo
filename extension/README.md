@@ -27,6 +27,20 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
   lalu di-refresh otomatis tanpa tab (mint via Firebase REST). Saat handoff
   dipicu dari content script, query `chrome.tabs` didelegasikan ke background
   (`chrome.tabs` tidak tersedia di content script).
+- **Domain ReSo TIDAK di-hardcode** (publikasi ramah-fork): tiap deploy Vercel
+  punya domain sendiri (mis. `rekapsosmed.vercel.app`). Ekstensi mempelajari
+  domain dari web app ReSo lewat **app push** — saat app terbuka & login, ia
+  mendorong `{url, idToken, refreshToken}` ke ekstensi (`RESO_CONNECT`), lalu
+  API/health/handoff otomatis menarget domain itu. Domain juga bisa **di-pin
+  manual** di **Options** (tombol ⚙ di popup → Halaman opsi) sebagai jangkar
+  keamanan & fallback bila app belum mengirim. Tanpa keduanya, default
+  `reso.vercel.app`.
+- **App push (web → ekstensi)**: `src/lib/extension-bridge.ts` memanggil
+  `chrome.runtime.sendMessage(EXTENSION_ID, { type: "RESO_CONNECT", … })` saat
+  login & tiap halaman fokus. Butuh `extensionId` di `firebase-applet-config.json`
+  (isi dengan ID ekstensi saat publikasi). Ekstensi hanya menerima push bila
+  origin pengirim = `url` yang diklaim (situf lain tak bisa menyaru); bila URL
+  di-pin di Options, push domain lain ditolak.
 - **Data tidak pernah hilang**: jika kiriman gagal karena masalah sementara
   (jaringan, server 5xx/429, token basi), nama **masuk antrian** `resoPending`
   di `chrome.storage.local` lalu dikirim ulang otomatis oleh background —
@@ -34,8 +48,10 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
   atau lewat tombol **"Kirim ulang antrian"** di popup. Error permanen
   (400/403) tidak di-antri.
 - **Status koneksi di popup**: indikator *"ReSo: Terhubung / Belum tersambung /
-  N kiriman antri"* (probe `GET /api/health` + validitas sesi, hasil di-cache),
-  plus tombol kirim ulang saat ada antrian.
+  N kiriman antri"* (probe `GET /api/health` ke domain yang dipelajari + validitas
+  sesi, hasil di-cache), menampilkan domain terhubung; plus tombol **"Buka ReSo"**
+  (buka tab domain itu), **"Kirim ulang antrian"** saat ada antrian, dan
+  **"Putuskan"** (lupakan koneksi).
 - **Idempoten**: kirim ulang hanya meng-update rekap (dedupe nama
   case-insensitive + hitung ulang pegawai terlibat di sisi server).
 

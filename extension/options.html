@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pengaturan ReSo Ekstensi</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>ReSo Ekstensi</h1>
+      <p class="sub">Pengaturan koneksi ke web app ReSo.</p>
+
+      <label class="field" for="resoUrl">
+        URL ReSo
+        <span class="hint">
+          Domain ReSo kamu (mis. <code>https://rekapsosmed.vercel.app</code>).
+          Kosongkan untuk pakai default / dipelajari otomatis dari app.
+          Men-pin di sini mengunci ekstensi ke domain tersebut (keamanan).
+        </span>
+      </label>
+      <input id="resoUrl" type="url" placeholder="https://rekapsosmed.vercel.app" spellcheck="false" />
+      <p class="err" id="err" hidden></p>
+
+      <div class="row">
+        <button id="save" type="button">Simpan</button>
+        <button id="clear" type="button" class="ghost">Hapus (pakai default)</button>
+        <span id="saved" class="saved" hidden>Tersimpan</span>
+      </div>
+
+      <p class="note">
+        Saat web app ReSo terbuka &amp; login, ia otomatis mendorong token ke
+        ekstensi (butuh <code>extensionId</code> di config app). URL di atas
+        mengunci domain yang diperbolehkan menerima token tersebut.
+      </p>
+    </div>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

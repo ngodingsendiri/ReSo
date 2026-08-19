@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { getIdToken } from 'firebase/auth';
 import { createTokenHandoffHandler, rotateRefreshToken, type HandoffTokenProvider } from './lib/token-handoff';
+import { pushTokenToExtension } from './lib/extension-bridge';
 import { motion } from 'motion/react';
 import { Edit } from 'lucide-react';
 import EngagementDashboard from './components/EngagementDashboard';
@@ -77,6 +78,18 @@ export default function App() {
     };
     const onGetToken = createTokenHandoffHandler(provideTokens, window.location.origin);
     window.addEventListener('reso:get-token', onGetToken);
+    // Jembatan ekstensi (app push): dorong token ke ekstensi ReSo saat login
+    // & tiap halaman mendapat fokus, sehingga ekstensi otomatis "Terhubung"
+    // tanpa harus membuka tab ReSo. Domain dipelajari dari origin halaman ini.
+    if (user) {
+      pushTokenToExtension(user).catch(() => {});
+      const onFocus = () => pushTokenToExtension(user).catch(() => {});
+      window.addEventListener('focus', onFocus);
+      return () => {
+        window.removeEventListener('reso:get-token', onGetToken);
+        window.removeEventListener('focus', onFocus);
+      };
+    }
     return () => window.removeEventListener('reso:get-token', onGetToken);
   }, [user]);
 

@@ -23,6 +23,9 @@ import {
   flushResoQueue,
   checkResoConnection,
   getResoPending,
+  getResoUrl,
+  setResoUrl,
+  applyResoConnect,
   RESO_URL,
   RESO_DEV_URL,
   RESO_FIREBASE,
@@ -809,6 +812,99 @@ test("enqueueResoPayload: konteks content script → delegasi RESO_ENQUEUE ke ba
     assert.equal(received.payload.date, "2026-08-17");
     assert.equal(store.resoPending, undefined, "content script tidak menulis storage langsung");
   } finally {
+    restore();
+  }
+});
+
+test("getResoUrl: default RESO_URL bila belum diset, lalu domain dipelajari dari app push", async () => {
+  const { restore } = mockChrome({ storage: {} });
+  try {
+    assert.equal(await getResoUrl(), RESO_URL, "default sebelum ada push");
+    await applyResoConnect({ url: "https://rekapsosmed.vercel.app/", idToken: "tok", refreshToken: "rt" });
+    assert.equal(await getResoUrl(), "https://rekapsosmed.vercel.app", "pakai domain dari push (strip path)");
+  } finally {
+    restore();
+  }
+});
+
+test("applyResoConnect: tolak url bukan https & tanpa idToken; simpan bila valid", async () => {
+  const { restore } = mockChrome({ storage: {} });
+  try {
+    assert.equal(await applyResoConnect({ url: "ftp://x", idToken: "t" }), false, "skema salah → tolak");
+    assert.equal(await applyResoConnect({ url: "https://a.vercel.app", idToken: "" }), false, "tanpa idToken → tolak");
+    assert.equal(
+      await applyResoConnect({ url: "https://rekapsosmed.vercel.app", idToken: "tok", refreshToken: "rt", uid: "u", email: "e@f.g" }),
+      true,
+      "valid → tersimpan"
+    );
+    const a = await getResoAuth();
+    assert.equal(a.idToken, "tok");
+    assert.equal(a.refreshToken, "rt");
+  } finally {
+    restore();
+  }
+});
+
+test("applyResoConnect: pin manual (resoUrl) mengalahkan url app yang berbeda", async () => {
+  const { restore } = mockChrome({ storage: { resoUrl: "https://reso.vercel.app" } });
+  try {
+    assert.equal(
+      await applyResoConnect({ url: "https://rekapsosmed.vercel.app", idToken: "tok" }),
+      false,
+      "app push domain lain ditolak bila sudah di-pin"
+    );
+    assert.equal(await getResoUrl(), "https://reso.vercel.app", "tetap pakai pin");
+  } finally {
+    restore();
+  }
+});
+
+test("sendNamesToResoApi: POST ke domain yang dipelajari (bukan hardcoded reso.vercel.app)", async () => {
+  apiCalls = [];
+  const prevCache = globalThis.__RESO_HEALTH_CACHE_MS;
+  globalThis.__RESO_HEALTH_CACHE_MS = 0;
+  const restoreFetch = mockFetch({ health: true });
+  const { restore } = mockChrome({
+    storage: {
+      resoUrl: "https://rekapsosmed.vercel.app",
+      resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() },
+    },
+    tabs: [],
+  });
+  try {
+    const out = await sendNamesToResoApi("facebook", ["Andi"], {});
+    assert.equal(out.ok, true, "kirim sukses ke domain dipelajari");
+    assert.ok(apiCalls.length === 1 && apiCalls[0].url.includes("rekapsosmed.vercel.app/api/engagement"), "POST ke domain benar");
+  } finally {
+    globalThis.__RESO_HEALTH_CACHE_MS = prevCache;
+    restoreFetch();
+    restore();
+  }
+});
+
+test("checkResoConnection: health di-probe ke domain dipelajari", async () => {
+  const prevCache = globalThis.__RESO_HEALTH_CACHE_MS;
+  globalThis.__RESO_HEALTH_CACHE_MS = 0;
+  let healthUrl = null;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/api/health")) healthUrl = String(url);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  const { restore } = mockChrome({
+    storage: {
+      resoUrl: "https://rekapsosmed.vercel.app",
+      resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() },
+    },
+    tabs: [],
+  });
+  try {
+    const s = await checkResoConnection();
+    assert.equal(s.connected, true);
+    assert.ok(healthUrl && healthUrl.includes("rekapsosmed.vercel.app/api/health"), "health probe ke domain benar");
+  } finally {
+    globalThis.__RESO_HEALTH_CACHE_MS = prevCache;
+    globalThis.fetch = origFetch;
     restore();
   }
 });

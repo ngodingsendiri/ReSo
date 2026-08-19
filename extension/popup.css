@@ -115,10 +115,18 @@ input:checked + .slider::before {
   border-radius: 10px;
 }
 
-.reso-retry {
+.reso-actions {
   margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reso-retry,
+.reso-open,
+.reso-reset {
+  flex: 1 1 auto;
   padding: 8px 12px;
-  width: 100%;
   font-size: 12px;
   font-weight: 600;
   color: #0f172a;
@@ -128,6 +136,18 @@ input:checked + .slider::before {
   cursor: pointer;
 }
 
-.reso-retry:hover {
+.reso-open {
+  background: #0f172a;
+  color: #fff;
+  border-color: #0f172a;
+}
+
+.reso-retry:hover,
+.reso-open:hover,
+.reso-reset:hover {
   background: #f1f5f9;
+}
+
+.reso-open:hover {
+  background: #1e293b;
 }

@@ -36,6 +36,8 @@ import {
   enqueueResoPayload,
   checkResoConnection,
   getResoPending,
+  applyResoConnect,
+  getResoUrl,
   RESO_PENDING_KEY,
   RESO_URL,
   RESO_DEV_URL,
@@ -653,13 +655,10 @@ chrome.tabs.onActivated.addListener(() => {
 });
 
 // Tab ReSo selesai dimuat = sesi segar mungkin tersedia → coba flush.
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (
-    changeInfo.status === "complete" &&
-    tab &&
-    typeof tab.url === "string" &&
-    (tab.url.startsWith(RESO_URL) || tab.url.startsWith(RESO_DEV_URL))
-  ) {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete" || !tab || typeof tab.url !== "string") return;
+  const base = await getResoUrl();
+  if (tab.url.startsWith(base) || tab.url.startsWith(RESO_DEV_URL)) {
     maybeFlushResoQueue();
   }
 });
@@ -724,6 +723,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     .catch((err) =>
       sendResponse({ ok: false, error: String(err?.message || err) })
     );
+  return true;
+});
+
+/** Origin (`proto//host`) dari URL, atau null bila bukan URL valid. */
+function originOf(u) {
+  try {
+    const x = new URL(u);
+    return `${x.protocol}//${x.host}`;
+  } catch {
+    return null;
+  }
+}
+
+// Web app ReSo mendorong token sesi ke ekstensi (model "app push"):
+// `chrome.runtime.sendMessage(EXTENSION_ID, { type: "RESO_CONNECT", url,
+// idToken, refreshToken, uid, email })`. Hanya terima bila origin pengirim
+// persis sama dengan `url` yang diklaim — situs lain tak bisa menyaru. Bila
+// user men-pin URL di Options, applyResoConnect menolak url yang tak cocok.
+chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  (async () => {
+    try {
+      if (!msg || msg.type !== "RESO_CONNECT") return;
+      const origin = originOf(sender?.url);
+      if (!origin) return;
+      if (originOf(msg.url) !== origin) return; // cross-origin → tolak
+      const ok = await applyResoConnect(msg);
+      if (ok) maybeFlushResoQueue().catch(() => {});
+      sendResponse({ ok });
+    } catch {
+      sendResponse({ ok: false });
+    }
+  })();
   return true;
 });
 

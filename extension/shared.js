@@ -1120,12 +1120,93 @@ function reasonToMessage(reason, count, platform, extra) {
 }
 
 // ===================== Domain ReSo =====================
-// Domain produksi = SUMBER TUNGGAL di sini; manifest.json memakai pola yang
-// sama (test memastikan keduanya sinkron). Dipakai content-reso.js (handoff
+// Domain produksi DEFAULT = SUMBER TUNGGAL di sini; manifest.json memakai pola
+// yang sama (test memastikan keduanya sinkron). Dipakai content-reso.js (handoff
 // token sesi) dan sendNamesToResoApi (POST /api/engagement).
+//
+// Untuk ekstensi yang dipublikasikan: tiap user men-deploy ReSo ke domain
+// Vercel sendiri (mis. rekapsosmed.vercel.app), sehingga domain TIDAK boleh
+// di-hardcode. Domain sebenarnya dipelajari dari web app ReSo itu sendiri:
+// saat app dimuat, ia mendorong `{url, idToken, refreshToken, ...}` ke ekstensi
+// (pesan RESO_CONNECT via chrome.runtime.sendMessage — lihat applyResoConnect).
+// Domain juga BISA di-pin manual lewat `resoUrl` di storage (Options) sebagai
+// jangkar keamanan / fallback. Tanpa keduanya, dipakai RESO_URL default.
 const RESO_URL = "https://reso.vercel.app";
 const RESO_DEV_URL = "http://localhost:3000";
 const RESO_MATCH_PATTERNS = [`${RESO_URL}/*`, `${RESO_DEV_URL}/*`];
+const RESO_URL_KEY = "resoUrl";
+
+/** Normalisasi URL ReSo: huruf kecil, strip path/query/trailing slash, wajib
+ *  https/http://localhost. Gagal → null (tidak dipakai). */
+function normalizeResoUrl(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  let u;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  if (u.protocol === "http:" && u.hostname !== "localhost" && !u.hostname.endsWith(".localhost")) {
+    return null; // hanya localhost yang diizinkan tanpa https
+  }
+  return `${u.protocol}//${u.host}`;
+}
+
+/** Domain ReSo yang dipakai API/health/handoff — hasil pin manual (`resoUrl`)
+ *  jika valid, else domain yang dipelajari dari app (juga `resoUrl`), else
+ *  default RESO_URL. Async karena baca storage. */
+async function getResoUrl() {
+  try {
+    const data = await chrome.storage.local.get(RESO_URL_KEY);
+    const norm = normalizeResoUrl(data[RESO_URL_KEY]);
+    if (norm) return norm;
+  } catch {}
+  return RESO_URL;
+}
+
+async function setResoUrl(url) {
+  const norm = normalizeResoUrl(url);
+  if (!norm) return false;
+  try {
+    await chrome.storage.local.set({ [RESO_URL_KEY]: norm });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Pola tab untuk handoff, mengikuti domain aktif (default atau dipelajari). */
+async function resoMatchPatterns() {
+  const base = await getResoUrl();
+  if (base === RESO_URL) return RESO_MATCH_PATTERNS;
+  return [`${base}/*`, `${RESO_DEV_URL}/*`];
+}
+
+/** Terapkan koneksi yang didorong web app ReSo (pesan RESO_CONNECT): simpan
+ *  domain + token sesi. Pemanggil (onMessageExternal) WAJIB memvalidasi bahwa
+ *  `sender.url` punya origin sama dengan `url` ini agar tidak ada situs lain
+ *  yang menyaru. Mengembalikan true bila tersimpan. */
+async function applyResoConnect(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  const url = normalizeResoUrl(payload.url);
+  if (!url) return false;
+  if (typeof payload.idToken !== "string" || !payload.idToken) return false;
+  // Pin manual (jika ada) mengalahkan url dari app — app harus cocok.
+  const pinned = normalizeResoUrl((await chrome.storage.local.get(RESO_URL_KEY))[RESO_URL_KEY]);
+  if (pinned && pinned !== url) return false;
+  const auth = {
+    idToken: payload.idToken,
+    refreshToken: typeof payload.refreshToken === "string" ? payload.refreshToken : null,
+    uid: typeof payload.uid === "string" ? payload.uid : null,
+    email: typeof payload.email === "string" ? payload.email : null,
+    savedAt: Date.now(),
+    via: "push",
+  };
+  await setResoUrl(url);
+  await setResoAuth(auth);
+  return true;
+}
 
 // Mode ekstensi (toggle popup): false → FAB/panel di halaman disembunyikan.
 const RSX_ENABLED_KEY = "rsx_enabled";
@@ -1209,7 +1290,7 @@ async function mintResoIdToken(refreshToken) {
   }
   // 2) Fallback: mint via /api/token-refresh (server relay)
   try {
-    const r = await fetch(`${RESO_URL}/api/token-refresh`, {
+    const r = await fetch(`${await getResoUrl()}/api/token-refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
@@ -1258,12 +1339,13 @@ async function handoffResoAuthFromTab() {
     }
     return null;
   }
-  const tabs = await chrome.tabs.query({ url: RESO_MATCH_PATTERNS });
+  const base = await getResoUrl();
+  const tabs = await chrome.tabs.query({ url: await resoMatchPatterns() });
   if (!tabs.length) return null;
   const prod = [];
   const dev = [];
   for (const t of tabs) {
-    if (typeof t.url === "string" && t.url.startsWith(RESO_URL)) prod.push(t);
+    if (typeof t.url === "string" && t.url.startsWith(base)) prod.push(t);
     else dev.push(t);
   }
   for (const tab of [...prod, ...dev]) {
@@ -1351,10 +1433,11 @@ async function sendNamesToResoApi(platform, names, hint) {
     idToken = null;
   }
   if (!idToken) {
+    const resoBase = await getResoUrl();
     return {
       ok: false,
       needsLogin: true,
-      message: "Sesi ReSo belum tersambung. Buka ReSo (reso.vercel.app) sekali untuk login, lalu coba lagi.",
+      message: `Sesi ReSo belum tersambung. Buka ReSo (${resoBase}) sekali untuk login, lalu coba lagi.`,
     };
   }
   const clean = Array.isArray(names)
@@ -1411,7 +1494,7 @@ async function postResoEngagement(platform, clean, date, postedAt, idToken) {
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const r = await fetch(`${RESO_URL}/api/engagement`, {
+      const r = await fetch(`${await getResoUrl()}/api/engagement`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
@@ -1604,7 +1687,7 @@ async function resoHealthReachable() {
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 4000);
-    const r = await fetch(`${RESO_URL}/api/health`, { signal: ctl.signal });
+    const r = await fetch(`${await getResoUrl()}/api/health`, { signal: ctl.signal });
     clearTimeout(t);
     reachable = r.ok;
   } catch {
@@ -2048,6 +2131,10 @@ globalThis.RS_SHARED = {
   jwtExpSeconds,
   getResoAuth,
   setResoAuth,
+  getResoUrl,
+  setResoUrl,
+  resoMatchPatterns,
+  applyResoConnect,
   mintResoIdToken,
   handoffResoAuthFromTab,
   ensureResoIdToken,
