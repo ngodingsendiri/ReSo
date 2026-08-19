@@ -1225,9 +1225,9 @@ const RSX_ENABLED_KEY = "rsx_enabled";
 // Config = nilai publik firebase-applet-config.json repo ReSo (aman dibagikan,
 // bukan secret).
 const RESO_FIREBASE = {
-  projectId: "gen-lang-client-0270545710",
-  databaseId: "ai-studio-fb938bba-d23a-4dfc-9bc9-1fdee767fe1d",
-  apiKey: "AIzaSyCNPs22_EDW9DlfjoO4myWv-TnEBR6YvBo",
+  projectId: "reso-id",
+  databaseId: "",
+  apiKey: "AIzaSyB6HAfyQBIGRhbyrg4EmV4HnffWcaMsMEc",
 };
 const RESO_AUTH_KEY = "resoAuth";
 
