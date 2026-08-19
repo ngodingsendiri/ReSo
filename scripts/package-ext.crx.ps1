@@ -54,7 +54,7 @@ Write-Host "Chrome: $chrome" -ForegroundColor Cyan
 # ── Validate extension dir ──
 $extPath = (Resolve-Path $ExtensionDir).Path
 if (-not (Test-Path "$extPath\manifest.json")) {
-    Write-Error "manifest.json tidak ada di $extPath — jalankan build dulu."
+    Write-Error "manifest.json tidak ada di $extPath - jalankan build dulu."
     exit 1
 }
 
@@ -79,7 +79,7 @@ if (Test-Path $keyPath) {
     $chromeArgs += "--pack-extension-key=$keyPath"
 }
 
-$proc = Start-Process -FilePath $chrome -ArgumentList $chromeArgs -Wait -PassThru -NoNewWindow -WindowStyle Hidden
+$proc = Start-Process -FilePath $chrome -ArgumentList $chromeArgs -Wait -PassThru -WindowStyle Hidden
 
 # Chrome --pack-extension outputs the .crx next to the extension dir
 $crxName = Split-Path $extPath -Leaf
@@ -180,5 +180,5 @@ if ($extId) {
     Write-Host "  2. Users open install.html, click download"
     Write-Host "  3. Drag .crx into chrome://extensions (Developer Mode ON)"
 } else {
-    Write-Host "Extension ID: (could not auto-extract — check key.pem)" -ForegroundColor Yellow
+    Write-Host "Extension ID: (could not auto-extract - check key.pem)" -ForegroundColor Yellow
 }
