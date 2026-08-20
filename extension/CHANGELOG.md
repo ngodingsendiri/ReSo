@@ -4,6 +4,12 @@ Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### CI: pack otomatis via GitHub Actions + distribusi ZIP primary
+- **Workflow baru `extension-release.yml`**: setiap push ke `extension/**` di `main` (atau `workflow_dispatch`) → build ekstensi, pack CRX + ZIP, hitung extension ID (`compute_ext_id.py`), buat GitHub Release (`ext-v<ver>`) dengan asset nama tetap `reso-extension.crx` / `reso-extension.zip`, lalu sync `extensionId` ke `firebase-applet-config.json` + `api/provision-rules.ts` (commit-back `[skip ci]`).
+- **Distribusi utama = ZIP** (Load unpacked): karena `CRX_REQUIRED_PROOF_MISSING` masih muncul saat drag `.crx` di sebagian Chrome, `.zip` → ekstrak → `chrome://extensions` → Developer mode → **Load unpacked** menjadi jalur andal. Extension ID tetap stabil berkat `key` di `manifest.json` (`bilnegbhoaabgfchklhhfljcfgaheccp`) sehingga push/handoff berfungsi penuh.
+- **Download URL stabil** (tanpa update versi): `releases/latest/download/reso-extension.zip`.
+- **Secret**: `EXTENSION_PRIVATE_KEY` = isi `extension/dist-crx/reso-extension-key.pem` (di-restore via Python agar PEM tidak rusak).
+
 ### FB: paksa mode "Semua Komentar" (bukan "Paling relevan")
 - **Kelemahan user dilaporkan**: di Facebook, default sortir komentar adalah "Paling relevan" yang hanya menampilkan SEBAGIAN komentar. Bila GraphQL capture gagal dan engine jatuh ke DOM fallback, hasil hanya komentar relevan — user harus manual membuka "Semua Komentar".
 - **Fix**: `setAllCommentsSort()` baru di `inject-fb.js` — di awal `runExtract`, engine mencari dropdown sortir komentar ("Paling relevan"/"Most relevant"/"Terbaru"/"Newest") dan mengklik opsi **"Semua Komentar"/"All comments"**. Best-effort & idempotent: bila sudah "Semua Komentar" atau menu tak ada, tidak mengubah apa-apa. Ini melengkapi `forceAllComments` (GraphQL `sortKey: RANKED_UNFILTERED`) agar DOM fallback & capture juga melihat SEMUA komentar tanpa user manual.

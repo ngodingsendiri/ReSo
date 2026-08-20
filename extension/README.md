@@ -30,17 +30,19 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
 - **Domain ReSo TIDAK di-hardcode** (publikasi ramah-fork): tiap deploy Vercel
   punya domain sendiri (mis. `rekapsosmed.vercel.app`). Ekstensi mempelajari
   domain dari web app ReSo lewat **app push** — saat app terbuka & login, ia
-  mendorong `{url, idToken, refreshToken}` ke ekstensi (`RESO_CONNECT`), lalu
+  mendorong `{url, idToken, uid, email}` ke ekstensi (`RESO_CONNECT`), lalu
   API/health/handoff otomatis menarget domain itu. Domain juga bisa **di-pin
   manual** di **Options** (tombol ⚙ di popup → Halaman opsi) sebagai jangkar
   keamanan & fallback bila app belum mengirim. Tanpa keduanya, default
-  `reso.vercel.app`.
+  `https://rekapsosmed.vercel.app`.
 - **App push (web → ekstensi)**: `src/lib/extension-bridge.ts` memanggil
   `chrome.runtime.sendMessage(EXTENSION_ID, { type: "RESO_CONNECT", … })` saat
   login & tiap halaman fokus. Butuh `extensionId` di `firebase-applet-config.json`
-  (isi dengan ID ekstensi saat publikasi). Ekstensi hanya menerima push bila
-  origin pengirim = `url` yang diklaim (situf lain tak bisa menyaru); bila URL
-  di-pin di Options, push domain lain ditolak.
+  (diisi otomatis oleh GitHub Actions; saat ini `bilnegbhoaabgfchklhhfljcfgaheccp`).
+  Ekstensi hanya menerima push bila origin pengirim = `url` yang diklaim (situs
+  lain tak bisa menyaru); bila URL di-pin di Options, push domain lain ditolak.
+  **Keamanan sesi**: ekstensi HANYA menerima `idToken` (~1 jam), BUKAN refresh
+  token (mencegah logout diam-diam pengguna app).
 - **Data tidak pernah hilang**: jika kiriman gagal karena masalah sementara
   (jaringan, server 5xx/429, token basi), nama **masuk antrian** `resoPending`
   di `chrome.storage.local` lalu dikirim ulang otomatis oleh background —
@@ -55,12 +57,19 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
 - **Idempoten**: kirim ulang hanya meng-update rekap (dedupe nama
   case-insensitive + hitung ulang pegawai terlibat di sisi server).
 
-## Cara Pasang (Load Unpacked)
+## Cara Pasang (Load Unpacked — disarankan)
 
 1. Buka `chrome://extensions`.
 2. Aktifkan **Developer mode** (pojok kanan atas).
-3. Klik **Load unpacked** → pilih folder proyek ini (root, atau folder `dist/` hasil build).
+3. Klik **Load unpacked** → pilih folder `extension/dist/` hasil build (atau hasil ekstrak dari `.zip` release).
 4. Ekstensi **ReSo Ekstention** siap dipakai di toolbar.
+
+> **Distribusi**: file rilis (`reso-extension.zip` / `reso-extension.crx`) dibuat otomatis
+> oleh **GitHub Actions** dan diunggah ke **GitHub Releases**. Download stabil:
+> `https://github.com/ngodingsendiri/ReSo/releases/latest/download/reso-extension.zip`.
+> Ekstrak `.zip` → **Load unpacked** (bila drag `.crx` muncul
+> `CRX_REQUIRED_PROOF_MISSING`, pakai jalur `.zip`). Extension ID stabil sehingga
+> push/handoff tetap berfungsi.
 
 ## Cara Pakai
 
