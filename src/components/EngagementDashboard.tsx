@@ -34,7 +34,7 @@ import { DailyEngagement, Employee, UnmatchedName } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
 import { logout, dinasCollection, dinasDoc } from '../lib/firebase';
-import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
+import { onSnapshot, query, orderBy, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
 import { cn, getBidangColor } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate, addLocalDays } from '../lib/date';
 import { matchEmployeesToEngagement, matchEngagementDetail, engagedIdsEqual, mergeUniqueLines } from '../lib/matching';
@@ -67,16 +67,6 @@ const itemVariants: import('motion/react').Variants = {
       ease: "easeOut", duration: 0.18
     }
   }
-};
-
-const TAB_LABELS: Record<string, string> = {
-  dashboard: 'Beranda',
-  overview: 'Input Rekap',
-  'daily-report': 'Laporan Harian',
-  reports: 'Laporan Mingguan',
-  'monthly-reports': 'Laporan Bulanan',
-  employees: 'Data Pegawai',
-  settings: 'Pengaturan',
 };
 
 export default function EngagementDashboard() {
@@ -1370,6 +1360,17 @@ export default function EngagementDashboard() {
         <div className="p-5 mt-auto border-t border-slate-200 bg-slate-50/80">
           {user && (
             <div className="flex flex-col gap-3">
+              {notificationPermission !== 'granted' && (
+                <Button
+                  variant="outline"
+                  onClick={requestNotificationPermission}
+                  className="w-full border-slate-200 text-slate-600 hover:bg-slate-100 rounded-xl font-bold text-xs h-10 gap-2"
+                  title="Aktifkan notifikasi jam engagement"
+                >
+                  <Bell size={15} />
+                  Aktifkan notifikasi
+                </Button>
+              )}
               <div className="flex items-center gap-3 px-1">
                 {user.photoURL ? (
                   <img src={user.photoURL} alt="" className="w-9 h-9 rounded-full" referrerPolicy="no-referrer" />
@@ -1397,62 +1398,19 @@ export default function EngagementDashboard() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative pb-bottom-nav lg:pb-0">
-        {/* Sticky App Header - Modern Mobile Style */}
-        <header className="sticky top-0 pt-safe z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 h-[calc(4rem+env(safe-area-inset-top))] flex items-center justify-between lg:px-8 lg:h-20 lg:pt-0">
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="lg:hidden rounded-lg h-9 w-9 text-slate-500 hover:bg-slate-50" 
-              onClick={() => setIsSidebarOpen(true)}
-            >
-              <Menu size={20} />
-            </Button>
-            <div className="flex flex-col min-w-0">
-              <h2 className="text-base lg:text-xl font-bold text-slate-900 tracking-tight leading-none truncate">
-                {TAB_LABELS[activeTab] || 'ReSo'}
-              </h2>
-              <span className="lg:hidden text-[10px] font-medium text-slate-400 mt-0.5">ReSo</span>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {notificationPermission !== 'granted' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={requestNotificationPermission}
-                className="rounded-full w-9 h-9 text-slate-600 hover:bg-slate-100 relative"
-                title="Aktifkan notifikasi jam engagement"
-              >
-                <Bell size={18} />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
-              </Button>
-            )}
-            {user && (
-              <div className="flex items-center gap-2 bg-slate-50 p-1 pr-2.5 sm:pr-3 rounded-full border border-slate-200">
-                {user.photoURL ? (
-                  <img 
-                    src={user.photoURL} 
-                    alt="" 
-                    className="w-7 h-7 lg:w-8 lg:h-8 rounded-full" 
-                    referrerPolicy="no-referrer" 
-                  />
-                ) : (
-                  <div className="w-7 h-7 lg:w-8 lg:h-8 rounded-full bg-slate-200 flex items-center justify-center text-[11px] font-bold text-slate-600">
-                    {(user.displayName || user.email || '?').charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <span className="hidden md:block text-xs font-semibold text-slate-700 max-w-[100px] truncate">
-                  {user.displayName?.split(' ')[0] || 'Admin'}
-                </span>
-              </div>
-            )}
-          </div>
-        </header>
+        {/* Hamburger mobile — floating, tanpa top bar (halaman lebih luas) */}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className="lg:hidden fixed top-3 left-3 z-40 rounded-lg h-10 w-10 bg-white/95 backdrop-blur-md border border-slate-200 text-slate-600 shadow-sm hover:bg-white" 
+          onClick={() => setIsSidebarOpen(true)}
+          title="Buka menu"
+        >
+          <Menu size={20} />
+        </Button>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth">
-          <div className="px-4 py-6 md:p-8 lg:p-12 max-w-[1600px] mx-auto w-full">
+          <div className="px-4 py-5 md:px-6 lg:px-8 xl:px-10 max-w-[1800px] mx-auto w-full">
             <AnimatePresence mode="wait">
               {activeTab === 'dashboard' && (
                 <DashboardTab 
@@ -1475,15 +1433,13 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 md:p-6 rounded-xl border border-slate-200">
-                    <div className="space-y-1 w-full md:w-auto">
-                      <h2 className="text-lg md:text-xl font-bold tracking-tight text-slate-900">Input rekap harian</h2>
-                      <p className="text-slate-500 text-xs">Pilih tanggal pada kalender untuk mengisi atau melihat rekap</p>
+                  <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 md:px-6 rounded-xl border border-slate-200">
+                    <div className="w-full md:w-auto">
                       {employees.length === 0 && (
                         <button
                           type="button"
                           onClick={() => setActiveTab('employees')}
-                          className="mt-2 text-xs font-semibold text-slate-700 underline underline-offset-2"
+                          className="text-xs font-semibold text-slate-700 underline underline-offset-2"
                         >
                           Belum ada pegawai — tambah data dulu
                         </button>
@@ -1989,12 +1945,7 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-xl border border-slate-200">
-                    <div className="lg:hidden space-y-0.5">
-                      <h2 className="text-xl font-bold tracking-tight text-slate-900">Laporan Harian</h2>
-                      <p className="text-slate-500 text-xs">Unduh dan lihat rekapitulasi engagement harian</p>
-                    </div>
-                    
+                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-5 rounded-xl border border-slate-200">
                     <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4 w-full lg:w-auto lg:ml-auto">
                       <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full xl:w-auto justify-between">
                         <Button variant="ghost" size="icon" onClick={() => changeDailyDate(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
@@ -2214,12 +2165,7 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-xl border border-slate-200">
-                    <div className="lg:hidden space-y-0.5">
-                      <h2 className="text-xl font-bold tracking-tight text-slate-900">Laporan Mingguan</h2>
-                      <p className="text-slate-500 text-xs">Unduh dan lihat rekapitulasi engagement mingguan</p>
-                    </div>
-                    
+                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-5 rounded-xl border border-slate-200">
                     <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4 w-full lg:w-auto lg:ml-auto">
                       <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full xl:w-auto justify-between">
                         <Button variant="ghost" size="icon" onClick={() => changeWeek(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
@@ -2450,12 +2396,7 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-6 md:space-y-8"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-xl border border-slate-200">
-                    <div className="lg:hidden space-y-0.5">
-                      <h2 className="text-xl font-bold tracking-tight text-slate-900">Laporan Bulanan</h2>
-                      <p className="text-slate-500 text-xs">Unduh dan lihat rekapitulasi engagement bulanan</p>
-                    </div>
-                    
+                  <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-5 rounded-xl border border-slate-200">
                     <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4 w-full lg:w-auto lg:ml-auto">
                       <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full xl:w-auto justify-between">
                         <Button variant="ghost" size="icon" onClick={() => changeMonthlyReportDate(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">

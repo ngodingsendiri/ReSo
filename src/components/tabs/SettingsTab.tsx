@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Settings, RefreshCw, KeyRound, Download, ExternalLink, Database, Loader2 } from 'lucide-react';
+import { RefreshCw, KeyRound, Download, ExternalLink, Database, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { useAuth } from '../FirebaseProvider';
@@ -88,16 +88,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       className="space-y-6"
     >
       <div className="bg-white rounded-xl p-5 sm:p-8 border border-slate-200">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center border border-slate-200">
-            <Settings className="text-slate-900" size={18} />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">Pengaturan</h2>
-            <p className="text-slate-500 text-xs">Ekstensi, Meta API, dan kalkulasi ulang</p>
-          </div>
-        </div>
-
         <div className="flex flex-col gap-3">
           {provisionError && (
             <div className="p-4 bg-rose-50 rounded-xl border border-rose-200 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">

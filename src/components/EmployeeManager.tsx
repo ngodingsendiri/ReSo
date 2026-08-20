@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Employee } from '../types';
 import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
@@ -540,11 +540,7 @@ export default function EmployeeManager() {
 
   return (
     <div className="space-y-6 md:space-y-8">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-xl border border-slate-200">
-        <div className="lg:hidden space-y-0.5">
-          <h2 className="text-xl font-bold tracking-tight text-slate-900">Database Pegawai</h2>
-          <p className="text-slate-500 text-xs">Kelola data pegawai untuk monitoring engagement kolektif</p>
-        </div>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-5 rounded-xl border border-slate-200">
         <div className="flex flex-col xl:flex-row gap-4 w-full xl:w-auto xl:ml-auto">
           <div className="relative flex-1 min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />

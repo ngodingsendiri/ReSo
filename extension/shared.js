@@ -1273,63 +1273,6 @@ async function setResoAuth(auth) {
  *  `err.code` (kata pertama pesan Firebase, mis. INVALID_REFRESH_TOKEN)
  *  supaya pemanggil bisa membersihkan storage — error transien tidak punya
  *  kode yang dikenal. */
-async function mintResoIdToken(refreshToken) {
-  // 1) Coba Firebase REST langsung
-  try {
-    const body = new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-    });
-    const r = await fetch(
-      `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(RESO_FIREBASE.apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: body.toString(),
-      }
-    );
-    const data = await r.json().catch(() => ({}));
-    if (r.ok && data.id_token) {
-      return {
-        idToken: data.id_token,
-        refreshToken: data.refresh_token || refreshToken,
-      };
-    }
-    const code = typeof data.error?.message === "string" ? data.error.message.split(" ")[0] : "";
-    if (code && DEFINITIVE_AUTH_ERRORS.has(code)) {
-      const err = new Error(data.error?.message || "Refresh token tidak valid.");
-      err.code = code;
-      throw err;
-    }
-  } catch (e) {
-    if (e && typeof e.code === "string" && DEFINITIVE_AUTH_ERRORS.has(e.code)) throw e;
-  }
-  // 2) Fallback: mint via /api/token-refresh (server relay)
-  try {
-    const r = await fetch(`${await getResoUrl()}/api/token-refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (r.ok && data.ok && data.idToken) {
-      return { idToken: data.idToken, refreshToken: data.refreshToken || refreshToken };
-    }
-    const errMsg = data?.error || "";
-    if (errMsg.includes("INVALID_REFRESH_TOKEN") || errMsg.includes("TOKEN_EXPIRED")) {
-      const err = new Error(errMsg);
-      err.code = errMsg.split(" ")[0];
-      throw err;
-    }
-  } catch (e) {
-    if (e && typeof e.code === "string" && DEFINITIVE_AUTH_ERRORS.has(e.code)) throw e;
-  }
-  const err = new Error("Sesi ReSo kedaluwarsa — buka ReSo sekali untuk login ulang.");
-  err.code = "MINT_FAILED";
-  throw err;
-}
-
-
 /** Handoff token dari tab ReSo yang terbuka (content-reso.js → CustomEvent).
  *  Coba SEMUA tab ReSo, prefer produksi di atas dev (localhost:3000) — tab
  *  dev usang dengan sesi mati tidak boleh menaungi sesi produksi. Tab tanpa
@@ -1385,40 +1328,20 @@ async function handoffResoAuthFromTab() {
   return null;
 }
 
-/** Kode error Firebase yang berarti refresh token tersimpan sudah TIDAK
- *  berguna (dicabut, kedaluwarsa, akun dinonaktifkan/dihapus) — auth wajib
- *  dibersihkan supaya run berikutnya langsung handoff, bukan mint mati lagi. */
-const DEFINITIVE_AUTH_ERRORS = new Set([
-  "INVALID_REFRESH_TOKEN",
-  "TOKEN_EXPIRED",
-  "USER_DISABLED",
-  "USER_NOT_FOUND",
-]);
-
 /**
  * Pastikan idToken valid: (1) tersimpan & belum kedaluwarsa → pakai;
- * (2) punya refresh token → mint tanpa tab; (3) fallback handoff dari tab
- * ReSo. Kembalikan null jika tidak ada cara (butuh login ReSo dulu).
+ * (2) fallback handoff dari tab ReSo yang terbuka. Kembalikan null jika
+ * tidak ada cara (butuh login ReSo dulu).
+ *
+ * Catatan: ekstensi HANYA menerima idToken (~1 jam), TIDAK refresh token —
+ * Firebase `securetoken` memutar & mencabut refresh token sumber tiap mint,
+ * yang akan membatalkan sesi dashboard. Jadi tanpa tab ReSo yang terbuka,
+ * idToken yang kedaluwarsa tidak bisa di-refresh mandiri → handoff ulang.
  */
 async function ensureResoIdToken() {
   const stored = await getResoAuth();
   if (stored?.idToken && jwtExpSeconds(stored.idToken) * 1000 - 60000 > Date.now()) {
     return stored.idToken;
-  }
-  if (stored?.refreshToken) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const minted = await mintResoIdToken(stored.refreshToken);
-        await setResoAuth({ ...stored, ...minted, savedAt: Date.now() });
-        return minted.idToken;
-      } catch (e) {
-        if (e && typeof e.code === "string" && DEFINITIVE_AUTH_ERRORS.has(e.code)) {
-          try { await chrome.storage.local.remove(RESO_AUTH_KEY); } catch {}
-          break;
-        }
-        if (attempt === 0) continue;
-      }
-    }
   }
   const handoff = await handoffResoAuthFromTab();
   return handoff ? handoff.idToken : null;
@@ -2151,7 +2074,6 @@ globalThis.RS_SHARED = {
   setResoUrl,
   resoMatchPatterns,
   applyResoConnect,
-  mintResoIdToken,
   handoffResoAuthFromTab,
   ensureResoIdToken,
   sendNamesToResoApi,

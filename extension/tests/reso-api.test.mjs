@@ -2,7 +2,7 @@
  * ReSo API (Opsi C) — kirim langsung ke database via /api/engagement.
  * Test perilaku NYATA shared.js:
  *  - token tersimpan valid → kirim dengan Bearer,
- *  - token kedaluwarsa → mint dari refresh token (tanpa tab),
+ *  - token kedaluwarsa → handoff dari tab ReSo yang terbuka,
  *  - tanpa token tersimpan → handoff dari tab ReSo yang terbuka,
  *  - tanpa apa pun → needsLogin (tidak fetch),
  *  - jwtExpSeconds decode,
@@ -18,7 +18,6 @@ import {
   jwtExpSeconds,
   getResoAuth,
   setResoAuth,
-  mintResoIdToken,
   enqueueResoPayload,
   flushResoQueue,
   checkResoConnection,
@@ -58,15 +57,6 @@ function mockFetch(routes) {
       try { body = JSON.parse(init.body); } catch { body = init.body; }
     }
     const record = { url: u, init, body };
-    if (u.includes("securetoken.googleapis.com")) {
-      mintCalls.push(record);
-      if (routes.mintError) {
-        return new Response(JSON.stringify(routes.mintError.body), {
-          status: routes.mintError.status || 400,
-        });
-      }
-      return new Response(JSON.stringify({ id_token: "tok-minted", refresh_token: "rt-new" }), { status: 200 });
-    }
     if (u.includes("/api/engagement")) {
       apiCalls.push(record);
       const r = routes.api || { ok: true, date: "2026-08-17", added: 2, existing: 1 };
@@ -139,7 +129,7 @@ test("sendNamesToResoApi: token valid tersimpan → POST /api/engagement dengan 
     assert.equal(apiCalls.length, 1, "satu panggilan API");
     assert.equal(apiCalls[0].init.headers.Authorization, "Bearer " + fakeToken(FAR_FUTURE));
     assert.deepEqual(apiCalls[0].body, { platform: "facebook", names: ["Andi Wijaya", "budi"], date: "2026-08-17" });
-    assert.equal(mintCalls.length, 0, "tanpa mint — token masih valid");
+    assert.equal(mintCalls.length, 0, "tanpa mint — token masih valid (refreshToken null)");
   } finally {
     restoreFetch();
     restore();
@@ -174,20 +164,18 @@ test("sendNamesToResoApi: hint.suggestedIso → body memuat postedAt; tanpa/rusa
   }
 });
 
-test("sendNamesToResoApi: token kedaluwarsa → mint dari refresh token, lalu kirim", async () => {
+test("sendNamesToResoApi: token kedaluwarsa → handoff dari tab, lalu kirim", async () => {
   apiCalls = [];
-  mintCalls = [];
   const restoreFetch = mockFetch({ api: { ok: true, date: "2026-08-17", added: 0, existing: 1 } });
   const { store, restore } = mockChrome({
-    storage: { resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: "rt-simpan", savedAt: Date.now() } },
+    storage: { resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: null, savedAt: Date.now() } },
+    tabs: [{ id: 9, url: RESO_URL, reply: { idToken: "tok-segar", refreshToken: "", uid: "u1", email: "a@b.c" } }],
   });
   try {
     const out = await sendNamesToResoApi("facebook", ["Andi"], {});
     assert.equal(out.ok, true, "ok");
-    assert.equal(mintCalls.length, 1, "refresh token dipakai");
-    assert.equal(apiCalls[0].init.headers.Authorization, "Bearer tok-minted", "pakai token hasil mint");
-    assert.equal(store.resoAuth.idToken, "tok-minted", "storage diperbarui dengan token baru");
-    assert.equal(store.resoAuth.refreshToken, "rt-new", "refresh token baru ikut disimpan");
+    assert.equal(apiCalls[0].init.headers.Authorization, "Bearer tok-segar", "pakai token hasil handoff");
+    assert.equal(store.resoAuth.idToken, "tok-segar", "storage diperbarui dengan token handoff");
   } finally {
     restoreFetch();
     restore();
@@ -303,91 +291,50 @@ test("jwtExpSeconds: decode exp benar; token rusak → 0", () => {
   assert.equal(jwtExpSeconds(fakeToken(exp).split(".")[0] + ".xx.yy"), 0);
 });
 
-test("ensureResoIdToken: prioritas — fresh → mint → handoff → null", async () => {
+test("ensureResoIdToken: prioritas — fresh → handoff → null", async () => {
   const restoreFetch = mockFetch({});
   try {
-    const a = mockChrome({ storage: { resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: "r", savedAt: Date.now() } }, tabs: [] });
+    const a = mockChrome({ storage: { resoAuth: { idToken: fakeToken(FAR_FUTURE), refreshToken: null, savedAt: Date.now() } }, tabs: [] });
     assert.equal(await ensureResoIdToken(), fakeToken(FAR_FUTURE), "fresh dipakai langsung");
     a.restore();
 
-    const b = mockChrome({ storage: { resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: "r", savedAt: Date.now() } }, tabs: [] });
-    assert.equal(await ensureResoIdToken(), "tok-minted", "expired → mint");
+    const b = mockChrome({ storage: {}, tabs: [{ id: 3, url: RESO_URL }] });
+    assert.equal(await ensureResoIdToken(), "tok-handoff", "tanpa token → handoff");
     b.restore();
 
-    const c = mockChrome({ storage: {}, tabs: [{ id: 3, url: RESO_URL }] });
-    assert.equal(await ensureResoIdToken(), "tok-handoff", "tanpa refresh → handoff");
-    c.restore();
-
-    const d = mockChrome({ storage: {}, tabs: [] });
+    const c = mockChrome({ storage: {}, tabs: [] });
     assert.equal(await ensureResoIdToken(), null, "tanpa apa pun → null");
-    d.restore();
+    c.restore();
   } finally {
     restoreFetch();
   }
 });
 
-test("ensureResoIdToken: mint gagal definitif (INVALID_REFRESH_TOKEN) → auth dibersihkan, lanjut handoff", async () => {
-  mintCalls = [];
-  const restoreFetch = mockFetch({
-    mintError: {
-      status: 400,
-      body: { error: { message: "INVALID_REFRESH_TOKEN : Token expired or is invalid" } },
-    },
-  });
+test("ensureResoIdToken: expired + tab terbuka → handoff", async () => {
+  const restoreFetch = mockFetch({});
   const { store, restore } = mockChrome({
-    storage: { resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: "rt-mati", savedAt: Date.now() } },
-    tabs: [{ id: 9, url: RESO_URL, reply: { idToken: "tok-segar", refreshToken: "rt-segar" } }],
+    storage: { resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: null, savedAt: Date.now() } },
+    tabs: [{ id: 9, url: RESO_URL, reply: { idToken: "tok-segar", refreshToken: "", uid: "u1", email: "a@b.c" } }],
   });
   try {
     const tok = await ensureResoIdToken();
-    assert.equal(tok, "tok-segar", "mint gagal definitif → handoff dipakai");
-    assert.equal(mintCalls.length, 1, "mint dicoba sekali");
-    assert.equal(store.resoAuth.idToken, "tok-segar", "auth mati diganti hasil handoff");
-    assert.equal(store.resoAuth.refreshToken, "rt-segar");
+    assert.equal(tok, "tok-segar", "expired + tab → handoff");
+    assert.equal(store.resoAuth.idToken, "tok-segar", "auth diganti hasil handoff");
   } finally {
     restoreFetch();
     restore();
   }
 });
 
-test("ensureResoIdToken: mint gagal definitif tanpa tab → null & resoAuth dihapus", async () => {
-  mintCalls = [];
-  const restoreFetch = mockFetch({
-    mintError: {
-      status: 400,
-      body: { error: { message: "USER_DISABLED : Access for this account has been temporarily disabled." } },
-    },
-  });
+test("ensureResoIdToken: expired tanpa tab → null", async () => {
+  const restoreFetch = mockFetch({});
   const { store, restore } = mockChrome({
-    storage: { resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: "rt-mati", savedAt: Date.now() } },
+    storage: { resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: null, savedAt: Date.now() } },
     tabs: [],
   });
   try {
     const tok = await ensureResoIdToken();
     assert.equal(tok, null, "tanpa tab → null");
-    assert.equal(store.resoAuth, undefined, "refresh token mati dibersihkan dari storage");
-  } finally {
-    restoreFetch();
-    restore();
-  }
-});
-
-test("ensureResoIdToken: mint gagal non-definitif (API key/transien) → resoAuth dipertahankan", async () => {
-  mintCalls = [];
-  const restoreFetch = mockFetch({
-    mintError: {
-      status: 400,
-      body: { error: { message: "API key not valid. Please pass a valid API key." } },
-    },
-  });
-  const { store, restore } = mockChrome({
-    storage: { resoAuth: { idToken: fakeToken(EXPIRED), refreshToken: "rt-simpan", savedAt: Date.now() } },
-    tabs: [],
-  });
-  try {
-    const tok = await ensureResoIdToken();
-    assert.equal(tok, null, "tanpa tab → null");
-    assert.ok(store.resoAuth, "error transien tidak menghapus auth — bisa dicoba lagi");
   } finally {
     restoreFetch();
     restore();

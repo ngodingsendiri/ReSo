@@ -98,10 +98,6 @@ export const DashboardTab = ({
         variants={itemVariants}
         className="lg:hidden flex flex-col gap-3 bg-white p-5 rounded-xl border border-slate-200"
       >
-        <div>
-          <h2 className="text-lg font-bold tracking-tight text-slate-900">Beranda</h2>
-          <p className="text-slate-500 text-xs mt-0.5">Ringkasan engagement pegawai</p>
-        </div>
         {onGoInput && (
           <Button
             onClick={onGoInput}
