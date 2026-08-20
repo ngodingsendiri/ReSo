@@ -23,22 +23,32 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "scripting", "tabs", "webRequest", "cookies", "alarms"],
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs",
+    "webRequest",
+    "cookies",
+    "alarms"
+  ],
   "externally_connectable": {
-    "matches": ["https://rekapsosmed.vercel.app/*", "http://localhost/*"]
+    "matches": [
+      "https://rekapsosmed.vercel.app/*",
+      "http://localhost/*"
+    ]
   },
   "commands": {
     "run-extract": {
       "suggested_key": {
         "default": "Ctrl+Shift+E"
       },
-      "description": "ReSo — Proses / ambil nama komentator di tab aktif"
+      "description": "ReSo \u00e2\u20ac\u201d Proses / ambil nama komentator di tab aktif"
     },
     "copy-names": {
       "suggested_key": {
         "default": "Alt+Shift+C"
       },
-      "description": "ReSo — Salin nama komentator ke clipboard"
+      "description": "ReSo \u00e2\u20ac\u201d Salin nama komentator ke clipboard"
     }
   },
   "host_permissions": [
@@ -61,26 +71,51 @@
         "https://facebook.com/*",
         "*://*.facebook.com/*"
       ],
-      "js": ["shared.js", "content-fb.js"],
-      "css": ["content-fb.css"],
+      "js": [
+        "shared.js",
+        "content-fb.js"
+      ],
+      "css": [
+        "content-fb.css"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["*://*.tiktok.com/*"],
-      "js": ["shared.js", "content-tiktok.js"],
-      "css": ["content-tiktok.css"],
+      "matches": [
+        "*://*.tiktok.com/*"
+      ],
+      "js": [
+        "shared.js",
+        "content-tiktok.js"
+      ],
+      "css": [
+        "content-tiktok.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["*://*.instagram.com/*"],
-      "js": ["shared.js", "content-ig.js"],
-      "css": ["content-ig.css"],
+      "matches": [
+        "*://*.instagram.com/*"
+      ],
+      "js": [
+        "shared.js",
+        "content-ig.js"
+      ],
+      "css": [
+        "content-ig.css"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://rekapsosmed.vercel.app/*", "http://localhost:3000/*"],
-      "js": ["content-reso.js"],
+      "matches": [
+        "https://rekapsosmed.vercel.app/*",
+        "http://localhost:3000/*"
+      ],
+      "js": [
+        "content-reso.js"
+      ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwZH4lE6jYDPLXpivzyKHoncAaS3ILxM1+sry5hGzngQXLD+VxJJA3yJaR5CGrqCLpnCNYQsWeFm/xvi0BY03N6bNxi/QBqGfZ4+qWrA6XQLG0s7y7uC19Vtxv2yaC61Fz593bAxz5818IV7g8JClZ20yTGOFSJLKvdaOdGuct2BR4O3t6Ri/GmvZ02QL2VCDhMTmNlmhRo5bDxF+vFTZKapiEAmqDRkvI5ZXeibh7vxLgnHbGLbgzNRsjdao0cCmBV1OOZhgwWUcGDaqHMtSl1/j6FzDFKvCsd3HaFyv1Hxso5vOBA8tLyIEgP+RPuo8sY+oQiT2w0k7DuHnO3+YiwIDAQAB"
 }
