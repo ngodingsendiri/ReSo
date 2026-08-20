@@ -9,6 +9,17 @@ import { Button } from '../ui/button';
 import { DailyEngagement } from '../../types';
 import { parseLocalISODate } from '../../lib/date';
 
+// Status rekap per hari untuk Aktivitas Terakhir
+function engagementStatus(eng: DailyEngagement): { label: string; className: string } {
+  if (eng.verifiedAt) {
+    return { label: 'Terverifikasi', className: 'border-emerald-100 text-emerald-700 bg-emerald-50' };
+  }
+  if (eng.autoFilledAt) {
+    return { label: 'Perlu review', className: 'border-amber-200 text-amber-700 bg-amber-50' };
+  }
+  return { label: 'Selesai', className: 'border-emerald-100 text-emerald-700 bg-emerald-50' };
+}
+
 const EngagementChart = React.lazy(() => import('../EngagementChart'));
 
 const containerVariants: import('motion/react').Variants = {
@@ -59,11 +70,13 @@ export const DashboardTab = ({
     value,
     icon,
     color,
+    subtitle,
   }: {
     title: string;
     value: string;
     icon: React.ReactNode;
     color: string;
+    subtitle?: string;
   }) {
     const colorMap: Record<string, string> = {
       rose: 'bg-rose-50 text-rose-600 border-rose-100',
@@ -79,7 +92,10 @@ export const DashboardTab = ({
             <p className="text-[11px] font-semibold text-slate-500">{title}</p>
             <div className={cn('p-2 rounded-lg border', colorMap[color])}>{icon}</div>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{value}</p>
+          <div>
+            <p className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{value}</p>
+            {subtitle && <p className="text-[10px] text-slate-400 mt-0.5">{subtitle}</p>}
+          </div>
         </div>
       </Card>
     );
@@ -110,10 +126,10 @@ export const DashboardTab = ({
       </motion.div>
 
       <motion.div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" variants={itemVariants}>
-        <StatCard title="Total Pegawai" value={stats.totalEmployees.toString()} icon={<Users2 size={18} />} color="violet" />
-        <StatCard title="Rekap Hari Ini" value={stats.todayCount.toString()} icon={<Activity size={18} />} color="emerald" />
-        <StatCard title="Total Interaksi" value={stats.totalEngagements.toString()} icon={<TrendingUp size={18} />} color="sky" />
-        <StatCard title="Engagement Rate" value={`${stats.engagementRate}%`} icon={<CheckCircle2 size={18} />} color="rose" />
+        <StatCard title="Total Pegawai" value={stats.totalEmployees.toString()} icon={<Users2 size={18} />} color="violet" subtitle="Master data pegawai" />
+        <StatCard title="Rekap Hari Ini" value={stats.todayCount.toString()} icon={<Activity size={18} />} color="emerald" subtitle="Total interaksi (IG+FB+TT)" />
+        <StatCard title="Total Interaksi" value={stats.totalEngagements.toString()} icon={<TrendingUp size={18} />} color="sky" subtitle="Akumulasi semua rekap" />
+        <StatCard title="Engagement Rate" value={`${stats.engagementRate}%`} icon={<CheckCircle2 size={18} />} color="rose" subtitle="Pegawai unik engage hari ini" />
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -148,38 +164,42 @@ export const DashboardTab = ({
             <CardContent className="p-0">
               <ScrollArea className="h-[280px]">
                 <div className="divide-y divide-slate-100">
-                  {dailyEngagements.slice(0, 8).map((eng, i) => (
-                    <div
-                      key={eng.id || i}
-                      className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
-                          <CalendarIcon size={14} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-900 truncate">
-                            {parseLocalISODate(eng.date).toLocaleDateString('id-ID', {
-                              day: 'numeric',
-                              month: 'long',
-                            })}
-                          </p>
-                          <p className="text-[11px] text-slate-400">
-                            {(eng.igEngagedEmployeeIds?.length || 0) +
-                              (eng.fbEngagedEmployeeIds?.length || 0) +
-                              (eng.tiktokEngagedEmployeeIds?.length || 0)}{' '}
-                            interaksi
-                          </p>
-                        </div>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] font-semibold border-emerald-100 text-emerald-700 bg-emerald-50 shrink-0"
+                  {dailyEngagements.slice(0, 8).map((eng, i) => {
+                    const ig = eng.igEngagedEmployeeIds?.length || 0;
+                    const fb = eng.fbEngagedEmployeeIds?.length || 0;
+                    const tt = eng.tiktokEngagedEmployeeIds?.length || 0;
+                    const status = engagementStatus(eng);
+                    return (
+                      <div
+                        key={eng.id || i}
+                        className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
                       >
-                        Selesai
-                      </Badge>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                            <CalendarIcon size={14} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 truncate">
+                              {parseLocalISODate(eng.date).toLocaleDateString('id-ID', {
+                                day: 'numeric',
+                                month: 'long',
+                              })}
+                            </p>
+                            <p className="text-[11px] text-slate-400 flex items-center gap-1 flex-wrap">
+                              <span className="text-pink-500 font-semibold">IG {ig}</span>
+                              <span>·</span>
+                              <span className="text-blue-500 font-semibold">FB {fb}</span>
+                              <span>·</span>
+                              <span className="text-slate-600 font-semibold">TT {tt}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] font-semibold shrink-0 ${status.className}`}>
+                          {status.label}
+                        </Badge>
+                      </div>
+                    );
+                  })}
                   {dailyEngagements.length === 0 && (
                     <div className="p-8 text-center space-y-3">
                       <p className="text-sm text-slate-500">Belum ada data rekap.</p>
