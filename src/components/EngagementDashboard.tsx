@@ -659,8 +659,8 @@ export default function EngagementDashboard() {
       const autoTable = (await import('jspdf-autotable')).default;
       const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
       const pageW = 210;
+      const pageH = 297;
       const margin = 14;
-      const contentW = pageW - margin * 2;
 
       // ---- Logo (fetch SVG → canvas → PNG) ----
       const logoDataUrl = await fetchLogoDataUrl();
@@ -734,39 +734,38 @@ export default function EngagementDashboard() {
 
       const rate = totalPossible > 0 ? Math.round((totalActual / totalPossible) * 100) : 0;
 
-      // ---- Header tiap halaman (didDrawPage) ----
+      // ---- Header & footer digambar di SEMUA halaman (didDrawPage) ----
+      const HEADER_H = 32;
       let pageNum = 0;
-      (pdf as any).autoTable = autoTable;
+      const drawHeaderFooter = () => {
+        pageNum++;
+        // Header: logo + judul + subtitle (kiri), rate (kanan)
+        if (logoDataUrl) {
+          pdf.addImage(logoDataUrl, 'PNG', margin, 8, 14, 14);
+        }
+        const txtX = margin + (logoDataUrl ? 19 : 0);
+        pdf.setFontSize(13);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(title, txtX, 16);
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(subtitle, txtX, 22);
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`Rate: ${rate}%`, pageW - margin, 16, { align: 'right' });
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(`ReSo • Gen: ${new Date().toLocaleDateString('id-ID')}`, pageW - margin, 22, { align: 'right' });
+        // Footer
+        pdf.setFontSize(7);
+        pdf.text(`Hal. ${pageNum}`, pageW - margin, pageH - 8, { align: 'right' });
+        pdf.text('ReSo — Rekap Engagement Sosmed', margin, pageH - 8);
+      };
 
-      // ---- Gambar header di halaman pertama ----
-      if (logoDataUrl) {
-        pdf.addImage(logoDataUrl, 'PNG', margin, 8, 16, 16);
-      }
-      pdf.setFontSize(14);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(title, margin + (logoDataUrl ? 22 : 0), 16);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(subtitle, margin + (logoDataUrl ? 22 : 0), 22);
-      // Rate di kanan
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(`Rate: ${rate}%`, pageW - margin, 16, { align: 'right' });
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(`ReSo • Gen: ${new Date().toLocaleDateString('id-ID')}`, pageW - margin, 22, { align: 'right' });
-
-      // ---- Tabel autoTable ----
+      // ---- Tabel autoTable (auto page break, header+footer tiap halaman) ----
       autoTable(pdf, {
-        startY: 30,
-        head: [[
-          { content: 'Nama Pegawai', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7 } },
-          { content: 'NIP', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7 } },
-          { content: 'Bidang', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7 } },
-          { content: 'IG', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, halign: 'center' } },
-          { content: 'FB', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, halign: 'center' } },
-          { content: 'TT', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, halign: 'center' } },
-        ]],
+        startY: HEADER_H,
+        head: [['Nama Pegawai', 'NIP', 'Bidang', 'IG', 'FB', 'TT']],
         body: rows.map(r => [
           r.name,
           r.nip,
@@ -775,15 +774,8 @@ export default function EngagementDashboard() {
           r.fb ? '✓' : '✗',
           r.tt ? '✓' : '✗',
         ]),
-        columns: [
-          { dataKey: 0, header: 'Nama Pegawai' },
-          { dataKey: 1, header: 'NIP' },
-          { dataKey: 2, header: 'Bidang' },
-          { dataKey: 3, header: 'IG' },
-          { dataKey: 4, header: 'FB' },
-          { dataKey: 5, header: 'TT' },
-        ],
         styles: { fontSize: 6, cellPadding: 1.5 },
+        headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7 },
         columnStyles: {
           0: { cellWidth: 60 },
           1: { cellWidth: 30 },
@@ -792,15 +784,9 @@ export default function EngagementDashboard() {
           4: { cellWidth: 12, halign: 'center' },
           5: { cellWidth: 12, halign: 'center' },
         },
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin, top: HEADER_H, bottom: 12 },
         pageBreak: 'auto',
-        didDrawPage: (data: any) => {
-          pageNum++;
-          pdf.setFontSize(7);
-          pdf.setFont('helvetica', 'normal');
-          pdf.text(`Hal. ${pageNum}`, pageW - margin, 297 - 8, { align: 'right' });
-          pdf.text('ReSo — Rekap Engagement Sosmed', margin, 297 - 8);
-        },
+        didDrawPage: drawHeaderFooter,
       });
 
       pdf.save(`${filename}.pdf`);
@@ -822,12 +808,11 @@ export default function EngagementDashboard() {
     try {
       const { domToPng } = await import('modern-screenshot');
 
-      // Fixed width A4 (794px @96dpi), height auto — teks tidak mengecil
+      // Fixed width A4 (794px @96dpi), tinggi mengikuti konten — teks tidak mengecil
       const imgData = await domToPng(ref.current, {
         scale: 2,
         backgroundColor: '#ffffff',
         width: 794,
-        height: 0,
       });
       const link = document.createElement('a');
       link.download = `${filename}.png`;
