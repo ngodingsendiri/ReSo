@@ -12,9 +12,6 @@ import LoginScreen from './components/LoginScreen';
 import { useAuth } from './components/FirebaseProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAppLogo } from './hooks/useAppLogo';
-import { PWAPrompt } from './components/PWAPrompt';
-import { PWALifecycle } from './components/PWALifecycle';
-import { OfflineBanner } from './components/OfflineBanner';
 import { Toaster } from './components/ui/sonner';
 
 function LoadingScreen() {
@@ -91,7 +88,6 @@ export default function App() {
     return (
       <>
         <Toaster position="top-center" duration={2500} offset={16} />
-        <PWALifecycle />
         <LoadingScreen />
       </>
     );
@@ -100,8 +96,6 @@ export default function App() {
   return (
     <>
       <Toaster position="top-center" duration={2500} offset={16} />
-      <PWALifecycle />
-      <OfflineBanner />
       <div className="font-sans antialiased text-slate-900 min-h-[100dvh] bg-slate-50 selection:bg-slate-900/10">
         {!user ? (
           <ErrorBoundary>
@@ -113,7 +107,6 @@ export default function App() {
           </ErrorBoundary>
         )}
       </div>
-      <PWAPrompt />
     </>
   );
 }

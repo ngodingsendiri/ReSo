@@ -21,7 +21,6 @@ import {
   RefreshCw,
   ExternalLink,
   PieChart,
-  Bell,
   CheckCircle2
 } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
@@ -93,85 +92,12 @@ export default function EngagementDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
-    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
-  );
 
   const [recalculateConfig, setRecalculateConfig] = useState<{
     mode: 'last_day' | 'last_week';
   }>({
     mode: 'last_day'
   });
-
-  const requestNotificationPermission = async () => {
-    if (!('Notification' in window)) {
-      toast.error('Browser tidak mendukung notifikasi');
-      return;
-    }
-    try {
-      const permission = await Notification.requestPermission();
-      setNotificationPermission(permission);
-      if (permission === 'granted') {
-        toast.success('Notifikasi berhasil diaktifkan');
-      } else {
-        toast.error('Notifikasi tidak diizinkan');
-      }
-    } catch (error) {
-      console.error('Error requesting notification permission:', error);
-    }
-  };
-
-  useEffect(() => {
-    if (notificationPermission !== 'granted') return;
-
-    const checkTimeAndNotify = () => {
-      const now = new Date();
-      // Use Asia/Jakarta timezone explicitly
-      const options = { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false } as const;
-      const formatter = new Intl.DateTimeFormat('en-US', options);
-      const timeString = formatter.format(now);
-      
-      const todayStr = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
-      const notifiedKey1445 = `notified-1445-${todayStr}`;
-      const notifiedKey1500 = `notified-1500-${todayStr}`;
-
-      if (timeString === '14:45' && !localStorage.getItem(notifiedKey1445)) {
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification("Engagement sosmed Diskominfo", {
-              body: "Waktunya melakukan engagement sosial media Diskominfo!",
-              icon: appLogo || undefined,
-            });
-          });
-        } else {
-          new Notification("Engagement sosmed Diskominfo", {
-            body: "Waktunya melakukan engagement sosial media Diskominfo!",
-            icon: appLogo || undefined
-          });
-        }
-        localStorage.setItem(notifiedKey1445, 'true');
-      } else if (timeString === '15:00' && !localStorage.getItem(notifiedKey1500)) {
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification("Rekap engagement sosmed", {
-              body: "Batas waktu engagement telah berakhir. Waktunya mengecek rekap engagement sosial media.",
-              icon: appLogo || undefined,
-            });
-          });
-        } else {
-          new Notification("Rekap engagement sosmed", {
-            body: "Batas waktu engagement telah berakhir. Waktunya mengecek rekap engagement sosial media.",
-            icon: appLogo || undefined
-          });
-        }
-        localStorage.setItem(notifiedKey1500, 'true');
-      }
-    };
-
-    checkTimeAndNotify();
-    const intervalId = setInterval(checkTimeAndNotify, 30000); // Check every 30 seconds
-    return () => clearInterval(intervalId);
-  }, [notificationPermission, appLogo]);
 
   // Meta API State
   const [metaToken, setMetaToken] = useState('');
@@ -1490,17 +1416,6 @@ export default function EngagementDashboard() {
         <div className="p-5 mt-auto border-t border-slate-200 bg-slate-50/80">
           {user && (
             <div className="flex flex-col gap-3">
-              {notificationPermission !== 'granted' && (
-                <Button
-                  variant="outline"
-                  onClick={requestNotificationPermission}
-                  className="w-full border-slate-200 text-slate-600 hover:bg-slate-100 rounded-xl font-bold text-xs h-10 gap-2"
-                  title="Aktifkan notifikasi jam engagement"
-                >
-                  <Bell size={15} />
-                  Aktifkan notifikasi
-                </Button>
-              )}
               <div className="flex items-center gap-3 px-1">
                 {user.photoURL ? (
                   <img src={user.photoURL} alt="" className="w-9 h-9 rounded-full" referrerPolicy="no-referrer" />
