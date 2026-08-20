@@ -322,6 +322,7 @@ export default async function handler(req: unknown, res: unknown) {
     });
   } catch (e) {
     const err = e as { status?: number; message?: string };
+    console.error(`[engagement] ${err.status || 500} ${err.message?.slice(0, 200)}`);
     error(res, err.status || 500, err.message || 'Terjadi kesalahan.');
   }
 }

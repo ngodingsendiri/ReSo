@@ -77,6 +77,38 @@ App: http://localhost:3000 (Vite dev server)
 |--------|-----|
 | `EXTENSION_PRIVATE_KEY` | Isi `extension/dist-crx/reso-extension-key.pem` (RSA signing key — JANGAN di-commit) |
 
+## Alur Data
+
+```
+Extension ReSoEx (Chrome MV3)
+  │
+  │ 1. Ekstrak nama komentator (FB/TikTok/IG)
+  │ 2. POST /api/engagement  (Bearer idToken)
+  ▼
+/api/engagement (Vercel Function)
+  │
+  │ 3. Verifikasi idToken → uid
+  │ 4. getFsBase(uid) → dinas/{uid}/dailyEngagement/{date}
+  │ 5. mergeUniqueLines + dedupe case-insensitive
+  │ 6. Hitung ulang engagedEmployeeIds
+  ▼
+Firestore → dinas/{uid}/dailyEngagement/{date}
+  │
+  │ 7. Dashboard baca via onSnapshot
+  ▼
+Dashboard (React + Firebase SDK)
+  │
+  │ 8. Tampilkan rekap, laporan harian/mingguan/bulanan
+  │ 9. Matching nama dengan master pegawai
+  ▼
+Export PDF (A4 multi-page) / Gambar (maks 70 pegawai)
+
+--- Token Flow ---
+Web App login → push RESO_CONNECT (idToken) → extension
+  🡑 focus                      🡓 handoff bila expired
+  └─────────────── tab ReSo terbuka ──────────┘
+```
+
 ## API (Vercel Functions)
 
 | Endpoint | Fungsi |
@@ -97,8 +129,15 @@ App: http://localhost:3000 (Vite dev server)
   firebase deploy --only firestore:rules
   ```
 
+## Model Data
+
+- **Per hari, bukan per postingan**: `dailyEngagement/{date}` menggabungkan SEMUA komentar dari semua post tanggal itu.
+- **Dedupe case-insensitive**: nama yang sama dari post berbeda tidak dobel.
+- **Idempoten**: kirim ulang = update (merge), bukan duplikat.
+- **Export gambar**: maksimal 70 pegawai. Untuk > 70 pegawai, gunakan export PDF (A4 multi-page).
+- **Notifikasi jam engagement dihapus** — tidak ada push reminder.
+
 ## Catatan
 
 - Mode pengembangan default: **penyempurnaan**, bukan rombak workflow (lihat constitution).
 - Logo di-hardcode sebagai SVG (`public/logo.svg`) — tidak ada fitur upload logo.
-- PWA: installable + service worker + offline shell; setting instal/update PWA dihapus dari menu Pengaturan.

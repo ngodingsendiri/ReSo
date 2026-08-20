@@ -726,6 +726,11 @@ export default function EngagementDashboard() {
   };
 
   const handleExportImage = async (ref: React.RefObject<HTMLDivElement | null>, filename: string) => {
+    // Batas data gambar: > 70 pegawai gambar terlalu tinggi → wajib PDF
+    if (sortedEmployees.length > 70) {
+      toast.error("Data terlalu banyak untuk export gambar (maks 70 pegawai). Gunakan export PDF.");
+      return;
+    }
     if (!ref.current) return;
     setIsLoading(true);
     setIsExporting(true);
@@ -744,11 +749,7 @@ export default function EngagementDashboard() {
       link.download = `${filename}.png`;
       link.href = imgData;
       link.click();
-      if (sortedEmployees.length > 100) {
-        toast.info("Data besar — gambar bisa panjang. Disarankan export PDF untuk multi-halaman.");
-      } else {
-        toast.success("Gambar berhasil disimpan");
-      }
+      toast.success("Gambar berhasil disimpan");
     } catch (error) {
       console.error(error);
       toast.error("Gagal menyimpan gambar");

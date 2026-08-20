@@ -51,14 +51,16 @@ service cloud.firestore {
     function optionalStringList(data, key, maxItems) {
       return !(key in data) || (
         data[key] is list &&
-        data[key].size() <= maxItems
+        data[key].size() <= maxItems &&
+        data[key].all(item => item is string && item.size() <= 2000)
       );
     }
 
     function optionalIdList(data, key) {
       return !(key in data) || (
         data[key] is list &&
-        data[key].size() <= 500
+        data[key].size() <= 500 &&
+        data[key].all(item => item is string && item.size() > 0 && item.size() <= 128)
       );
     }
 
@@ -84,6 +86,13 @@ service cloud.firestore {
     }
 
     // Raw text limit raised for large staff lists (still bounded)
+    function isValidUnmatchedName(data) {
+      return data is map &&
+             data.keys().hasAll(['name', 'platform']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.platform is string && data.platform in ['ig', 'fb', 'tiktok'];
+    }
+
     function isValidDailyEngagement(data) {
       return data.keys().hasAll(['date']) &&
              data.date is string && data.date.size() == 10 &&
@@ -97,7 +106,16 @@ service cloud.firestore {
              optionalIdList(data, 'igEngagedEmployeeIds') &&
              optionalIdList(data, 'fbEngagedEmployeeIds') &&
              optionalIdList(data, 'tiktokEngagedEmployeeIds') &&
-             optionalStringList(data, 'postedAt', 100) &&
+             (!('postedAt' in data) || (
+               data.postedAt is list &&
+               data.postedAt.size() <= 100 &&
+               data.postedAt.all(t => t is string && t.size() == 16 && t.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$'))
+             )) &&
+             (!('unmatchedNames' in data) || (
+               data.unmatchedNames is list &&
+               data.unmatchedNames.size() <= 1000 &&
+               data.unmatchedNames.all(u => isValidUnmatchedName(u))
+             )) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
