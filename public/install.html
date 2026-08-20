@@ -110,19 +110,21 @@
     <a id="download" class="download-btn" href="/reso-extension.crx" download>
       Download Extension (.crx)
     </a>
+    <a id="download-zip" class="download-btn" href="/reso-extension.zip" download style="background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;margin-top:.75rem">
+      Download Extension (.zip) — Alternatif
+    </a>
 
     <ol class="steps">
-      <li>Klik tombol <strong>Download</strong> di atas untuk mengunduh file <code>.crx</code>.</li>
+      <li>Klik tombol <strong>Download</strong> untuk mengunduh <code>.crx</code> (atau <code>.zip</code> bila .crx gagal).</li>
       <li>Buka halaman <code>chrome://extensions</code> di browser Chrome.</li>
       <li>Aktifkan <strong>Developer mode</strong> (sudut kanan atas).</li>
-      <li>Drag & drop file <code>.crx</code> yang sudah diunduh ke halaman <code>chrome://extensions</code>.</li>
+      <li><strong>Untuk .crx:</strong> Drag & drop file <code>.crx</code> ke halaman tersebut.<br><strong>Untuk .zip:</strong> Ekstrak zip, klik <code>Load unpacked</code> dan pilih folder hasil ekstrak.</li>
       <li>Klik <strong>Add extension</strong> saat muncul konfirmasi.</li>
       <li>Buka ReSo, klik ikon extension, lalu klik <strong>Login ke ReSo</strong>.</li>
     </ol>
 
     <div class="note">
-      <strong>Catatan:</strong> Extension memerlukan akses ke domain ReSo Anda.
-      Saat pertama kali login, Chrome akan meminta izin host — klik <strong>Allow</strong>.
+      <strong>Catatan:</strong> Bila muncul <code>CRX_REQUIRED_PROOF_MISSING</code> saat drag .crx, gunakan file <code>.zip</code> (ekstrak dulu) dan <strong>Load unpacked</strong>. Extension tetap memerlukan akses host — klik <strong>Allow</strong> saat diminta.
     </div>
   </div>
 </body>
