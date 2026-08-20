@@ -652,43 +652,163 @@ export default function EngagementDashboard() {
     }
   };
 
-  const handleExportPDF = async (ref: React.RefObject<HTMLDivElement | null>, filename: string) => {
-    if (!ref.current) return;
+  const handleExportPDF = async (type: 'daily' | 'weekly' | 'monthly', filename: string) => {
     setIsLoading(true);
-    setIsExporting(true);
-    // Wait for state to apply and DOM to update
-    await new Promise(resolve => setTimeout(resolve, 100));
     try {
-      const { domToPng } = await import('modern-screenshot');
       const { jsPDF } = await import('jspdf');
+      const autoTable = (await import('jspdf-autotable')).default;
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+      const pageW = 210;
+      const margin = 14;
+      const contentW = pageW - margin * 2;
 
-      const imgData = await domToPng(ref.current, {
-        scale: 2,
-        backgroundColor: '#ffffff',
+      // ---- Logo (fetch SVG → canvas → PNG) ----
+      const logoDataUrl = await fetchLogoDataUrl();
+
+      // ---- Tentukan rentang tanggal & judul ----
+      let title = '';
+      let subtitle = '';
+      const todayStr = getLocalISODate(new Date());
+      let dates: string[] = [];
+      if (type === 'daily') {
+        dates = [getLocalISODate(currentDailyDate)];
+        title = 'LAPORAN HARIAN';
+        const d = parseLocalISODate(dates[0]);
+        subtitle = `Rekapitulasi Engagement • ${d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
+      } else if (type === 'weekly') {
+        if (!weeklyReports[0]) return;
+        dates = weeklyReports[0].dates;
+        title = 'LAPORAN MINGGUAN';
+        subtitle = `Rekapitulasi Engagement • Minggu ke-${weeklyReports[0].weekNumber} • ${weeklyReports[0].year}`;
+      } else {
+        if (!monthlyReports[0]) return;
+        dates = monthlyReports[0].dates;
+        title = 'LAPORAN BULANAN';
+        subtitle = `Rekapitulasi Engagement • ${monthlyReports[0].monthName} ${monthlyReports[0].year}`;
+      }
+
+      // ---- Hitung total rate ----
+      let totalActual = 0, totalPossible = 0;
+      const daysPassed = dates.filter(d => d <= todayStr).length || 1;
+
+      // ---- Bangun baris tabel ----
+      const rows: { name: string; nip: string; bidang: string; ig: boolean; fb: boolean; tt: boolean }[] = [];
+      sortedEmployees.forEach(emp => {
+        if (type === 'daily' && dates[0]) {
+          const e = dailyEngagementsMap[dates[0]];
+          if (e) {
+            totalActual += (e.igEngagedEmployeeIds?.includes(emp.id) ? 1 : 0) + (e.fbEngagedEmployeeIds?.includes(emp.id) ? 1 : 0) + (e.tiktokEngagedEmployeeIds?.includes(emp.id) ? 1 : 0);
+          }
+          totalPossible += 3;
+          rows.push({
+            name: emp.name,
+            nip: emp.nip || '-',
+            bidang: emp.bidang || '—',
+            ig: e?.igEngagedEmployeeIds?.includes(emp.id) ?? false,
+            fb: e?.fbEngagedEmployeeIds?.includes(emp.id) ?? false,
+            tt: e?.tiktokEngagedEmployeeIds?.includes(emp.id) ?? false,
+          });
+        } else {
+          let igC = 0, fbC = 0, ttC = 0;
+          dates.forEach(d => {
+            if (d > todayStr) return;
+            const e = dailyEngagementsMap[d];
+            if (e) {
+              if (e.igEngagedEmployeeIds?.includes(emp.id)) igC++;
+              if (e.fbEngagedEmployeeIds?.includes(emp.id)) fbC++;
+              if (e.tiktokEngagedEmployeeIds?.includes(emp.id)) ttC++;
+            }
+          });
+          totalActual += igC + fbC + ttC;
+          totalPossible += daysPassed * 3;
+          rows.push({
+            name: emp.name,
+            nip: emp.nip || '-',
+            bidang: emp.bidang || '—',
+            ig: igC > 0,
+            fb: fbC > 0,
+            tt: ttC > 0,
+          });
+        }
       });
-      
-      // Calculate dimensions
-      const img = new Image();
-      img.src = imgData;
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Gagal memuat gambar export'));
+
+      const rate = totalPossible > 0 ? Math.round((totalActual / totalPossible) * 100) : 0;
+
+      // ---- Header tiap halaman (didDrawPage) ----
+      let pageNum = 0;
+      (pdf as any).autoTable = autoTable;
+
+      // ---- Gambar header di halaman pertama ----
+      if (logoDataUrl) {
+        pdf.addImage(logoDataUrl, 'PNG', margin, 8, 16, 16);
+      }
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(title, margin + (logoDataUrl ? 22 : 0), 16);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(subtitle, margin + (logoDataUrl ? 22 : 0), 22);
+      // Rate di kanan
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Rate: ${rate}%`, pageW - margin, 16, { align: 'right' });
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`ReSo • Gen: ${new Date().toLocaleDateString('id-ID')}`, pageW - margin, 22, { align: 'right' });
+
+      // ---- Tabel autoTable ----
+      autoTable(pdf, {
+        startY: 30,
+        head: [[
+          { content: 'Nama Pegawai', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7 } },
+          { content: 'NIP', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7 } },
+          { content: 'Bidang', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7 } },
+          { content: 'IG', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, halign: 'center' } },
+          { content: 'FB', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, halign: 'center' } },
+          { content: 'TT', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 7, halign: 'center' } },
+        ]],
+        body: rows.map(r => [
+          r.name,
+          r.nip,
+          r.bidang,
+          r.ig ? '✓' : '✗',
+          r.fb ? '✓' : '✗',
+          r.tt ? '✓' : '✗',
+        ]),
+        columns: [
+          { dataKey: 0, header: 'Nama Pegawai' },
+          { dataKey: 1, header: 'NIP' },
+          { dataKey: 2, header: 'Bidang' },
+          { dataKey: 3, header: 'IG' },
+          { dataKey: 4, header: 'FB' },
+          { dataKey: 5, header: 'TT' },
+        ],
+        styles: { fontSize: 6, cellPadding: 1.5 },
+        columnStyles: {
+          0: { cellWidth: 60 },
+          1: { cellWidth: 30 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 12, halign: 'center' },
+          4: { cellWidth: 12, halign: 'center' },
+          5: { cellWidth: 12, halign: 'center' },
+        },
+        margin: { left: margin, right: margin },
+        pageBreak: 'auto',
+        didDrawPage: (data: any) => {
+          pageNum++;
+          pdf.setFontSize(7);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(`Hal. ${pageNum}`, pageW - margin, 297 - 8, { align: 'right' });
+          pdf.text('ReSo — Rekap Engagement Sosmed', margin, 297 - 8);
+        },
       });
-      
-      const pdf = new jsPDF({
-        orientation: img.width > img.height ? 'l' : 'p',
-        unit: 'px',
-        format: [img.width, img.height]
-      });
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, img.width, img.height);
+
       pdf.save(`${filename}.pdf`);
       toast.success("PDF berhasil diunduh");
     } catch (error) {
       console.error(error);
       toast.error("Gagal membuat PDF");
     } finally {
-      setIsExporting(false);
       setIsLoading(false);
     }
   };
@@ -701,16 +821,23 @@ export default function EngagementDashboard() {
     await new Promise(resolve => setTimeout(resolve, 100));
     try {
       const { domToPng } = await import('modern-screenshot');
-      
+
+      // Fixed width A4 (794px @96dpi), height auto — teks tidak mengecil
       const imgData = await domToPng(ref.current, {
         scale: 2,
         backgroundColor: '#ffffff',
+        width: 794,
+        height: 0,
       });
       const link = document.createElement('a');
       link.download = `${filename}.png`;
       link.href = imgData;
       link.click();
-      toast.success("Gambar berhasil disimpan");
+      if (sortedEmployees.length > 100) {
+        toast.info("Data besar — gambar bisa panjang. Disarankan export PDF untuk multi-halaman.");
+      } else {
+        toast.success("Gambar berhasil disimpan");
+      }
     } catch (error) {
       console.error(error);
       toast.error("Gagal menyimpan gambar");
@@ -719,6 +846,24 @@ export default function EngagementDashboard() {
       setIsLoading(false);
     }
   };
+
+  async function fetchLogoDataUrl(): Promise<string | null> {
+    try {
+      const resp = await fetch('/logo.svg');
+      const svgText = await resp.text();
+      const img = new Image();
+      const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      img.src = url;
+      await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(); });
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 64;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, 64, 64);
+      URL.revokeObjectURL(url);
+      return c.toDataURL('image/png');
+    } catch { return null; }
+  }
 
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -1981,7 +2126,7 @@ export default function EngagementDashboard() {
                                   </button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                                  <Button onClick={() => handleExportPDF(printDailyRef, `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
+                                  <Button onClick={() => handleExportPDF('daily', `recaplink-harian-${getLocalISODate(currentDailyDate)}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
                                     <FileText size={14} />
                                     PDF
                                   </Button>
@@ -1997,18 +2142,18 @@ export default function EngagementDashboard() {
                   <motion.div variants={itemVariants} ref={printDailyRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
                     <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
                       <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
-                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Harian</h3>
-                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", "text-2xl")}>Laporan Harian</h3>
+                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", "text-sm")}>Rekapitulasi Engagement • {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
                       </div>
                       <div className={cn("flex items-center bg-slate-50 rounded-lg border border-slate-200", isExporting ? "p-1.5 gap-2" : "p-3 gap-4")}>
                         <div className="flex flex-col items-end justify-center">
-                          <p className={cn("font-black text-emerald-600 leading-none", isExporting ? "text-[14px]" : "text-[18px]")}>{dailyEngagementRate}%</p>
-                          <p className={cn("font-bold text-slate-500 uppercase tracking-widest leading-none", isExporting ? "text-[6px] mt-0.5" : "text-[8px] mt-1")}>Rate</p>
+                          <p className={cn("font-black text-emerald-600 leading-none", "text-[18px]")}>{dailyEngagementRate}%</p>
+                          <p className={cn("font-bold text-slate-500 uppercase tracking-widest leading-none", "text-[8px] mt-1")}>Rate</p>
                         </div>
                         <div className={cn("w-px bg-slate-200", isExporting ? "h-5" : "h-7")}></div>
                         <div className="flex flex-col justify-center text-right">
-                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>ReSo</p>
-                          <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
+                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", "text-[10px]")}>ReSo</p>
+                          <p className={cn("text-slate-500 leading-none", "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
                         </div>
                       </div>
                     </div>
@@ -2200,7 +2345,7 @@ export default function EngagementDashboard() {
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                          <Button onClick={() => handleExportPDF(printRef, `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
+                          <Button onClick={() => handleExportPDF('weekly', `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
                             <FileText size={14} />
                             PDF
                           </Button>
@@ -2216,21 +2361,21 @@ export default function EngagementDashboard() {
                   <motion.div variants={itemVariants} ref={printRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
                     <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
                       <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
-                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", isExporting ? "text-[16px] leading-[1]" : "text-2xl")}>Laporan Mingguan</h3>
-                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", isExporting ? "text-[8px] leading-[1] mt-1" : "text-sm")}>Rekapitulasi Engagement • Minggu ke-{weeklyReports[0]?.weekNumber} • {weeklyReports[0]?.year}</p>
+                        <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", "text-2xl")}>Laporan Mingguan</h3>
+                        <p className={cn("font-bold text-slate-500 uppercase tracking-widest", "text-sm")}>Rekapitulasi Engagement • Minggu ke-{weeklyReports[0]?.weekNumber} • {weeklyReports[0]?.year}</p>
                       </div>
                       <div className="flex items-center gap-2 md:gap-3">
                         <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
                           {weeklyStats.bidangRates?.map((br, idx) => (
                             <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-200 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
-                              <span className={cn("font-bold uppercase tracking-wider text-slate-500 leading-none", isExporting ? "text-[5px]" : "text-[7px] md:text-[8px]")}>{br.bidang}</span>
-                              <span className={cn("font-bold text-emerald-600 leading-none", isExporting ? "text-[6px]" : "text-[8px] md:text-[10px]")}>{br.rate}%</span>
+                              <span className={cn("font-bold uppercase tracking-wider text-slate-500 leading-none", "text-[7px] md:text-[8px]")}>{br.bidang}</span>
+                              <span className={cn("font-bold text-emerald-600 leading-none", "text-[8px] md:text-[10px]")}>{br.rate}%</span>
                             </div>
                           ))}
                         </div>
                         <div className={cn("bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
-                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", isExporting ? "text-[8px]" : "text-[10px]")}>ReSo</p>
-                          <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
+                          <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", "text-[10px]")}>ReSo</p>
+                          <p className={cn("text-slate-500 leading-none", "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
                         </div>
                       </div>
                     </div>
@@ -2436,7 +2581,7 @@ export default function EngagementDashboard() {
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                          <Button onClick={() => handleExportPDF(printMonthlyRef, `recaplink-bulanan-${getLocalISODate()}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
+                          <Button onClick={() => handleExportPDF('monthly', `recaplink-bulanan-${getLocalISODate()}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
                             <FileText size={14} />
                             PDF
                           </Button>
@@ -2452,8 +2597,8 @@ export default function EngagementDashboard() {
                   <motion.div variants={itemVariants} ref={printMonthlyRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
                     <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-6 pb-5")}>
                       <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
-                        <h3 className={cn("font-bold text-slate-900 tracking-tight", isExporting ? "text-[16px] leading-[1] uppercase" : "text-xl")}>Laporan Bulanan</h3>
-                        <p className={cn("font-medium text-slate-500", isExporting ? "text-[8px] leading-[1] mt-1 uppercase tracking-widest" : "text-sm")}>
+                        <h3 className={cn("font-bold text-slate-900 tracking-tight", "text-xl")}>Laporan Bulanan</h3>
+                        <p className={cn("font-medium text-slate-500", "text-sm")}>
                           {monthlyReports[0]?.monthName} {monthlyReports[0]?.year}
                         </p>
                       </div>
@@ -2461,14 +2606,14 @@ export default function EngagementDashboard() {
                         <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
                           {monthlyStats.bidangRates?.map((br, idx) => (
                             <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-200 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
-                              <span className={cn("font-semibold text-slate-500 leading-none", isExporting ? "text-[5px] uppercase" : "text-[10px]")}>{br.bidang}</span>
-                              <span className={cn("font-bold text-emerald-600 leading-none", isExporting ? "text-[6px]" : "text-[10px]")}>{br.rate}%</span>
+                              <span className={cn("font-semibold text-slate-500 leading-none", "text-[10px]")}>{br.bidang}</span>
+                              <span className={cn("font-bold text-emerald-600 leading-none", "text-[10px]")}>{br.rate}%</span>
                             </div>
                           ))}
                         </div>
                         <div className={cn("bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
-                          <p className={cn("font-bold text-slate-900 leading-none", isExporting ? "text-[8px] uppercase tracking-widest" : "text-[10px]")}>ReSo</p>
-                          <p className={cn("text-slate-500 leading-none", isExporting ? "text-[7px] mt-0.5" : "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
+                          <p className={cn("font-bold text-slate-900 leading-none", "text-[10px]")}>ReSo</p>
+                          <p className={cn("text-slate-500 leading-none", "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
                         </div>
                       </div>
                     </div>
