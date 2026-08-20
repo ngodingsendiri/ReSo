@@ -1,11 +1,11 @@
 {
-    "projectId":  "reso-id",
-    "appId":  "1:1010339173726:web:729170c8c35ef1e61cabcf",
-    "apiKey":  "AIzaSyB6HAfyQBIGRhbyrg4EmV4HnffWcaMsMEc",
-    "authDomain":  "reso-id.firebaseapp.com",
-    "firestoreDatabaseId":  "",
-    "storageBucket":  "reso-id.firebasestorage.app",
-    "messagingSenderId":  "1010339173726",
-    "measurementId":  "G-YN225YDVX5",
-    "extensionId":  "bilnegbhoaabgfchklhhfljcfgaheccp"
+  "projectId": "reso-id",
+  "appId": "1:1010339173726:web:729170c8c35ef1e61cabcf",
+  "apiKey": "AIzaSyB6HAfyQBIGRhbyrg4EmV4HnffWcaMsMEc",
+  "authDomain": "reso-id.firebaseapp.com",
+  "firestoreDatabaseId": "",
+  "storageBucket": "reso-id.firebasestorage.app",
+  "messagingSenderId": "1010339173726",
+  "measurementId": "G-YN225YDVX5",
+  "extensionId": "bilnegbhoaabgfchklhhfljcfgaheccp"
 }
