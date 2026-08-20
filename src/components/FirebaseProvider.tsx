@@ -70,7 +70,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return;
         }
 
-        // Provision otomatis (buat db-<uid> + admins/{uid}) via /api/provision.
+        // Provision otomatis (tulis marker dinas/{uid}/admins/{uid}) via /api/provision.
         // NON-BLOCKING: kalau gagal, user tetap masuk tapi error tampil + bisa
         // retry via tombol "Siapkan database" di Settings.
         setProvisionError(await runProvision(user));

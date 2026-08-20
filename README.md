@@ -15,13 +15,14 @@ Dokumen acuan:
 - Ekstensi Chrome MV3 (di `extension/`)
 - Deploy target: **Vercel free** (`rekapsosmed.vercel.app`)
 
-## Multi-tenant (1 proyek, DB per dinas)
+## Multi-tenant (1 proyek, 1 DB, subtree per dinas)
 
-- Proyek Firebase: **`reso-id`**
-- Tiap akun Google terverifikasi yang login = 1 dinas = 1 database Firestore `db-<uid>`.
-- **Open registration**: siapa pun dengan akun Google bisa login; `/api/provision` otomatis membuat `db-<uid>` + `admins/{uid}` (user = admin database-nya sendiri).
-- Data tidak pernah bercampur antar dinas: routing database diambil dari **uid token yang diverifikasi** (bukan input client).
-- Ekstensi menulis via API → masuk ke database dinas yang login.
+- Proyek Firebase: **`reso-id`** — satu database `(default)` (Spark/gratis, tanpa billing).
+- Tiap akun Google terverifikasi yang login = 1 dinas = 1 subtree `dinas/{uid}`.
+- **Open registration**: siapa pun dengan akun Google bisa login; `/api/provision` memverifikasi token + menulis marker `dinas/{uid}/admins/{uid}`.
+- **Isolasi data**: `firestore.rules` membatasi akses hanya ke `dinas/{request.auth.uid}` (atau super-admin) — data tidak pernah bercampur antar dinas.
+- Ekstensi menulis via API → masuk ke `dinas/{uid}/...` dinas yang login.
+- Routing diambil dari **uid token yang diverifikasi** (bukan input client).
 
 ## Menjalankan lokal
 
@@ -43,7 +44,6 @@ App: http://localhost:3000 (Vite dev server)
 | `npm run preview` | Preview build static |
 | `npm run lint` | Typecheck (`tsc --noEmit`) |
 | `npm test` | Semua test (matching, API, handoff, extension) |
-| `node scripts/sync-rules.mjs` | Generate `api/provision-rules.ts` dari `firestore.rules` |
 | `python scripts/compute_ext_id.py <key.pem>` | Hitung extension ID Chrome (a-p alphabet) |
 | `cd extension && npm run build` | Build ekstensi ke `extension/dist/` |
 | `cd extension && npm run zip` | Buat zip ekstensi |
@@ -81,19 +81,15 @@ App: http://localhost:3000 (Vite dev server)
 
 | Endpoint | Fungsi |
 |----------|--------|
-| `POST /api/engagement` | Jalur tulis otomatis dari ekstensi — verifikasi token Firebase, cek admin, merge nama ke `dailyEngagement/{date}` di `db-<uid>` (dedupe + hitung ulang `engagedEmployeeIds`). Idempoten. |
-| `POST /api/provision` | Bootstrap multi-tenant — buat `db-<uid>` + `admins/{uid}` + deploy rules (butuh env `GOOGLE_SERVICE_ACCOUNT`). |
+| `POST /api/engagement` | Jalur tulis otomatis dari ekstensi — verifikasi token Firebase, merge nama ke `dinas/{uid}/dailyEngagement/{date}` (dedupe + hitung ulang `engagedEmployeeIds`). Idempoten. |
+| `POST /api/provision` | Bootstrap dinas — verifikasi token + tulis marker `dinas/{uid}/admins/{uid}` (open registration, tanpa service account). |
 | `GET /api/health` | Probe konektivitas untuk indikator "Terhubung" di ekstensi. |
 
-### Env Vercel
-
-| Env | Fungsi |
-|-----|--------|
-| `GOOGLE_SERVICE_ACCOUNT` | JSON service account untuk auto-provision database per dinas |
+> **Tidak butuh env `GOOGLE_SERVICE_ACCOUNT`** — semua operasi memakai token operator (user yang terverifikasi), aturan Firestore yang menjamin isolasi per dinas.
 
 ## Firestore
 
-- Satu sumber aturan: **`firestore.rules`** (di-sync ke `api/provision-rules.ts` via `scripts/sync-rules.mjs`).
+- Satu sumber aturan: **`firestore.rules`** — scope `dinas/{uid}` (pemilik uid atau super-admin) + `users/{userId}` top-level.
 - Deploy rules ke `reso-id`:
   ```bash
   firebase login

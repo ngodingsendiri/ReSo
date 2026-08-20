@@ -4,8 +4,9 @@ Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](htt
 
 ## [Unreleased]
 
-### CI: pack otomatis via GitHub Actions + distribusi ZIP primary
-- **Workflow baru `extension-release.yml`**: setiap push ke `extension/**` di `main` (atau `workflow_dispatch`) → build ekstensi, pack CRX + ZIP, hitung extension ID (`compute_ext_id.py`), buat GitHub Release (`ext-v<ver>`) dengan asset nama tetap `reso-extension.crx` / `reso-extension.zip`, lalu sync `extensionId` ke `firebase-applet-config.json` + `api/provision-rules.ts` (commit-back `[skip ci]`).
+### Single-database multi-tenant (Spark/gratis) + distribusi ZIP primary
+- **Model data**: 1 database `(default)` + subcollection `dinas/{uid}/...` (bukan `db-<uid>` yang butuh Blaze/billing). `firestore.rules` membatasi akses ke `dinas/{request.auth.uid}` (atau super-admin) → data per dinas terisolasi tanpa biaya. API (`/api/engagement`) menulis ke `dinas/{uid}/...`; `/api/provision` cukup verifikasi token + tulis marker `admins/{uid}` (tanpa service account/Admin SDK).
+- **Workflow baru `extension-release.yml`**: setiap push ke `extension/**` di `main` (atau `workflow_dispatch`) → build ekstensi, pack CRX + ZIP, hitung extension ID (`compute_ext_id.py`), buat GitHub Release (`ext-v<ver>`) dengan asset nama tetap `reso-extension.crx` / `reso-extension.zip`, lalu sync `extensionId` ke `firebase-applet-config.json` (commit-back `[skip ci]`).
 - **Distribusi utama = ZIP** (Load unpacked): karena `CRX_REQUIRED_PROOF_MISSING` masih muncul saat drag `.crx` di sebagian Chrome, `.zip` → ekstrak → `chrome://extensions` → Developer mode → **Load unpacked** menjadi jalur andal. Extension ID tetap stabil berkat `key` di `manifest.json` (`bilnegbhoaabgfchklhhfljcfgaheccp`) sehingga push/handoff berfungsi penuh.
 - **Download URL stabil** (tanpa update versi): `releases/latest/download/reso-extension.zip`.
 - **Secret**: `EXTENSION_PRIVATE_KEY` = isi `extension/dist-crx/reso-extension-key.pem` (di-restore via Python agar PEM tidak rusak).
