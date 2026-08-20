@@ -32,7 +32,6 @@ jobs:
       - name: Install deps
         run: |
           npm ci
-          (cd extension && npm ci)
           python -m pip install --quiet cryptography
 
       # ---- Sinkronkan rules: firestore.rules -> api/provision-rules.ts ----
@@ -99,35 +98,13 @@ jobs:
         working-directory: extension
         run: node scripts/zip.mjs
 
-      # ---- Sync ID ke web (SettingsTab + install.html) ----
-      - name: Sync ID to web
-        run: |
-          ID="${{ steps.ext_id.outputs.EXT_ID }}"
-          # SettingsTab hardcode: ganti nilai extId lama (a-p 32) dengan yang baru
-          python - <<'EOF'
-          import re, os
-          id = os.environ['ID']
-          for path in ['src/components/tabs/SettingsTab.tsx', 'public/install.html']:
-              try:
-                  txt = open(path, encoding='utf-8').read()
-              except FileNotFoundError:
-                  print('skip', path); continue
-              # ganti ID 32 char a-p (dipakai di const/var)
-              new = re.sub(r"([A-Za-z0-9]{32})", id, txt, count=1)
-              open(path,'w',encoding='utf-8').write(new)
-              print('synced', path)
-          EOF
-        env:
-          ID: ${{ steps.ext_id.outputs.EXT_ID }}
-
-      # ---- Git commit balik (maintainer) ----
+      # ---- Git commit balik (maintainer): config + rules sync ----
       - name: Commit synced files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add firebase-applet-config.json api/provision-rules.ts \
-            src/components/tabs/SettingsTab.tsx public/install.html
-          git diff --cached --quiet || git commit -m "chore(ext): sync extensionId ${{ steps.ext_id.outputs.EXT_ID }} [skip ci]"
+          git add firebase-applet-config.json api/provision-rules.ts
+          git diff --cached --quiet || git commit -m "chore(ext): sync extensionId ${{ steps.ext_id.outputs.EXT_ID }} + rules [skip ci]"
           git push origin main
 
       # ---- GitHub Release (asset nama TETAP → URL latest/download stabil) ----
