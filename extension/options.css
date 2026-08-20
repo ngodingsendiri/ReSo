@@ -75,6 +75,22 @@ button.ghost {
   color: #0f172a;
   background: #fff;
 }
+.btn-download {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #fff;
+  border: 1px solid #0f172a;
+  border-radius: 10px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn-download:hover {
+  background: #eef2f7;
+}
 .saved {
   font-size: 12px;
   color: #15803d;
