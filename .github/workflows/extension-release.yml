@@ -39,10 +39,18 @@ jobs:
         run: node scripts/sync-rules.mjs
 
       # ---- Restore signing key dari secret (jangan pernah di-commit) ----
+      # Pakai Python: tulis env persis (echo bisa merusak newline/\\r PEM).
       - name: Restore signing key
         run: |
           mkdir -p extension/dist-crx
-          echo "$EXTENSION_PRIVATE_KEY" > extension/dist-crx/reso-extension-key.pem
+          python - <<'EOF'
+          import os
+          key = os.environ['EXTENSION_PRIVATE_KEY']
+          if not key.strip().startswith('-----BEGIN'):
+              raise SystemExit('Secret bukan PEM!')
+          open('extension/dist-crx/reso-extension-key.pem', 'w').write(key)
+          print('key.pem written', len(key), 'chars')
+          EOF
           chmod 600 extension/dist-crx/reso-extension-key.pem
         env:
           EXTENSION_PRIVATE_KEY: ${{ secrets.EXTENSION_PRIVATE_KEY }}
