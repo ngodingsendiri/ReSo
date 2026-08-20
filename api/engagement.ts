@@ -36,12 +36,6 @@ function getFsBase(uid: string): string {
   return `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/${encodeURIComponent(dbId)}/documents`;
 }
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-};
-
 function json(res: unknown, status: number, data: unknown) {
   const r = res as { status: (s: number) => { json: (d: unknown) => void }; setHeader?: (k: string, v: string) => void };
   r.setHeader?.('Access-Control-Allow-Origin', '*');

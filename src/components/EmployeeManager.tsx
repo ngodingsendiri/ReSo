@@ -3,8 +3,8 @@ import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateD
 import { Employee } from '../types';
 import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Table, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Trash2, Plus, UserPlus, Save, X, Download, Upload, FileSpreadsheet, Users, Instagram, Facebook, User, CreditCard, UserCircle, Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
 import { toast } from 'sonner';
@@ -394,7 +394,7 @@ export default function EmployeeManager() {
             await processUploadedData(results.data);
             e.target.value = '';
           },
-          error: (error) => {
+          error: () => {
             setIsUploading(false);
             toast.error("Gagal membaca file CSV");
           }

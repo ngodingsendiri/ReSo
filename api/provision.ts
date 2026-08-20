@@ -19,13 +19,6 @@ import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' 
 const PROJECT = firebaseConfig.projectId as string;
 const API_KEY = firebaseConfig.apiKey as string;
 
-function cors(res: unknown) {
-  const r = res as { setHeader?: (k: string, v: string) => void };
-  r.setHeader?.('Access-Control-Allow-Origin', '*');
-  r.setHeader?.('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  r.setHeader?.('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-}
-
 function json(res: unknown, status: number, data: unknown) {
   const r = res as { status: (s: number) => { json: (d: unknown) => void }; setHeader?: (k: string, v: string) => void };
   r.setHeader?.('Access-Control-Allow-Origin', '*');
@@ -121,7 +114,7 @@ async function createDb(accessToken: string, dbId: string): Promise<void> {
   }
 }
 
-async function writeAdmin(accessToken: string, dbId: string, uid: string, email: string): Promise<void> {
+async function writeAdmin(dbId: string, uid: string, email: string): Promise<void> {
   // Pakai Admin SDK Firestore (bypass rules) supaya bisa menulis admins/{uid}
   // pada database yang baru dibuat — bootstrap admin untuk user itu.
   const adminFirestore = new Firestore({
@@ -338,7 +331,7 @@ export default async function handler(req: unknown, res: unknown) {
       await createDb(accessToken, dbId);
       created = true;
     }
-    await writeAdmin(accessToken, dbId, user.uid, user.email);
+    await writeAdmin(dbId, user.uid, user.email);
     // Pasang rules keamanan ke database ini (baru maupun yang sudah ada) —
     // memastikan db-<uid> selalu terlindungi.
     await deployRules(accessToken, dbId);

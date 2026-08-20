@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import "dotenv/config";
 
 // Error handling for the process
@@ -13,9 +12,6 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -23,12 +19,12 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
   
   // Basic health check
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
   });
   
   // Logging for API requests to debug 404/500 on mobile
-  app.use((req, res, next) => {
+  app.use((req, _res, next) => {
     if (req.path.startsWith('/api')) {
       console.log(`[API REQUEST] ${req.method} ${req.path} - ${new Date().toISOString()} - UA: ${req.headers['user-agent']}`);
     }
@@ -52,7 +48,7 @@ async function startServer() {
       res.status(404).json({ error: `API route ${req.method} ${req.path} not found.` });
     });
 
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

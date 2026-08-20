@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { signIn } from '../lib/firebase';
 import { Button } from './ui/button';
 import { useAppLogo } from '../hooks/useAppLogo';
