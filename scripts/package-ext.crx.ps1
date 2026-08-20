@@ -79,11 +79,14 @@ if (Test-Path $keyPath) {
     $chromeArgs += "--pack-extension-key=$keyPath"
 }
 
-$proc = Start-Process -FilePath $chrome -ArgumentList $chromeArgs -Wait -PassThru -WindowStyle Hidden
-
-# Chrome --pack-extension outputs the .crx next to the extension dir
+# Chrome --pack-extension outputs the .crx next to the extension dir.
+# PENTING: Chrome TIDAK menimpa .crx yang sudah ada — hapus dulu supaya
+# repackage selalu menghasilkan build terbaru.
 $crxName = Split-Path $extPath -Leaf
 $crxFile = Join-Path (Split-Path $extPath -Parent) "$crxName.crx"
+Remove-Item $crxFile -Force -ErrorAction SilentlyContinue
+
+$proc = Start-Process -FilePath $chrome -ArgumentList $chromeArgs -Wait -PassThru -WindowStyle Hidden
 
 # Wait briefly for file to appear
 $retries = 0
