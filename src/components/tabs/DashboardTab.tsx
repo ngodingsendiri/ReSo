@@ -9,6 +9,8 @@ import { Button } from '../ui/button';
 import { DailyEngagement } from '../../types';
 import { parseLocalISODate } from '../../lib/date';
 
+const fmt = (n: number) => n.toLocaleString('id-ID');
+
 // Status rekap per hari untuk Aktivitas Terakhir
 function engagementStatus(eng: DailyEngagement): { label: string; className: string } {
   if (eng.verifiedAt) {
@@ -59,11 +61,13 @@ export const DashboardTab = ({
   chartData,
   dailyEngagements,
   onGoInput,
+  onGoDaily,
 }: {
   stats: DashboardStats;
   chartData: ChartPoint[];
   dailyEngagements: DailyEngagement[];
   onGoInput?: () => void;
+  onGoDaily?: () => void;
 }) => {
   const StatCard = React.memo(function StatCard({
     title,
@@ -125,11 +129,27 @@ export const DashboardTab = ({
         )}
       </motion.div>
 
+      <motion.div variants={itemVariants} className="hidden lg:flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">Beranda</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Ringkasan engagement pegawai</p>
+        </div>
+        {onGoInput && (
+          <Button
+            onClick={onGoInput}
+            className="gap-2 h-11 rounded-xl bg-slate-900 text-white font-bold text-sm px-5"
+          >
+            <ArrowRight size={16} />
+            Input rekap hari ini
+          </Button>
+        )}
+      </motion.div>
+
       <motion.div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" variants={itemVariants}>
-        <StatCard title="Total Pegawai" value={stats.totalEmployees.toString()} icon={<Users2 size={18} />} color="violet" subtitle="Master data pegawai" />
-        <StatCard title="Rekap Hari Ini" value={stats.todayCount.toString()} icon={<Activity size={18} />} color="emerald" subtitle="Total interaksi (IG+FB+TT)" />
-        <StatCard title="Total Interaksi" value={stats.totalEngagements.toString()} icon={<TrendingUp size={18} />} color="sky" subtitle="Akumulasi semua rekap" />
-        <StatCard title="Engagement Rate" value={`${stats.engagementRate}%`} icon={<CheckCircle2 size={18} />} color="rose" subtitle="Pegawai unik engage hari ini" />
+        <StatCard title="Total Pegawai" value={fmt(stats.totalEmployees)} icon={<Users2 size={18} />} color="violet" subtitle="Master data pegawai" />
+        <StatCard title="Rekap Hari Ini" value={fmt(stats.todayCount)} icon={<Activity size={18} />} color="emerald" subtitle="Total interaksi (IG+FB+TT)" />
+        <StatCard title="Total Interaksi" value={fmt(stats.totalEngagements)} icon={<TrendingUp size={18} />} color="sky" subtitle="Akumulasi semua rekap" />
+        <StatCard title="Engagement Rate" value={`${fmt(stats.engagementRate)}%`} icon={<CheckCircle2 size={18} />} color="rose" subtitle="Pegawai unik engage hari ini" />
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -155,11 +175,19 @@ export const DashboardTab = ({
 
         <motion.div variants={itemVariants} className="lg:col-span-1">
           <Card className="h-full border border-slate-200 rounded-xl overflow-hidden bg-white">
-            <CardHeader className="p-5 border-b border-slate-100">
-              <CardTitle className="text-base font-bold text-slate-900">Aktivitas Terakhir</CardTitle>
-              <CardDescription className="text-xs text-slate-500">
-                Riwayat pembaruan rekap
-              </CardDescription>
+            <CardHeader className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-bold text-slate-900">Aktivitas Terakhir</CardTitle>
+                <CardDescription className="text-xs text-slate-500">
+                  Riwayat pembaruan rekap
+                </CardDescription>
+              </div>
+              {onGoDaily && (
+                <Button variant="ghost" size="sm" onClick={onGoDaily} className="text-xs font-bold text-slate-500 hover:text-slate-900 rounded-lg gap-1 shrink-0">
+                  Lihat semua
+                  <ArrowRight size={13} />
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="p-0">
               <ScrollArea className="h-[280px]">

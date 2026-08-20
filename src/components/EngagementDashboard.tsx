@@ -1467,6 +1467,7 @@ export default function EngagementDashboard() {
                     setActiveTab('overview');
                     setIsInputModalOpen(true);
                   }}
+                  onGoDaily={() => setActiveTab('daily-report')}
                 />
               )}
                {activeTab === 'overview' && (
