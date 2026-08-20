@@ -1,0 +1,154 @@
+name: Extension Release
+
+on:
+  push:
+    paths:
+      - "extension/**"
+      - "firebase-applet-config.json"
+      - "firestore.rules"
+      - "scripts/compute_ext_id.py"
+      - ".github/workflows/extension-release.yml"
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          npm ci
+          (cd extension && npm ci)
+          python -m pip install --quiet cryptography
+
+      # ---- Sinkronkan rules: firestore.rules -> api/provision-rules.ts ----
+      - name: Sync Firestore rules
+        run: node scripts/sync-rules.mjs
+
+      # ---- Restore signing key dari secret (jangan pernah di-commit) ----
+      - name: Restore signing key
+        run: |
+          mkdir -p extension/dist-crx
+          echo "$EXTENSION_PRIVATE_KEY" > extension/dist-crx/reso-extension-key.pem
+          chmod 600 extension/dist-crx/reso-extension-key.pem
+        env:
+          EXTENSION_PRIVATE_KEY: ${{ secrets.EXTENSION_PRIVATE_KEY }}
+
+      # ---- Build extension (dist/) ----
+      - name: Build extension
+        working-directory: extension
+        run: npm run build
+
+      # ---- Hitung extension ID dari key (a-p alphabet) ----
+      - name: Compute extension ID
+        id: ext_id
+        run: |
+          ID=$(python scripts/compute_ext_id.py extension/dist-crx/reso-extension-key.pem)
+          echo "EXT_ID=$ID" >> "$GITHUB_OUTPUT"
+          echo "extensionId computed: $ID"
+
+      - name: Update config extensionId
+        run: |
+          ID="${{ steps.ext_id.outputs.EXT_ID }}"
+          python - <<'EOF'
+          import json, os
+          id = os.environ['ID']
+          cfg = json.load(open('firebase-applet-config.json'))
+          cfg['extensionId'] = id
+          json.dump(cfg, open('firebase-applet-config.json','w'), indent=2)
+          print('extensionId ->', id)
+          EOF
+        env:
+          ID: ${{ steps.ext_id.outputs.EXT_ID }}
+
+      # ---- Pack CRX (Chrome CLI di Linux) ----
+      - name: Pack CRX
+        run: |
+          mkdir -p extension/dist-crx
+          google-chrome-stable --version || true
+          # Chrome --pack-extension (sumber utama); key dari secret
+          google-chrome-stable --pack-extension="$PWD/extension/dist" \
+            --pack-extension-key="$PWD/extension/dist-crx/reso-extension-key.pem" || true
+          if [ -f extension/dist.crx ]; then
+            cp extension/dist.crx extension/dist-crx/reso-extension.crx
+            echo "CRX from Chrome OK"
+          else
+            echo "Chrome pack gagal — fallback ke node crx"
+            npx --yes crx@5.0.1 pack extension/dist \
+              -p extension/dist-crx/reso-extension-key.pem \
+              -o extension/dist-crx/reso-extension.crx
+          fi
+          ls -la extension/dist-crx/
+
+      # ---- Zip (node scripts/zip.mjs) ----
+      - name: Pack ZIP
+        working-directory: extension
+        run: node scripts/zip.mjs
+
+      # ---- Sync ID ke web (SettingsTab + install.html) ----
+      - name: Sync ID to web
+        run: |
+          ID="${{ steps.ext_id.outputs.EXT_ID }}"
+          # SettingsTab hardcode: ganti nilai extId lama (a-p 32) dengan yang baru
+          python - <<'EOF'
+          import re, os
+          id = os.environ['ID']
+          for path in ['src/components/tabs/SettingsTab.tsx', 'public/install.html']:
+              try:
+                  txt = open(path, encoding='utf-8').read()
+              except FileNotFoundError:
+                  print('skip', path); continue
+              # ganti ID 32 char a-p (dipakai di const/var)
+              new = re.sub(r"([A-Za-z0-9]{32})", id, txt, count=1)
+              open(path,'w',encoding='utf-8').write(new)
+              print('synced', path)
+          EOF
+        env:
+          ID: ${{ steps.ext_id.outputs.EXT_ID }}
+
+      # ---- Git commit balik (maintainer) ----
+      - name: Commit synced files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firebase-applet-config.json api/provision-rules.ts \
+            src/components/tabs/SettingsTab.tsx public/install.html
+          git diff --cached --quiet || git commit -m "chore(ext): sync extensionId ${{ steps.ext_id.outputs.EXT_ID }} [skip ci]"
+          git push origin main
+
+      # ---- GitHub Release (asset nama TETAP → URL latest/download stabil) ----
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(node -p "require('./extension/package.json').version")
+          TAG="ext-v$VER"
+          # Asset nama tetap → URL `releases/latest/download/reso-extension.zip`
+          # selalu valid tanpa update versi di web (hardcode).
+          mkdir -p dist-assets
+          cp extension/dist-crx/reso-extension.crx dist-assets/reso-extension.crx
+          cp "extension/reso-ekstention-$VER.zip" dist-assets/reso-extension.zip
+          # Hapus release/tag lama bila ada (re-publish versi sama)
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+            dist-assets/reso-extension.crx \
+            dist-assets/reso-extension.zip \
+            --title "ReSo Ekstensi v$VER" \
+            --notes "Extension ID: ${{ steps.ext_id.outputs.EXT_ID }}"
+          echo "Release: $TAG"
+          echo "URL ZIP : https://github.com/ngodingsendiri/ReSo/releases/latest/download/reso-extension.zip"
+          echo "URL CRX : https://github.com/ngodingsendiri/ReSo/releases/latest/download/reso-extension.crx"

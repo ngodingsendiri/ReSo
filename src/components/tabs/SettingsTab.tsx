@@ -15,7 +15,11 @@ interface SettingsTabProps {
   isSavingToken: boolean;
 }
 
-const EXT_CRX_URL = '/reso-extension.crx';
+// Link download extension dari GitHub Release (di-hardcode; workflow Actions
+// memperbarui tiap rilis). ZIP = jalur utama (Load unpacked, tanpa error
+// CRX_REQUIRED_PROOF_MISSING); CRX = opsi drag-drop.
+const EXT_ZIP_URL = 'https://github.com/ngodingsendiri/ReSo/releases/latest/download/reso-extension.zip';
+const EXT_CRX_URL = 'https://github.com/ngodingsendiri/ReSo/releases/latest/download/reso-extension.crx';
 const EXT_INSTALL_URL = '/install.html';
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
@@ -85,24 +89,33 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             title="Ekstensi ReSo"
             desc="Pasang / perbarui ekstensi untuk menarik nama komentator otomatis ke rekap."
           >
-            <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex flex-col gap-2 w-full sm:w-auto">
               <a
-                href={EXT_CRX_URL}
+                href={EXT_ZIP_URL}
                 download
                 className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 h-10 px-4 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
               >
                 <Download size={14} />
-                Download .crx
+                Download .zip (disarankan)
               </a>
-              <a
-                href={EXT_INSTALL_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 h-10 px-4 rounded-xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50"
-              >
-                <ExternalLink size={14} />
-                Panduan
-              </a>
+              <div className="flex gap-2">
+                <a
+                  href={EXT_CRX_URL}
+                  download
+                  className="inline-flex flex-1 items-center justify-center gap-1.5 h-10 px-3 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"
+                >
+                  .crx
+                </a>
+                <a
+                  href={EXT_INSTALL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex flex-1 items-center justify-center gap-1.5 h-10 px-3 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"
+                >
+                  <ExternalLink size={14} />
+                  Panduan
+                </a>
+              </div>
             </div>
           </SettingRow>
 
