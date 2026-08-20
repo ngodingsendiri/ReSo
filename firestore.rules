@@ -1,19 +1,18 @@
 // ===============================================================
 // ReSo Firestore Security Rules
-// Model MULTI-TENANT open-registration:
-//  - 1 project, tiap dinas/user = 1 database `db-<uid>` (dibuat otomatis
-//    oleh /api/provision + admins/{uid} ditulis via Admin SDK).
-//  - `isAuthorized()`: bootstrap allowlist email (super-admin) ATAU user
-//    punya dokumen admins/{uid} di database-nya sendiri → tiap user adalah
-//    admin database-nya, TIDAK bisa akses db-<uid> lain.
-//  - `$(database)` membuat aturan berlaku per-database.
-// JAGA SINKRON dengan RULES_SOURCE di api/provision.ts.
+// Model MULTI-TENANT single-database (Spark/gratis):
+//  - 1 project, 1 database `(default)`. Tiap dinas/user = subtree
+//    `dinas/<uid>` — data TIDAK bercampur karena rules membatasi akses
+//    hanya ke `dinas/{request.auth.uid}`.
+//  - Super-admin (allowlist email) boleh akses semua dinas.
+//  - Ekstensi menulis via API (api/engagement.ts) ke `dinas/<uid>/...`.
+// JAGA SINKRON: `node scripts/sync-rules.mjs` -> api/provision-rules.ts
 // ===============================================================
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     // 0. Global Safety Net: Default Deny All
     match /{document=**} {
       allow read, write: if false;
@@ -24,20 +23,18 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email_verified == true;
     }
 
-    function isAuthorized() {
+    function isSuperAdmin() {
       let allowedEmails = [
         'ngerjaindiri@gmail.com',
         'sipencil@gmail.com',
         'abiemputra.asn@gmail.com'
       ];
-      return isSignedIn() && (
-        request.auth.token.email in allowedEmails ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
+      return request.auth != null && request.auth.token.email in allowedEmails;
     }
 
-    function isAdmin() {
-      return isAuthorized();
+    // Akses ke subtree dinas: pemilik uid ATAU super-admin.
+    function isAllowedDinas(dinasUid) {
+      return isSignedIn() && (request.auth.uid == dinasUid || isSuperAdmin());
     }
 
     function isValidId(id) {
@@ -92,7 +89,6 @@ service cloud.firestore {
              data.date is string && data.date.size() == 10 &&
              data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
              optionalString(data, 'igRawText', 50000) &&
-
              optionalString(data, 'fbRawText', 50000) &&
              optionalString(data, 'tiktokRawText', 50000) &&
              optionalStringList(data, 'igLinks', 100) &&
@@ -101,56 +97,63 @@ service cloud.firestore {
              optionalIdList(data, 'igEngagedEmployeeIds') &&
              optionalIdList(data, 'fbEngagedEmployeeIds') &&
              optionalIdList(data, 'tiktokEngagedEmployeeIds') &&
-             // Waktu posting dari ReSoEx (L3) — daftar ISO lokal, max 100 per hari.
              optionalStringList(data, 'postedAt', 100) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
-    
+
     function isValidSetting(data) {
       return (!('value' in data) || (data.value is string && data.value.size() <= 5000000)) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
-    // 3. Collection Rules
-
+    // 3. Top-level users (login tracking) — hanya untuk diri sendiri
     match /users/{userId} {
-      allow read: if isAuthorized() && request.auth.uid == userId;
-      allow create: if isAuthorized() && request.auth.uid == userId && isValidUser(incoming());
-      allow update: if isAuthorized() && request.auth.uid == userId && isValidUser(incoming()) && 
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming()) &&
                        (!('role' in incoming()) || incoming().role == existing().role);
-      allow delete: if isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    match /admins/{adminId} {
-      allow read: if isAuthorized();
-      allow create, update: if isAdmin() && isValidId(adminId) && 
-                            incoming().keys().hasAll(['email']) && 
+    // 4. Subtree per dinas: dinas/{uid}/...
+    match /dinas/{dinasUid}/admins/{adminId} {
+      allow read: if isAllowedDinas(dinasUid);
+      allow create, update: if isAllowedDinas(dinasUid) && isValidId(adminId) &&
+                            incoming().keys().hasAll(['email']) &&
                             incoming().email is string && incoming().email.size() > 0 && incoming().email.size() < 100 &&
                             (!('name' in incoming()) || (incoming().name is string && incoming().name.size() < 100)) &&
                             (!('addedAt' in incoming()) || incoming().addedAt is timestamp);
-      allow delete: if isAdmin() && isValidId(adminId);
+      allow delete: if isAllowedDinas(dinasUid) && isValidId(adminId);
     }
 
-    match /employees/{employeeId} {
-      allow list, get: if isAuthorized();
-      allow create: if isAdmin() && isValidId(employeeId) && isValidEmployee(incoming());
-      allow update: if isAdmin() && isValidId(employeeId) && isValidEmployee(incoming());
-      allow delete: if isAdmin() && isValidId(employeeId);
+    match /dinas/{dinasUid}/employees/{employeeId} {
+      allow list, get: if isAllowedDinas(dinasUid);
+      allow create: if isAllowedDinas(dinasUid) && isValidId(employeeId) && isValidEmployee(incoming());
+      allow update: if isAllowedDinas(dinasUid) && isValidId(employeeId) && isValidEmployee(incoming());
+      allow delete: if isAllowedDinas(dinasUid) && isValidId(employeeId);
     }
 
-    match /dailyEngagement/{dateId} {
-      allow list, get: if isAuthorized();
-      allow create: if isAdmin() && isValidId(dateId) && isValidDailyEngagement(incoming());
-      allow update: if isAdmin() && isValidId(dateId) && isValidDailyEngagement(incoming());
-      allow delete: if isAdmin() && isValidId(dateId);
+    match /dinas/{dinasUid}/dailyEngagement/{dateId} {
+      allow list, get: if isAllowedDinas(dinasUid);
+      allow create: if isAllowedDinas(dinasUid) && isValidId(dateId) && isValidDailyEngagement(incoming());
+      allow update: if isAllowedDinas(dinasUid) && isValidId(dateId) && isValidDailyEngagement(incoming());
+      allow delete: if isAllowedDinas(dinasUid) && isValidId(dateId);
     }
 
-    match /settings/{settingId} {
-      allow list: if isAuthorized();
-      allow get: if isAuthorized() || settingId == 'appLogo';
-      allow create: if isAdmin() && isValidId(settingId) && isValidSetting(incoming());
-      allow update: if isAdmin() && isValidId(settingId) && isValidSetting(incoming());
-      allow delete: if isAdmin() && isValidId(settingId);
+    match /dinas/{dinasUid}/settings/{settingId} {
+      allow list: if isAllowedDinas(dinasUid);
+      allow get: if isAllowedDinas(dinasUid) || settingId == 'appLogo';
+      allow create: if isAllowedDinas(dinasUid) && isValidId(settingId) && isValidSetting(incoming());
+      allow update: if isAllowedDinas(dinasUid) && isValidId(settingId) && isValidSetting(incoming());
+      allow delete: if isAllowedDinas(dinasUid) && isValidId(settingId);
+    }
+
+    match /dinas/{dinasUid}/users/{userId} {
+      allow read: if isAllowedDinas(dinasUid) && request.auth.uid == userId;
+      allow create: if isAllowedDinas(dinasUid) && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isAllowedDinas(dinasUid) && request.auth.uid == userId && isValidUser(incoming()) &&
+                       (!('role' in incoming()) || incoming().role == existing().role);
+      allow delete: if isSuperAdmin();
     }
   }
 }

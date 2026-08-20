@@ -1,28 +1,32 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getFirestore, collection, doc, type Firestore, type CollectionReference, type DocumentReference } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 /**
- * Konvensi nama database per dinas (multi-tenant): 1 project Firebase, tiap
- * dinas = 1 akun Google = 1 database `db-<uid>`. HARUS sinkron dengan
- * `getFsBase(uid)` di api/engagement.ts.
+ * Single database `(default)` (Spark/gratis). Pemisahan multi-tenant dilakukan
+ * lewat SUBCOLLECTION `dinas/{uid}/...` — bukan database terpisah. Tiap dinas
+ * = 1 akun Google = 1 subtree `dinas/<uid>` di database yang sama.
+ *
+ * Firestore multi-database (`db-<uid>`) butuh Blaze (billing). Dengan single
+ * database + rules scope `request.auth.uid == uid`, isolasi data tetap terjaga
+ * tanpa biaya.
  */
-export function databaseIdFor(uid: string): string {
-  return `db-${uid.toLowerCase()}`;
+export function userDb(_uid: string): Firestore {
+  return getFirestore(app);
 }
 
-/**
- * Referensi Firestore untuk dinas tertentu. Dipanggil per-user setelah login
- * — semua operasi data (employees, dailyEngagement, admins, users, settings)
- * diarahkan ke database dinas yang login, sehingga rekap dari ekstensi
- * (yang ditulis API ke db-<uid>) muncul di dashboard dinas yang sama.
- */
-export function userDb(uid: string): Firestore {
-  return getFirestore(app, databaseIdFor(uid));
+/** Koleksi dalam subtree dinas: `dinas/{uid}/{name}`. */
+export function dinasCollection(db: Firestore, uid: string, name: string): CollectionReference {
+  return collection(db, 'dinas', uid.toLowerCase(), name);
+}
+
+/** Dokumen dalam subtree dinas: `dinas/{uid}/{name}/{id}`. */
+export function dinasDoc(db: Firestore, uid: string, name: string, id: string): DocumentReference {
+  return doc(db, 'dinas', uid.toLowerCase(), name, id);
 }
 
 export const googleProvider = new GoogleAuthProvider();

@@ -33,7 +33,7 @@ import { toast } from 'sonner';
 import { DailyEngagement, Employee, UnmatchedName } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
-import { logout } from '../lib/firebase';
+import { logout, dinasCollection, dinasDoc } from '../lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
 import { cn, getBidangColor } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate, addLocalDays } from '../lib/date';
@@ -193,7 +193,7 @@ export default function EngagementDashboard() {
     if (loading || !user) return;
 
     const unsubscribe = onSnapshot(
-      doc(db, 'settings', 'meta_api'),
+      dinasDoc(db, user.uid, 'settings', 'meta_api'),
       (docSnap) => {
         if (docSnap.exists()) {
           setMetaToken(docSnap.data().value || '');
@@ -216,7 +216,7 @@ export default function EngagementDashboard() {
         toast.error('Token API Meta tidak boleh kosong');
         return;
       }
-      await setDoc(doc(db, 'settings', 'meta_api'), {
+      await setDoc(dinasDoc(db, user.uid, 'settings', 'meta_api'), {
         value: trimmed,
         updatedAt: serverTimestamp()
       });
@@ -241,7 +241,7 @@ export default function EngagementDashboard() {
       return;
     }
 
-    const q = query(collection(db, 'employees'), orderBy('name', 'asc'));
+    const q = query(dinasCollection(db, user.uid, 'employees'), orderBy('name', 'asc'));
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -278,7 +278,7 @@ export default function EngagementDashboard() {
     }
 
     const q = query(
-      collection(db, 'dailyEngagement'), 
+      dinasCollection(db, user.uid, 'dailyEngagement'), 
       where('date', '>=', oldestRequiredDate),
       orderBy('date', 'desc')
     );
@@ -322,7 +322,7 @@ export default function EngagementDashboard() {
       const batch = writeBatch(db);
       for (const date of unverifiedAutoFilledDates) {
         batch.set(
-          doc(db, 'dailyEngagement', date),
+          dinasDoc(db, user.uid, 'dailyEngagement', date),
           { date, verifiedAt: serverTimestamp() },
           { merge: true }
         );
@@ -366,7 +366,7 @@ export default function EngagementDashboard() {
         matchEngagementDetail(raw(p), list, p).unmatched.map((name) => ({ name, platform: p }))
       );
       await setDoc(
-        doc(db, 'dailyEngagement', date),
+        dinasDoc(db, user.uid, 'dailyEngagement', date),
         {
           igEngagedEmployeeIds: ids('ig'),
           fbEngagedEmployeeIds: ids('fb'),
@@ -394,7 +394,7 @@ export default function EngagementDashboard() {
         const emp = localEmployees.find((e) => e.id === empId);
         if (!emp) continue;
         // isValidEmployee mewajibkan name+nip di data masuk → kirim field lengkap.
-        await updateDoc(doc(db, 'employees', empId), {
+        await updateDoc(dinasDoc(db, user.uid, 'employees', empId), {
           name: emp.name,
           nip: emp.nip,
           bidang: emp.bidang || '',
@@ -839,7 +839,7 @@ export default function EngagementDashboard() {
       const fbEngagedIds = processEngagementInput(currentFbRawInput, 'fb');
       const tiktokEngagedIds = processEngagementInput(currentTiktokRawInput, 'tiktok');
 
-      const docRef = doc(db, 'dailyEngagement', selectedDate);
+      const docRef = dinasDoc(db, user.uid, 'dailyEngagement', selectedDate);
       const existing = dailyEngagementsMap[selectedDate];
       
       const igContentChanged = currentIgRawInput !== initialIgRawInput || JSON.stringify(igLinks) !== JSON.stringify(initialIgLinks);
@@ -990,7 +990,7 @@ export default function EngagementDashboard() {
         const batch = writeBatch(db);
         for (const u of chunk) {
           batch.set(
-            doc(db, 'dailyEngagement', u.id),
+            dinasDoc(db, user.uid, 'dailyEngagement', u.id),
             {
               igEngagedEmployeeIds: u.ig,
               fbEngagedEmployeeIds: u.fb,

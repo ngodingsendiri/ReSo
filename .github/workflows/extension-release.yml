@@ -34,10 +34,6 @@ jobs:
           npm ci
           python -m pip install --quiet cryptography
 
-      # ---- Sinkronkan rules: firestore.rules -> api/provision-rules.ts ----
-      - name: Sync Firestore rules
-        run: node scripts/sync-rules.mjs
-
       # ---- Restore signing key dari secret (jangan pernah di-commit) ----
       # Pakai Python: tulis env persis (echo bisa merusak newline/\\r PEM).
       - name: Restore signing key
@@ -106,13 +102,13 @@ jobs:
         working-directory: extension
         run: node scripts/zip.mjs
 
-      # ---- Git commit balik (maintainer): config + rules sync ----
+      # ---- Git commit balik (maintainer): config sync ----
       - name: Commit synced files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add firebase-applet-config.json api/provision-rules.ts
-          git diff --cached --quiet || git commit -m "chore(ext): sync extensionId ${{ steps.ext_id.outputs.EXT_ID }} + rules [skip ci]"
+          git add firebase-applet-config.json
+          git diff --cached --quiet || git commit -m "chore(ext): sync extensionId ${{ steps.ext_id.outputs.EXT_ID }} [skip ci]"
           git push origin main
 
       # ---- GitHub Release (asset nama TETAP → URL latest/download stabil) ----

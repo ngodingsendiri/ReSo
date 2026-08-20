@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { useAuth } from './FirebaseProvider';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { cn, getBidangColor } from '@/lib/utils';
-import { auth } from '../lib/firebase';
+import { auth, dinasCollection, dinasDoc } from '../lib/firebase';
 
 enum OperationType {
   CREATE = 'create',
@@ -214,7 +214,7 @@ export default function EmployeeManager() {
       return;
     }
 
-    const q = query(collection(db, 'employees'), orderBy('name', 'asc'));
+    const q = query(dinasCollection(db, user.uid, 'employees'), orderBy('name', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const emps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
       setEmployees(emps);
@@ -244,7 +244,7 @@ export default function EmployeeManager() {
 
     try {
       if (editingId) {
-        await updateDoc(doc(db, 'employees', editingId), {
+        await updateDoc(dinasDoc(db, user.uid, 'employees', editingId), {
           ...formData,
           name: formData.name.trim(),
           nip: formData.nip.trim(),
@@ -252,7 +252,7 @@ export default function EmployeeManager() {
         });
         toast.success("Data pegawai diperbarui");
       } else {
-        await addDoc(collection(db, 'employees'), {
+        await addDoc(dinasCollection(db, user.uid, 'employees'), {
           ...formData,
           name: formData.name.trim(),
           nip: formData.nip.trim(),
@@ -282,7 +282,7 @@ export default function EmployeeManager() {
   const executeDelete = async () => {
     if (!deleteConfirmId) return;
     try {
-      await deleteDoc(doc(db, 'employees', deleteConfirmId));
+      await deleteDoc(dinasDoc(db, user.uid, 'employees', deleteConfirmId));
       toast.success("Pegawai dihapus");
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'employees');
@@ -448,7 +448,7 @@ export default function EmployeeManager() {
 
       for (const chunk of chunks) {
         const batch = writeBatch(db);
-        const employeesRef = collection(db, 'employees');
+        const employeesRef = dinasCollection(db, user.uid, 'employees');
         let chunkCount = 0;
 
         for (const row of chunk) {
@@ -480,7 +480,7 @@ export default function EmployeeManager() {
             );
 
             if (existingEmployee) {
-              const docRef = doc(db, 'employees', existingEmployee.id);
+              const docRef = dinasDoc(db, user.uid, 'employees', existingEmployee.id);
               batch.set(docRef, {
                 name,
                 nip,

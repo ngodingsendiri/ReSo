@@ -29,7 +29,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [error, setError] = useState<string | null>(null);
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const clearError = () => setError(null);
-  // Database dinas untuk user yang login (multi-tenant): db-<uid>.
+  // Database Firestore (single default). Pemisahan dinas lewat subtree
+  // dinas/{uid} di level komponen (dinasCollection/dinasDoc).
   const db = useMemo(() => (user ? userDb(user.uid) : null), [user]);
 
   const runProvision = async (u: User): Promise<string | null> => {
@@ -78,7 +79,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setError(null);
         setLoading(false);
 
-        // Sync user ke database dinas (db-<uid>) secara lazy
+        // Sync user ke Firestore (top-level users/{uid}) secara lazy
         const uDb = userDb(user.uid);
         getDoc(doc(uDb, 'users', user.uid)).then(async (userSnap) => {
           const userRef = doc(uDb, 'users', user.uid);

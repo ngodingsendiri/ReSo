@@ -129,20 +129,20 @@ function ok(msg: string) {
   ok('kirim pertama → create + matching ids + penanda ReSoEx');
 }
 
-// 1b. Multi-tenant: semua operasi Firestore diarahkan ke database dinas user (db-<uid>)
+// 1b. Multi-tenant: semua operasi diarahkan ke subtree dinas/{uid} (single DB)
 {
   const r = await runScenario({ token: 'tok-admin', body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17' } });
   assert(r.status === 200, `status 200, dapat ${r.status}`);
   const urls = r.writes.map((w) => w.url);
   for (const u of urls) {
-    assert(u.includes('/databases/db-u1/'), `URL Firestore memakai db-u1 (uid dari token), dapat ${u}`);
+    assert(u.includes('/documents/dinas/u1/'), `URL Firestore memakai dinas/u1 (uid dari token), dapat ${u}`);
   }
-  // fetchLog juga berisi GET employees (read) — pastikan ikut ke db-u1 juga
+  // fetchLog juga berisi GET employees (read) — pastikan ikut ke dinas/u1 juga
   const reads = fetchLog.filter((f) => f.url.includes('firestore.googleapis.com') && f.method === 'GET');
   for (const r2 of reads) {
-    assert(r2.url.includes('/databases/db-u1/'), `read juga ke db-u1, dapat ${r2.url}`);
+    assert(r2.url.includes('/documents/dinas/u1/'), `read juga ke dinas/u1, dapat ${r2.url}`);
   }
-  ok('multi-tenant → semua operasi (read+write) diarahkan ke db-<uid> dari token');
+  ok('multi-tenant → semua operasi (read+write) diarahkan ke dinas/{uid} dari token');
 }
 
 // 1c. Nama tidak cocok → masuk antrian unmatchedNames (mapValue, bukan null)
@@ -238,11 +238,15 @@ function ok(msg: string) {
   ok('idempotent → PATCH update');
 }
 
-// 3. Bukan admin → 403
+// 3. Open registration: user terverifikasi (bukan allowlist) = admin dinas-nya sendiri
 {
   const r = await runScenario({ token: 'tok-nonadmin', body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17' } });
-  assert(r.status === 403, `non-admin ditolak (${r.status})`);
-  ok('non-admin → 403');
+  assert(r.status === 200, `open-registration user boleh tulis dinas sendiri (${r.status})`);
+  // Pastikan ditulis ke dinas/u2 (uid dari token), bukan dinas lain
+  for (const w of r.writes) {
+    assert(w.url.includes('/documents/dinas/u2/'), `tulis ke dinas/u2, dapat ${w.url}`);
+  }
+  ok('open registration → user terverifikasi boleh tulis dinas sendiri (dinas/u2)');
 }
 
 // 4. Token invalid → 401

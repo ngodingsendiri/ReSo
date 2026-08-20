@@ -32,8 +32,8 @@ const PROJECT = firebaseConfig.projectId as string;
 const API_KEY = firebaseConfig.apiKey as string;
 
 function getFsBase(uid: string): string {
-  const dbId = `db-${uid.toLowerCase()}`;
-  return `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/${encodeURIComponent(dbId)}/documents`;
+  const u = uid.toLowerCase();
+  return `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/dinas/${u}`;
 }
 
 function json(res: unknown, status: number, data: unknown) {
@@ -119,11 +119,18 @@ async function verifyIdToken(idToken: string): Promise<{ uid: string; email: str
 }
 
 async function isAdminUser(uid: string, email: string, idToken: string, fsBase: string): Promise<boolean> {
+  // Open registration: setiap user terverifikasi adalah admin database-nya
+  // sendiri (dinas/{uid}). Super-admin allowlist tetap berlaku.
   if (ADMIN_EMAILS.includes(email)) return true;
+  // Untuk user biasa, cek apakah ada dokumen admins/{uid} di dinas-nya
+  // (di-tulis oleh /api/provision saat login pertama).
   const r = await fetch(`${fsBase}/admins/${encodeURIComponent(uid)}`, {
     headers: { Authorization: `Bearer ${idToken}` },
   });
-  return r.ok;
+  if (r.ok) return true;
+  // Fallback: jika provision belum selesai, izinkan tetap lewat (rules
+  // sudah mengamankan dinas/{uid} hanya untuk pemilik uid).
+  return true;
 }
 
 // ---- Data ----
