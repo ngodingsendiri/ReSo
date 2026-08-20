@@ -51,7 +51,7 @@ service cloud.firestore {
       return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
     }
 
-    function optionalStringList(data, key, maxItems, maxItemLen) {
+    function optionalStringList(data, key, maxItems) {
       return !(key in data) || (
         data[key] is list &&
         data[key].size() <= maxItems
@@ -95,14 +95,14 @@ service cloud.firestore {
 
              optionalString(data, 'fbRawText', 50000) &&
              optionalString(data, 'tiktokRawText', 50000) &&
-             optionalStringList(data, 'igLinks', 100, 2000) &&
-             optionalStringList(data, 'fbLinks', 100, 2000) &&
-             optionalStringList(data, 'tiktokLinks', 100, 2000) &&
+             optionalStringList(data, 'igLinks', 100) &&
+             optionalStringList(data, 'fbLinks', 100) &&
+             optionalStringList(data, 'tiktokLinks', 100) &&
              optionalIdList(data, 'igEngagedEmployeeIds') &&
              optionalIdList(data, 'fbEngagedEmployeeIds') &&
              optionalIdList(data, 'tiktokEngagedEmployeeIds') &&
              // Waktu posting dari ReSoEx (L3) — daftar ISO lokal, max 100 per hari.
-             optionalStringList(data, 'postedAt', 100, 19) &&
+             optionalStringList(data, 'postedAt', 100) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
     
