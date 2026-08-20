@@ -5,7 +5,7 @@
   "description": "Ekstensi Chrome (Manifest V3) untuk mengekstrak nama komentator dari Facebook, TikTok & Instagram lalu menyalinnya ke Excel.",
   "type": "module",
   "scripts": {
-    "build": "rm -rf dist && mkdir dist && cp manifest.json background.js content-fb.js content-fb.css content-tiktok.js content-tiktok.css content-ig.js content-ig.css content-reso.js inject-fb.js inject-tiktok.js inject-ig.js popup.html popup.css popup.js shared.js shared-module.js logo.svg dist/ && cp -r icons dist/ && node scripts/stamp-version.mjs && echo Build OK: dist/",
+    "build": "rm -rf dist && mkdir dist && cp manifest.json background.js content-fb.js content-fb.css content-tiktok.js content-tiktok.css content-ig.js content-ig.css content-reso.js inject-fb.js inject-tiktok.js inject-ig.js popup.html popup.css popup.js options.html options.css options.js shared.js shared-module.js logo.svg dist/ && cp -r icons dist/ && node scripts/stamp-version.mjs && echo Build OK: dist/",
     "check": "node --check shared.js && node --check shared-module.js && node --check background.js && node --check popup.js && node --check content-fb.js && node --check content-tiktok.js && node --check content-ig.js && node --check content-reso.js && node --check inject-fb.js && node --check inject-tiktok.js && node --check inject-ig.js && node --check scripts/zip.mjs && node --check scripts/changelog-notes.mjs && node --check scripts/stamp-version.mjs && node --check scripts/check-manifest-schema.mjs && node scripts/check-yaml.mjs && node scripts/check-manifest-schema.mjs && echo Syntax OK",
     "zip": "npm run build && node scripts/zip.mjs",
     "test": "node --test"
