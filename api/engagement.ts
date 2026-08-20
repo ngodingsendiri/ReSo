@@ -137,6 +137,11 @@ async function fetchEmployees(idToken: string, fsBase: string): Promise<Matchabl
       headers: { Authorization: `Bearer ${idToken}` },
     });
     if (!r.ok) {
+      // 404 = database db-<uid> belum ada (provision belum selesai) → beri
+      // pesan jelas supaya extension me-retry lewat antrian, bukan error mentah.
+      if (r.status === 404 || r.status === 403) {
+        throw Object.assign(new Error('Database dinas belum siap. Coba lagi sebentar atau klik "Siapkan database" di Pengaturan ReSo.'), { status: 503 });
+      }
       throw Object.assign(new Error('Gagal membaca data pegawai dari Firestore.'), { status: 502 });
     }
     const data = (await r.json()) as { documents?: Array<{ name?: string; fields?: Record<string, unknown> }>; nextPageToken?: string };

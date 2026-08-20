@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Settings, RefreshCw, KeyRound, Download, ExternalLink } from 'lucide-react';
+import { Settings, RefreshCw, KeyRound, Download, ExternalLink, Database, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
+import { toast } from 'sonner';
+import { useAuth } from '../FirebaseProvider';
 
 interface SettingsTabProps {
   recalculateConfig: { mode: 'last_day' | 'last_week' };
@@ -33,6 +35,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   handleSaveMetaToken,
   isSavingToken,
 }) => {
+  const { provisionError, retryProvision } = useAuth();
+  const [provisioning, setProvisioning] = useState(false);
+
+  const handleRetryProvision = async () => {
+    setProvisioning(true);
+    try {
+      const msg = await retryProvision();
+      if (msg) toast.error(`Database belum siap: ${msg}`);
+      else toast.success('Database dinas siap digunakan.');
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
   const SettingRow = ({
     icon,
     iconClass,
@@ -83,6 +99,29 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
 
         <div className="flex flex-col gap-3">
+          {provisionError && (
+            <div className="p-4 bg-rose-50 rounded-xl border border-rose-200 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-10 h-10 shrink-0 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <Database size={18} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm text-slate-900">Database dinas belum siap</h3>
+                  <p className="text-xs text-slate-600 leading-snug break-words">{provisionError}</p>
+                </div>
+              </div>
+              <Button
+                onClick={handleRetryProvision}
+                disabled={provisioning}
+                size="sm"
+                className="shrink-0 font-bold h-10 rounded-xl bg-slate-900 text-white w-full sm:w-auto"
+              >
+                {provisioning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                <span className="ml-1.5">{provisioning ? 'Menyiapkan…' : 'Siapkan database'}</span>
+              </Button>
+            </div>
+          )}
+
           <SettingRow
             icon={<Download size={18} />}
             iconClass="bg-sky-50 text-sky-600 border-sky-100"

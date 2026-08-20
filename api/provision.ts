@@ -63,7 +63,8 @@ async function getAccessToken(sa: {
   const header = { alg: 'RS256', typ: 'JWT' };
   const claims = {
     iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase',
+    scope:
+      'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/firebase',
     aud: sa.token_uri,
     iat: now,
     exp: now + 3600,
@@ -92,7 +93,26 @@ async function dbExists(accessToken: string, dbId: string): Promise<boolean> {
   return r.ok;
 }
 
+async function getDefaultDbLocation(accessToken: string): Promise<string | undefined> {
+  try {
+    const r = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (r.ok) {
+      const d = (await r.json()) as { locationId?: string };
+      return d.locationId;
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
+
 async function createDb(accessToken: string, dbId: string): Promise<void> {
+  // Lokasi database baru HARUS cocok dengan lokasi project (db baru yang lokasinya
+  // beda dari default bisa ditolak). Ambil dari default database bila ada.
+  const locationId = (await getDefaultDbLocation(accessToken)) || 'us-central';
   const r = await fetch(
     `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases?databaseId=${encodeURIComponent(dbId)}`,
     {
@@ -104,13 +124,30 @@ async function createDb(accessToken: string, dbId: string): Promise<void> {
       body: JSON.stringify({
         name: `projects/${PROJECT}/databases/${dbId}`,
         type: 'FIRESTORE_NATIVE',
-        locationId: 'asia-southeast2',
+        locationId,
       }),
     },
   );
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw Object.assign(new Error(`Gagal membuat database: ${text.slice(0, 200)}`), { status: 502 });
+  }
+  // Pembuatan database async (long-running operation) — tunggu sampai selesai
+  // supaya writeAdmin/deployRules langsung bisa akses DB yang baru.
+  const op = (await r.json().catch(() => ({}))) as { name?: string };
+  if (op.name) {
+    for (let i = 0; i < 30; i++) {
+      const o = await fetch(
+        `https://firestore.googleapis.com/v1/${op.name}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const od = (await o.json().catch(() => ({}))) as { done?: boolean; error?: { message?: string } };
+      if (od.error?.message) {
+        throw Object.assign(new Error(`Gagal membuat database: ${od.error.message}`), { status: 502 });
+      }
+      if (od.done) return;
+      await new Promise((res) => setTimeout(res, 1000));
+    }
   }
 }
 
