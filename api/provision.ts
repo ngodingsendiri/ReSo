@@ -130,7 +130,7 @@ async function createDb(accessToken: string, dbId: string): Promise<void> {
   );
   if (!r.ok) {
     const text = await r.text().catch(() => '');
-    throw Object.assign(new Error(`Gagal membuat database: ${text.slice(0, 200)}`), { status: 502 });
+    throw Object.assign(new Error(`Gagal membuat database ${dbId} (${r.status}): ${text.slice(0, 400)}`), { status: 502 });
   }
   // Pembuatan database async (long-running operation) — tunggu sampai selesai
   // supaya writeAdmin/deployRules langsung bisa akses DB yang baru.
@@ -143,7 +143,7 @@ async function createDb(accessToken: string, dbId: string): Promise<void> {
       );
       const od = (await o.json().catch(() => ({}))) as { done?: boolean; error?: { message?: string } };
       if (od.error?.message) {
-        throw Object.assign(new Error(`Gagal membuat database: ${od.error.message}`), { status: 502 });
+        throw Object.assign(new Error(`Gagal membuat database ${dbId}: ${od.error.message}`), { status: 502 });
       }
       if (od.done) return;
       await new Promise((res) => setTimeout(res, 1000));
@@ -259,6 +259,9 @@ export default async function handler(req: unknown, res: unknown) {
     }
 
     const sa = JSON.parse(saRaw) as { client_email: string; private_key: string; token_uri: string };
+
+    // Diagnostic: pastikan service account yang dipakai = yang dapat role.
+    console.log(`[provision] dbId=${dbId} client_email=${sa.client_email}`);
 
     // Buat database bila belum ada + tulis admins/{uid}
     const accessToken = await getAccessToken(sa);
