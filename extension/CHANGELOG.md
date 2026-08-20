@@ -4,6 +4,10 @@ Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### FB: paksa mode "Semua Komentar" (bukan "Paling relevan")
+- **Kelemahan user dilaporkan**: di Facebook, default sortir komentar adalah "Paling relevan" yang hanya menampilkan SEBAGIAN komentar. Bila GraphQL capture gagal dan engine jatuh ke DOM fallback, hasil hanya komentar relevan — user harus manual membuka "Semua Komentar".
+- **Fix**: `setAllCommentsSort()` baru di `inject-fb.js` — di awal `runExtract`, engine mencari dropdown sortir komentar ("Paling relevan"/"Most relevant"/"Terbaru"/"Newest") dan mengklik opsi **"Semua Komentar"/"All comments"**. Best-effort & idempotent: bila sudah "Semua Komentar" atau menu tak ada, tidak mengubah apa-apa. Ini melengkapi `forceAllComments` (GraphQL `sortKey: RANKED_UNFILTERED`) agar DOM fallback & capture juga melihat SEMUA komentar tanpa user manual.
+
 ### Jembatan ReSo tangguh: antrian kiriman tertunda + status koneksi (P1)
 - **Koreksi fatal konteks handoff**: `handoffResoAuthFromTab` di-shared.js memanggil `chrome.tabs.query` — API yang TIDAK tersedia di content script. Panel "Rekap + Kirim" (content script) yang memicu handoff (token expired/missing + mint gagal) melempar `Cannot read properties of undefined (reading 'query')` → pesan mentah di panel. Sekarang handoff **didelegasikan ke background** (`RESO_HANDOFF_AUTH` di message router) saat `chrome.tabs` tidak tersedia; popup/background/options tetap pakai jalur langsung. `sendNamesToResoApi` juga di-hardening: error auth tak terduga → pesan `needsLogin` ramah, bukan TypeError mentah.
 - **Kiriman tidak pernah hilang — antrian `resoPending`**: `sendNamesToResoApi` memecah POST inti menjadi `postResoEngagement` (retry cepat 1× untuk blip jaringan / 5xx / 429 / **401**; error definitif 400/403/404 ditandai `retryable:false`). Gagal transien → payload disimpan ke `chrome.storage.local` (gabung nama untuk platform+date+postedAt sama) & pesan panel menyebut "masuk antrian ReSo". Definitive 4xx TIDAK di-antri.

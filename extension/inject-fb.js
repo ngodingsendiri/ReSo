@@ -1970,6 +1970,64 @@
     return false;
   }
 
+  /**
+   * Paksa dropdown sortir komentar ke "Semua Komentar" (kronologis, unfiltered).
+   *
+   * Facebook default menyortir "Paling relevan" — yang HANYA menampilkan
+   * sebagian komentar. Bila GraphQL capture gagal dan engine jatuh ke DOM
+   * fallback, hasilnya hanya komentar relevan. Klik menu sortir lalu pilih
+   * "Semua Komentar" supaya DOM fallback & capture melihat SEMUA komentar.
+   *
+   * Best-effort & idempotent: bila sudah "Semua Komentar" / menu tak ada,
+   * tidak melakukan apa-apa.
+   */
+  async function setAllCommentsSort(scope) {
+    const root = scope || postRoot || document;
+
+    // 1) Cari tombol sortir: label "Paling relevan" / "Most relevant" / "Relevan".
+    //    (Opsi aktif bisa juga "Terbaru"/"Newest" — tetap buka menunya supaya
+    //    bisa pindah ke "Semua Komentar".)
+    const SORT_LABEL = /paling relevan|most relevant|^relevan$|^recent$|^terbaru$|^newest$/i;
+    let sortButton = null;
+    qsa('[role="button"], div[role="combobox"], [aria-haspopup="menu"], [aria-label]', root)
+      .forEach((el) => {
+        if (sortButton || !isVisible(el)) return;
+        const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
+          .replace(/\s+/g, " ")
+          .trim();
+        if (t && t.length < 60 && SORT_LABEL.test(t)) sortButton = el;
+      });
+    if (!sortButton) return;
+
+    try {
+      sortButton.scrollIntoView({ block: "center" });
+      sortButton.click();
+      await sleepWhile(500);
+
+      // 2) Dari menu terbuka, pilih opsi "Semua Komentar" / "All comments".
+      const ALL_COMMENTS = /semua\s+komentar|all\s+comments/i;
+      let picked = false;
+      qsa('[role="menuitem"], [role="option"], [role="button"], [aria-label]', root)
+        .forEach((el) => {
+          if (picked || !isVisible(el)) return;
+          const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
+            .replace(/\s+/g, " ")
+            .trim();
+          if (t && t.length < 60 && ALL_COMMENTS.test(t)) {
+            el.click();
+            picked = true;
+          }
+        });
+      // Tutup menu bila opsi tak ditemukan (hindari menu terbuka mengganggu).
+      if (!picked) {
+        try { document.body.click(); } catch { /* ignore */ }
+      }
+      await sleepWhile(700);
+    } catch {
+      /* ignore */
+    }
+  }
+
   /** Scrollable comment container (so we scroll the list, not the whole page). */
   function findScrollContainer(root) {
     if (!root) return null;
@@ -2082,6 +2140,10 @@
     try {
       // 1) Ensure comments are loading so we capture GraphQL templates
       await tryOpenComments(postRoot);
+      // 1a) Paksa "Semua Komentar" (bukan "Paling relevan") supaya DOM fallback
+      //     & capture melihat SEMUA komentar — tanpa perlu user mengganti
+      //     dropdown sortir secara manual. Best-effort.
+      await setAllCommentsSort(postRoot);
       await sleepWhile(800);
       drainGqlBuffer();
       scrapeDomNames(postRoot);

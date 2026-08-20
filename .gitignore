@@ -17,5 +17,8 @@ coverage/
 extension/dist-crx/
 extension/package-lock.json
 
+# .crx publik diizinkan (extension terpaket — bukan rahasia, perlu ter-deploy)
+!public/reso-extension.crx
+
 # Firebase CLI local state
 .freebuff/

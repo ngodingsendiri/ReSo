@@ -33,17 +33,6 @@
       .logo img { width: 64px; height: 64px; border-radius: 16px; }
       h1 { font-size: 1.5rem; font-weight: 700; text-align: center; margin-bottom: .25rem; }
       .subtitle { text-align: center; color: #94a3b8; font-size: .875rem; margin-bottom: 2rem; }
-      .status {
-        text-align: center;
-        padding: .75rem 1rem;
-        border-radius: .5rem;
-        font-weight: 600;
-        font-size: .875rem;
-        margin-bottom: 1.5rem;
-        display: none;
-      }
-      .status.installed { background: #064e3b; color: #6ee7b7; display: block; }
-      .status.not-installed { background: #7c2d12; color: #fdba74; display: block; }
       .download-btn {
         display: block;
         width: 100%;
@@ -110,14 +99,12 @@
     </style>
   </head>
   <body>
-    <div class="card">
+      <div class="card">
       <div class="logo">
         <img src="/logo.svg" alt="ReSo" />
       </div>
       <h1>ReSo Ekstensi</h1>
       <p class="subtitle">Rekap Engagement Sosmed — Browser Extension</p>
-
-      <div id="status" class="status"></div>
 
       <a id="download" class="download-btn" href="/reso-extension.crx" download>
         Download Extension (.crx)
@@ -137,29 +124,5 @@
         Saat pertama kali login, Chrome akan meminta izin host — klik <strong>Allow</strong>.
       </div>
     </div>
-
-    <script>
-      (function() {
-        var status = document.getElementById('status');
-        var extId = 'lcapoohnahphkdanlipdlfdglhiieaaf';
-
-        if (extId && extId !== '') {
-          var img = new Image();
-          img.onload = function() {
-            status.textContent = 'Extension sudah terinstall.';
-            status.className = 'status installed';
-            document.getElementById('download').textContent = 'Update Extension (.crx)';
-          };
-          img.onerror = function() {
-            status.textContent = 'Extension belum terinstall — silakan download.';
-            status.className = 'status not-installed';
-          };
-          img.src = 'chrome-extension://' + extId + '/icon-192x192.png';
-        } else {
-          status.textContent = 'Extension belum terinstall — silakan download.';
-          status.className = 'status not-installed';
-        }
-      })();
-    </script>
   </body>
 </html>
