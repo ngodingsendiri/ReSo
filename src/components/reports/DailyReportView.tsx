@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ChevronLeft, ChevronRight, FileText, ImageIcon, Heart, X, ThumbsUp, Instagram, Facebook } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, FileSpreadsheet, ImageIcon, Heart, X, ThumbsUp, Instagram, Facebook } from 'lucide-react';
 import { TiktokIcon } from '../icons/TiktokIcon';
 import { cn, getBidangColor } from '@/lib/utils';
 import { getLocalISODate } from '../../lib/date';
@@ -17,6 +17,8 @@ interface DailyReportViewProps {
   setWeeklySortMode: (mode: 'bidang' | 'name') => void;
   handleExportPDF: (type: 'daily' | 'weekly' | 'monthly', filename: string) => void;
   handleExportImage: (type: 'daily' | 'weekly' | 'monthly', filename: string) => void;
+  handleExportExcel: (type: 'daily' | 'weekly' | 'monthly', filename: string) => void;
+  canExportImage: boolean;
   printDailyRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
   isExporting: boolean;
@@ -32,6 +34,8 @@ export function DailyReportView({
   setWeeklySortMode,
   handleExportPDF,
   handleExportImage,
+  handleExportExcel,
+  canExportImage,
   printDailyRef,
   isLoading,
   isExporting,
@@ -91,16 +95,25 @@ export function DailyReportView({
                 Nama
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
+            <div className="grid grid-cols-3 gap-2 w-full sm:w-auto">
               <Button onClick={() => handleExportPDF('daily', `recaplink-harian-${dateStr}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none">
                 <FileText size={14} />
                 PDF
               </Button>
-              <Button onClick={() => handleExportImage('daily', `recaplink-harian-${dateStr}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs">
+              <Button onClick={() => handleExportExcel('daily', `recaplink-harian-${dateStr}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs">
+                <FileSpreadsheet size={14} className="text-emerald-600" />
+                Excel
+              </Button>
+              <Button onClick={() => handleExportImage('daily', `recaplink-harian-${dateStr}`)} disabled={isLoading || !canExportImage} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs">
                 <ImageIcon size={14} />
                 Gambar
               </Button>
             </div>
+            {!canExportImage && (
+              <p className="w-full text-[9px] text-slate-400 font-medium text-center sm:text-left">
+                Export gambar dibatasi maks 60 pegawai — gunakan PDF/Excel.
+              </p>
+            )}
           </div>
         </div>
       </motion.div>

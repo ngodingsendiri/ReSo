@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ChevronLeft, ChevronRight, FileText, ImageIcon, Heart, X, ThumbsUp, Instagram, Facebook } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, FileSpreadsheet, ImageIcon, Heart, X, ThumbsUp, Instagram, Facebook } from 'lucide-react';
 import { TiktokIcon } from '../icons/TiktokIcon';
 import { cn, getBidangColor } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate } from '../../lib/date';
@@ -19,6 +19,8 @@ interface WeeklyReportViewProps {
   setWeeklySortMode: (mode: 'bidang' | 'name') => void;
   handleExportPDF: (type: 'weekly', filename: string) => void;
   handleExportImage: (type: 'daily' | 'weekly' | 'monthly', filename: string) => void;
+  handleExportExcel: (type: 'daily' | 'weekly' | 'monthly', filename: string) => void;
+  canExportImage: boolean;
   printRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
   isExporting: boolean;
@@ -27,7 +29,7 @@ interface WeeklyReportViewProps {
 }
 
 export function WeeklyReportView(props: WeeklyReportViewProps) {
-  const { weeklyReports, weeklyStats, weeklyDatesList, changeWeek, weeklySortMode, setWeeklySortMode, handleExportPDF, handleExportImage, printRef, isLoading, isExporting, sortedEmployees, dailyEngagementsMap } = props;
+  const { weeklyReports, weeklyStats, weeklyDatesList, changeWeek, weeklySortMode, setWeeklySortMode, handleExportPDF, handleExportImage, handleExportExcel, canExportImage, printRef, isLoading, isExporting, sortedEmployees, dailyEngagementsMap } = props;
   const wr = weeklyReports[0];
   return (
     <motion.div key="reports" variants={containerVariants} initial="hidden" animate="visible" exit="hidden" className="space-y-6 md:space-y-8">
@@ -49,10 +51,16 @@ export function WeeklyReportView(props: WeeklyReportViewProps) {
               <button onClick={() => setWeeklySortMode('bidang')} className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", weeklySortMode === 'bidang' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>Bidang</button>
               <button onClick={() => setWeeklySortMode('name')} className={cn("flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg transition-colors", weeklySortMode === 'name' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>Nama</button>
             </div>
-            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
+            <div className="grid grid-cols-3 gap-2 w-full sm:w-auto">
               <Button onClick={() => handleExportPDF('weekly', `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none"><FileText size={14} /> PDF</Button>
-              <Button onClick={() => handleExportImage('weekly', `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs"><ImageIcon size={14} /> Gambar</Button>
+              <Button onClick={() => handleExportExcel('weekly', `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs"><FileSpreadsheet size={14} className="text-emerald-600" /> Excel</Button>
+              <Button onClick={() => handleExportImage('weekly', `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading || !canExportImage} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs"><ImageIcon size={14} /> Gambar</Button>
             </div>
+            {!canExportImage && (
+              <p className="w-full text-[9px] text-slate-400 font-medium text-center sm:text-left">
+                Export gambar dibatasi maks 60 pegawai — gunakan PDF/Excel.
+              </p>
+            )}
           </div>
         </div>
       </motion.div>

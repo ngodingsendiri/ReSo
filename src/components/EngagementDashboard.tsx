@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -43,6 +44,9 @@ import { MonthlyReportView } from './reports/MonthlyReportView';
 
 const PLATFORM_LABEL: Record<UnmatchedName['platform'], string> = { ig: 'IG', fb: 'FB', tiktok: 'TikTok' };
 const EmployeeManager = React.lazy(() => import('./EmployeeManager'));
+
+// Batas pegawai untuk export gambar — satu lembar gambar, lebih dari ini wajib PDF/Excel.
+const IMAGE_EXPORT_LIMIT = 60;
 
 const containerVariants: import('motion/react').Variants = {
   hidden: { opacity: 0 },
@@ -90,8 +94,8 @@ export default function EngagementDashboard() {
   const [monthlySortMode, setMonthlySortMode] = useState<'rank' | 'bidang' | 'name'>('rank');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  // Layout cetak (selalu false — export kini via canvas, tidak perlu DOM cetak)
-  const [isExporting] = useState(false);
+  // Layout cetak — aktif saat export gambar (domToPng) supaya tabel penuh tampil.
+  const [isExporting, setIsExporting] = useState(false);
 
   const [recalculateConfig, setRecalculateConfig] = useState<{
     mode: 'last_day' | 'last_week';
@@ -603,7 +607,7 @@ export default function EngagementDashboard() {
 
     let totalActual = 0, totalPossible = 0;
     const daysPassed = dates.filter(d => d <= todayStr).length || 1;
-    const rows: { name: string; nip: string; bidang: string; ig: boolean; fb: boolean; tt: boolean }[] = [];
+    const rows: { _empId: string; name: string; nip: string; bidang: string; ig: boolean; fb: boolean; tt: boolean }[] = [];
     sortedEmployees.forEach(emp => {
       if (type === 'daily' && dates[0]) {
         const e = dailyEngagementsMap[dates[0]];
@@ -612,6 +616,7 @@ export default function EngagementDashboard() {
         }
         totalPossible += 3;
         rows.push({
+          _empId: emp.id,
           name: emp.name,
           nip: emp.nip || '-',
           bidang: emp.bidang || '—',
@@ -633,6 +638,7 @@ export default function EngagementDashboard() {
         totalActual += igC + fbC + ttC;
         totalPossible += daysPassed * 3;
         rows.push({
+          _empId: emp.id,
           name: emp.name,
           nip: emp.nip || '-',
           bidang: emp.bidang || '—',
@@ -732,141 +738,127 @@ export default function EngagementDashboard() {
   const handleExportImage = async (type: 'daily' | 'weekly' | 'monthly', filename: string) => {
     const report = buildReportData(type);
     if (!report) return;
-    if (report.rows.length > 70) {
-      toast.error("Data terlalu banyak untuk export gambar (maks 70 pegawai). Gunakan export PDF.");
+    if (report.rows.length > IMAGE_EXPORT_LIMIT) {
+      toast.error(`Data terlalu banyak untuk export gambar (maks ${IMAGE_EXPORT_LIMIT} pegawai). Gunakan export PDF atau Excel.`);
       return;
     }
+    const ref = { daily: printDailyRef, weekly: printRef, monthly: printMonthlyRef }[type];
+    const el = ref.current;
+    if (!el) return;
     setIsLoading(true);
+    // Simpan style asli untuk direstore di finally
+    const origOverflow = el.style.overflow;
+    const origMaxHeight = el.style.maxHeight;
+    const tableWrapper = el.querySelector('[class*="max-h-"]') as HTMLElement | null;
+    const origTblMaxH = tableWrapper?.style.maxHeight ?? null;
+    const origTblOverflow = tableWrapper?.style.overflow ?? null;
+
     try {
-      const logoDataUrl = await fetchLogoDataUrl();
-      const W = 794;
-      const padL = 14;
-      // Kolom: nama, nip, bidang, ig, fb, tt
-      const colW = [0, 110, 62, 52, 42, 42, 42];
-      colW[0] = W - padL * 2 - (colW[1] + colW[2] + colW[3] + colW[4] + colW[5] + colW[6]);
-      const rowH = 30;
-      const headerH = 112;
-      const footH = 34;
-      const totalH = headerH + 32 + report.rows.length * rowH + footH;
+      // ★ Render mode cetak SINKRON (tabel desktop penuh, tanpa max-h, card list
+      // mobile disembunyikan). Tanpa flushSync, setTimeout tidak deterministik
+      // dan domToPng bisa capture sebelum mode cetak ter-render.
+      flushSync(() => setIsExporting(true));
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-      const canvas = document.createElement('canvas');
-      canvas.width = W;
-      canvas.height = totalH;
-      const ctx = canvas.getContext('2d')!;
-
-      // Background
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, W, totalH);
-
-      // Logo
-      let logoImg: HTMLImageElement | null = null;
-      if (logoDataUrl) {
-        logoImg = new Image();
-        logoImg.src = logoDataUrl;
-        await new Promise(r => { logoImg!.onload = r; logoImg!.onerror = r; });
+      // Netralkan sementara pembatas tinggi/overflow agar seluruh baris terukur.
+      el.style.overflow = 'visible';
+      el.style.maxHeight = 'none';
+      if (tableWrapper) {
+        tableWrapper.style.maxHeight = 'none';
+        tableWrapper.style.overflow = 'visible';
       }
+      await new Promise(r => requestAnimationFrame(r));
 
-      // Header
-      let y = 24;
-      if (logoImg && logoImg.complete && logoImg.naturalWidth > 0) {
-        ctx.drawImage(logoImg, padL, y - 16, 24, 24);
-      }
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 20px system-ui';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(report.title, padL + (logoImg && logoImg.complete ? 32 : 0), y);
-      ctx.textAlign = 'right';
-      ctx.font = 'bold 17px system-ui';
-      ctx.fillStyle = '#059669';
-      ctx.fillText(`Rate: ${report.rate}%`, W - padL, y);
-      y += 24;
-      ctx.textAlign = 'left';
-      ctx.font = '12px system-ui';
-      ctx.fillStyle = '#64748b';
-      ctx.fillText(report.subtitle, padL + (logoImg && logoImg.complete ? 32 : 0), y);
-
-      // Tabel header
-      const heads = ['Nama Pegawai', 'NIP', 'Bidang', 'IG', 'FB', 'TT'];
-      const headColors = ['#0f172a', '#0f172a', '#0f172a', '#ec4899', '#3b82f6', '#0f172a'];
-      const tableTop = headerH;
-      const th = 30;
-      ctx.fillStyle = '#f1f5f9';
-      ctx.fillRect(padL, tableTop, W - padL * 2, th);
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.strokeRect(padL, tableTop, W - padL * 2, th);
-      let x = padL;
-      for (let i = 0; i < 6; i++) {
-        ctx.fillStyle = headColors[i];
-        ctx.font = 'bold 11px system-ui';
-        ctx.textAlign = i >= 3 ? 'center' : 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(heads[i], x + (i >= 3 ? colW[i + 1] / 2 : 4), tableTop + th / 2);
-        if (i > 0) {
-          ctx.strokeStyle = '#e2e8f0';
-          ctx.beginPath(); ctx.moveTo(x, tableTop); ctx.lineTo(x, tableTop + th); ctx.stroke();
-        }
-        x += colW[i + 1];
-      }
-
-      // Baris data
-      const rowBg = ['#ffffff', '#f8fafc'];
-      report.rows.forEach((r, i) => {
-        const top = tableTop + th + i * rowH;
-        ctx.fillStyle = rowBg[i % 2];
-        ctx.fillRect(padL, top, W - padL * 2, rowH);
-        ctx.strokeStyle = '#f1f5f9';
-        ctx.strokeRect(padL, top, W - padL * 2, rowH);
-        x = padL;
-        const vals = [r.name, r.nip, r.bidang];
-        for (let j = 0; j < 6; j++) {
-          if (j < 3) {
-            ctx.fillStyle = '#0f172a';
-            ctx.font = j === 0 ? 'bold 13px system-ui' : '12px system-ui';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(vals[j], x + 4, top + rowH / 2);
-          } else {
-            const engaged = j === 3 ? r.ig : j === 4 ? r.fb : r.tt;
-            if (engaged) {
-              ctx.fillStyle = '#10b981';
-              ctx.font = 'bold 16px system-ui';
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillText('✓', x + colW[j + 1] / 2, top + rowH / 2);
-            } else {
-              ctx.fillStyle = '#ef4444';
-              ctx.font = 'bold 16px system-ui';
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillText('✗', x + colW[j + 1] / 2, top + rowH / 2);
-            }
-          }
-          if (j > 0) {
-            ctx.strokeStyle = '#f1f5f9';
-            ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + rowH); ctx.stroke();
-          }
-          x += colW[j + 1];
-        }
+      // ★ Lebar/tinggi konten penuh — dioper EKSPLISIT ke domToPng supaya canvas
+      // selebar konten (bukan getBoundingClientRect yang terkunci max-h).
+      const w = el.scrollWidth;
+      const h = el.scrollHeight;
+      const { domToPng } = await import('modern-screenshot');
+      const imgData = await domToPng(el, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        width: w,
+        height: h,
+        style: { overflow: 'visible', maxHeight: 'none' },
       });
-
-      // Footer
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '11px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText('ReSo — Rekap Engagement Sosmed', W / 2, totalH - 14);
-
-      // Download
-      const blob = await new Promise<Blob>(r => canvas.toBlob(r!, 'image/png'));
       const link = document.createElement('a');
       link.download = `${filename}.png`;
-      link.href = URL.createObjectURL(blob);
+      link.href = imgData;
       link.click();
-      URL.revokeObjectURL(link.href);
       toast.success("Gambar berhasil disimpan");
     } catch (error) {
       console.error(error);
       toast.error("Gagal membuat gambar");
+    } finally {
+      el.style.overflow = origOverflow;
+      el.style.maxHeight = origMaxHeight;
+      if (tableWrapper) {
+        tableWrapper.style.maxHeight = origTblMaxH;
+        tableWrapper.style.overflow = origTblOverflow;
+      }
+      setIsExporting(false);
+      setIsLoading(false);
+    }
+  };
+
+  const handleExportExcel = async (type: 'daily' | 'weekly' | 'monthly', filename: string) => {
+    const report = buildReportData(type);
+    if (!report) return;
+    const { title, subtitle, rows, rate, dates, todayStr } = report;
+    setIsLoading(true);
+    try {
+      // Kolom per tanggal untuk mingguan/bulanan: nilai 0–3 (jumlah platform aktif).
+      const dateLabels = dates.map((d) =>
+        parseLocalISODate(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+      );
+      const daysPassed = dates.filter((d) => d <= todayStr).length || 1;
+
+      const header: string[] =
+        type === 'daily'
+          ? ['Nama Pegawai', 'NIP', 'Bidang', 'IG', 'FB', 'TT']
+          : ['Nama Pegawai', 'NIP', 'Bidang', ...dateLabels, 'Total', '% ENG'];
+
+      const body: (string | number)[][] = rows.map((r) => {
+        if (type === 'daily') {
+          return [r.name, r.nip, r.bidang, r.ig ? 'Eng' : '—', r.fb ? 'Eng' : '—', r.tt ? 'Eng' : '—'];
+        }
+        // Mingguan/bulanan: hitung per tanggal (0–3) dari dailyEngagementsMap.
+        let total = 0;
+        const perDay = dates.map((d) => {
+          const e = dailyEngagementsMap[d];
+          let count = 0;
+          if (d <= todayStr && e) {
+            if (e.igEngagedEmployeeIds?.includes(r._empId)) count++;
+            if (e.fbEngagedEmployeeIds?.includes(r._empId)) count++;
+            if (e.tiktokEngagedEmployeeIds?.includes(r._empId)) count++;
+          }
+          total += count;
+          return count;
+        });
+        return [r.name, r.nip, r.bidang, ...perDay, total, Math.round((total / (daysPassed * 3)) * 100)];
+      });
+
+      const aoa: (string | number)[][] = [
+        [title],
+        [subtitle],
+        ['Rate', `${rate}%`],
+        [],
+        header,
+        ...body,
+      ];
+
+      const XLSX = await import('xlsx');
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      worksheet['!cols'] = header.map((h, i) => ({
+        wch: h === 'Nama Pegawai' ? 32 : h === 'NIP' ? 20 : h === 'Bidang' ? 14 : h.includes('ENG') || h === 'Total' ? 8 : 7,
+      }));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, type === 'daily' ? 'Harian' : type === 'weekly' ? 'Mingguan' : 'Bulanan');
+      XLSX.writeFile(workbook, `${filename}.xlsx`);
+      toast.success("Excel berhasil diunduh");
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal membuat Excel");
     } finally {
       setIsLoading(false);
     }
@@ -1442,6 +1434,10 @@ export default function EngagementDashboard() {
     });
   }
   const dailyEngagementRate = dailyPossible > 0 ? Math.round((dailyActual / dailyPossible) * 100) : 0;
+
+  // Export gambar dibatasi satu lembar (maks IMAGE_EXPORT_LIMIT pegawai);
+  // lewat batas → tombol Gambar dinonaktifkan, fokus PDF/Excel.
+  const canExportImage = employees.length <= IMAGE_EXPORT_LIMIT;
 
   if (!db) return null;
 
@@ -2091,6 +2087,8 @@ export default function EngagementDashboard() {
                   setWeeklySortMode={setWeeklySortMode}
                   handleExportPDF={handleExportPDF}
                   handleExportImage={handleExportImage}
+                  handleExportExcel={handleExportExcel}
+                  canExportImage={canExportImage}
                   printDailyRef={printDailyRef}
                   isLoading={isLoading}
                   isExporting={isExporting}
@@ -2110,6 +2108,8 @@ export default function EngagementDashboard() {
                   setWeeklySortMode={setWeeklySortMode}
                   handleExportPDF={handleExportPDF}
                   handleExportImage={handleExportImage}
+                  handleExportExcel={handleExportExcel}
+                  canExportImage={canExportImage}
                   printRef={printRef}
                   isLoading={isLoading}
                   isExporting={isExporting}
@@ -2128,6 +2128,8 @@ export default function EngagementDashboard() {
                   setMonthlySortMode={setMonthlySortMode}
                   handleExportPDF={handleExportPDF}
                   handleExportImage={handleExportImage}
+                  handleExportExcel={handleExportExcel}
+                  canExportImage={canExportImage}
                   printMonthlyRef={printMonthlyRef}
                   isLoading={isLoading}
                   isExporting={isExporting}
