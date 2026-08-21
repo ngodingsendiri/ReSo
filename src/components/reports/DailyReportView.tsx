@@ -49,6 +49,13 @@ export function DailyReportView({
       exit="hidden"
       className="space-y-6 md:space-y-8"
     >
+      <motion.div variants={itemVariants} className="hidden lg:flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">Laporan Harian</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Rekapitulasi engagement per pegawai</p>
+        </div>
+      </motion.div>
+
       <motion.div variants={itemVariants} className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-5 rounded-xl border border-slate-200">
         <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4 w-full lg:w-auto lg:ml-auto">
           <div className="flex items-center gap-2 md:gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full xl:w-auto justify-between">
@@ -164,7 +171,25 @@ export function DailyReportView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedEmployees.map((emp) => {
+                {isLoading ? (
+                  Array.from({ length: 8 }).map((_, i) => (
+                    <TableRow key={i}>
+                      {Array.from({ length: 6 }).map((_, j) => (
+                        <TableCell key={j} className="border-b border-slate-50 px-2 py-2.5">
+                          <div className="h-3 rounded bg-slate-100 animate-pulse" style={{ width: j === 0 ? 120 : j === 1 ? 80 : j === 2 ? 60 : 24 }} />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : sortedEmployees.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-12 text-center">
+                      <p className="text-sm font-semibold text-slate-500">Belum ada data pegawai</p>
+                      <p className="text-[11px] text-slate-400 mt-1">Tambahkan pegawai di menu Data Pegawai</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                sortedEmployees.map((emp) => {
                   const engagement = dailyEngagementsMap[dateStr];
                   const hasIg = engagement?.igEngagedEmployeeIds?.includes(emp.id);
                   const hasFb = engagement?.fbEngagedEmployeeIds?.includes(emp.id);
@@ -210,7 +235,8 @@ export function DailyReportView({
                       </TableCell>
                     </TableRow>
                   );
-                })}
+                })
+                )}
               </TableBody>
             </Table>
           </div>
