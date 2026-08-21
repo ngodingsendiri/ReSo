@@ -695,19 +695,19 @@ export default function EngagementDashboard() {
           r.name,
           r.nip,
           r.bidang,
-          r.ig ? '✓' : '✗',
-          r.fb ? '✓' : '✗',
-          r.tt ? '✓' : '✗',
+          r.ig ? 'V' : 'X',
+          r.fb ? 'V' : 'X',
+          r.tt ? 'V' : 'X',
         ]),
         styles: { fontSize: 6, cellPadding: 1.5 },
         headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7 },
         columnStyles: {
-          0: { cellWidth: 60 },
-          1: { cellWidth: 30 },
-          2: { cellWidth: 20 },
-          3: { cellWidth: 12, halign: 'center' },
-          4: { cellWidth: 12, halign: 'center' },
-          5: { cellWidth: 12, halign: 'center' },
+          0: { cellWidth: 58 },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 18 },
+          3: { cellWidth: 14, halign: 'center' },
+          4: { cellWidth: 14, halign: 'center' },
+          5: { cellWidth: 14, halign: 'center' },
         },
         margin: { left: margin, right: margin, top: HEADER_H, bottom: 12 },
         pageBreak: 'auto',
@@ -745,6 +745,9 @@ export default function EngagementDashboard() {
     const tableWrapper = el.querySelector('[class*="max-h-"]') as HTMLElement | null;
     const origTblMaxH = tableWrapper?.style.maxHeight ?? null;
     const origTblOverflow = tableWrapper?.style.overflow ?? null;
+    // Wrapper min-w-max di dalam tabel (bikin tabel lebih lebar dari 794px)
+    const minWMax = el.querySelector('[class*="min-w-max"]') as HTMLElement | null;
+    const origMinWMax = minWMax?.style.minWidth ?? null;
 
     try {
       el.style.overflow = 'visible';
@@ -756,6 +759,8 @@ export default function EngagementDashboard() {
         tableWrapper.style.maxHeight = 'none';
         tableWrapper.style.overflow = 'visible';
       }
+      // Paksa tabel selebar 794px (hapus min-w-max yang bikin kepotong)
+      if (minWMax) minWMax.style.minWidth = '794px';
 
       // Tunggu style teraplikasi (tidak perlu setIsExporting — style langsung)
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -785,6 +790,7 @@ export default function EngagementDashboard() {
         tableWrapper.style.maxHeight = origTblMaxH;
         tableWrapper.style.overflow = origTblOverflow;
       }
+      if (minWMax && origMinWMax !== null) minWMax.style.minWidth = origMinWMax;
       setIsLoading(false);
     }
   };
