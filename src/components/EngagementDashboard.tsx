@@ -1477,7 +1477,7 @@ export default function EngagementDashboard() {
                   initial="hidden"
                   animate="visible"
                   exit="hidden"
-                  className="space-y-6 md:space-y-8"
+                  className="space-y-4 md:space-y-5"
                 >
                   <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 md:px-6 rounded-xl border border-slate-200">
                     <div className="w-full md:w-auto">
@@ -1507,8 +1507,8 @@ export default function EngagementDashboard() {
                     </div>
                   </motion.div>
 
-                  <motion.div variants={itemVariants} className="bg-white rounded-xl p-4 sm:p-6 md:p-10 border border-slate-200">
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-4 md:mb-6">
+                  <motion.div variants={itemVariants} className="bg-white rounded-xl p-4 sm:p-5 md:p-6 border border-slate-200">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-3 md:mb-4">
                       <div>
                         {unverifiedAutoFilledDates.length > 0 && (
                           <Button
@@ -1547,16 +1547,16 @@ export default function EngagementDashboard() {
                       </div>
                     </div>
 
-                    <div className="overflow-auto max-h-[60vh] md:max-h-[500px] pb-4">
-                      <div className="min-w-[280px] sm:min-w-[500px]">
-                        <div className="grid grid-cols-7 gap-1 sm:gap-2 md:gap-3">
+                    <div className="overflow-y-auto">
+                      <div className="min-w-[280px] sm:min-w-[400px] h-[calc(100dvh-17rem)] md:h-[calc(100dvh-15rem)] lg:h-[calc(100dvh-14rem)] min-h-[340px]">
+                        <div className="grid grid-cols-7 grid-rows-[repeat(6,minmax(0,1fr))] gap-1 sm:gap-1.5 h-full">
                           {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(day => (
-                            <div key={day} className="text-center py-1 md:py-2 text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            <div key={day} className="text-center py-1 md:py-1.5 text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                               {day}
                             </div>
                           ))}
                           {calendarDays.map((day, idx) => (
-                            <div key={idx} className="aspect-square">
+                            <div key={idx} className="h-full min-h-0">
                               {day.day ? (
                                 <button
                                   onClick={() => {
@@ -1573,7 +1573,7 @@ export default function EngagementDashboard() {
                                     "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
                                   )}
                                 >
-                                  <span className="text-sm sm:text-base font-bold">{day.day}</span>
+                                  <span className="text-sm sm:text-base font-bold leading-none">{day.day}</span>
                                   {day.isToday && !day.isFilled && (
                                     <span className="text-[8px] font-bold text-emerald-600 leading-none">Hari ini</span>
                                   )}
