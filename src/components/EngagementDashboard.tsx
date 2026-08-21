@@ -730,16 +730,39 @@ export default function EngagementDashboard() {
       toast.error("Data terlalu banyak untuk export gambar (maks 70 pegawai). Gunakan export PDF.");
       return;
     }
-    if (!ref.current) return;
+    const el = ref.current;
+    if (!el) return;
     setIsLoading(true);
-    setIsExporting(true);
-    // Wait for state to apply and DOM to update
-    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Simpan style asli & set style temporer untuk export penuh (tanpa crop / scrollbar)
+    const origOverflow = el.style.overflow;
+    const origWidth = el.style.width;
+    const origMaxW = el.style.maxWidth;
+    // Cari ancestor scroll & nonaktifkan overflow-x-hidden
+    const scrollAncestor = el.closest('.overflow-y-auto') as HTMLElement | null;
+    const origAncOverflow = scrollAncestor?.style.overflowX ?? null;
+    // Container tabel di dalam print (max-h-[60vh] / md:max-h-[600px])
+    const tableWrapper = el.querySelector('[class*="max-h-"]') as HTMLElement | null;
+    const origTblMaxH = tableWrapper?.style.maxHeight ?? null;
+    const origTblOverflow = tableWrapper?.style.overflow ?? null;
+
     try {
+      el.style.overflow = 'visible';
+      el.style.width = '794px';
+      el.style.maxWidth = 'none';
+      if (scrollAncestor) scrollAncestor.style.overflowX = 'visible';
+      // Buka batas tinggi tabel (biarkan seluruh baris terekam)
+      if (tableWrapper) {
+        tableWrapper.style.maxHeight = 'none';
+        tableWrapper.style.overflow = 'visible';
+      }
+
+      // Tunggu style teraplikasi (tidak perlu setIsExporting — style langsung)
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       const { domToPng } = await import('modern-screenshot');
 
-      // Fixed width A4 (794px @96dpi), tinggi mengikuti konten — teks tidak mengecil
-      const imgData = await domToPng(ref.current, {
+      const imgData = await domToPng(el, {
         scale: 2,
         backgroundColor: '#ffffff',
         width: 794,
@@ -753,7 +776,15 @@ export default function EngagementDashboard() {
       console.error(error);
       toast.error("Gagal menyimpan gambar");
     } finally {
-      setIsExporting(false);
+      // Restore style
+      el.style.overflow = origOverflow;
+      el.style.width = origWidth;
+      el.style.maxWidth = origMaxW;
+      if (scrollAncestor && origAncOverflow !== null) scrollAncestor.style.overflowX = origAncOverflow;
+      if (tableWrapper) {
+        tableWrapper.style.maxHeight = origTblMaxH;
+        tableWrapper.style.overflow = origTblOverflow;
+      }
       setIsLoading(false);
     }
   };
