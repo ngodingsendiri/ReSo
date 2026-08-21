@@ -18,7 +18,7 @@ interface WeeklyReportViewProps {
   weeklySortMode: string;
   setWeeklySortMode: (mode: 'bidang' | 'name') => void;
   handleExportPDF: (type: 'weekly', filename: string) => void;
-  handleExportImage: (ref: React.RefObject<HTMLDivElement | null>, filename: string) => void;
+  handleExportImage: (type: 'daily' | 'weekly' | 'monthly', filename: string) => void;
   printRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
   isExporting: boolean;
@@ -51,7 +51,7 @@ export function WeeklyReportView(props: WeeklyReportViewProps) {
             </div>
             <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
               <Button onClick={() => handleExportPDF('weekly', `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl h-10 font-bold text-xs border-none"><FileText size={14} /> PDF</Button>
-              <Button onClick={() => handleExportImage(printRef, `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs"><ImageIcon size={14} /> Gambar</Button>
+              <Button onClick={() => handleExportImage('weekly', `recaplink-mingguan-${getLocalISODate()}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs"><ImageIcon size={14} /> Gambar</Button>
             </div>
           </div>
         </div>

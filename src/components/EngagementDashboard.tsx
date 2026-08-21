@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { flushSync } from 'react-dom';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -91,7 +90,8 @@ export default function EngagementDashboard() {
   const [monthlySortMode, setMonthlySortMode] = useState<'rank' | 'bidang' | 'name'>('rank');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  // Layout cetak (selalu false — export kini via canvas, tidak perlu DOM cetak)
+  const [isExporting] = useState(false);
 
   const [recalculateConfig, setRecalculateConfig] = useState<{
     mode: 'last_day' | 'last_week';
@@ -578,6 +578,74 @@ export default function EngagementDashboard() {
     }
   };
 
+  // ---- Bangun data laporan (title, subtitle, rows, rate) — dipakai PDF & Gambar ----
+  const buildReportData = (type: 'daily' | 'weekly' | 'monthly') => {
+    const todayStr = getLocalISODate(new Date());
+    let title = '';
+    let subtitle = '';
+    let dates: string[] = [];
+    if (type === 'daily') {
+      dates = [getLocalISODate(currentDailyDate)];
+      title = 'LAPORAN HARIAN';
+      const d = parseLocalISODate(dates[0]);
+      subtitle = `Rekapitulasi Engagement • ${d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
+    } else if (type === 'weekly') {
+      if (!weeklyReports[0]) return null;
+      dates = weeklyReports[0].dates;
+      title = 'LAPORAN MINGGUAN';
+      subtitle = `Rekapitulasi Engagement • Minggu ke-${weeklyReports[0].weekNumber} • ${weeklyReports[0].year}`;
+    } else {
+      if (!monthlyReports[0]) return null;
+      dates = monthlyReports[0].dates;
+      title = 'LAPORAN BULANAN';
+      subtitle = `Rekapitulasi Engagement • ${monthlyReports[0].monthName} ${monthlyReports[0].year}`;
+    }
+
+    let totalActual = 0, totalPossible = 0;
+    const daysPassed = dates.filter(d => d <= todayStr).length || 1;
+    const rows: { name: string; nip: string; bidang: string; ig: boolean; fb: boolean; tt: boolean }[] = [];
+    sortedEmployees.forEach(emp => {
+      if (type === 'daily' && dates[0]) {
+        const e = dailyEngagementsMap[dates[0]];
+        if (e) {
+          totalActual += (e.igEngagedEmployeeIds?.includes(emp.id) ? 1 : 0) + (e.fbEngagedEmployeeIds?.includes(emp.id) ? 1 : 0) + (e.tiktokEngagedEmployeeIds?.includes(emp.id) ? 1 : 0);
+        }
+        totalPossible += 3;
+        rows.push({
+          name: emp.name,
+          nip: emp.nip || '-',
+          bidang: emp.bidang || '—',
+          ig: e?.igEngagedEmployeeIds?.includes(emp.id) ?? false,
+          fb: e?.fbEngagedEmployeeIds?.includes(emp.id) ?? false,
+          tt: e?.tiktokEngagedEmployeeIds?.includes(emp.id) ?? false,
+        });
+      } else {
+        let igC = 0, fbC = 0, ttC = 0;
+        dates.forEach(d => {
+          if (d > todayStr) return;
+          const e = dailyEngagementsMap[d];
+          if (e) {
+            if (e.igEngagedEmployeeIds?.includes(emp.id)) igC++;
+            if (e.fbEngagedEmployeeIds?.includes(emp.id)) fbC++;
+            if (e.tiktokEngagedEmployeeIds?.includes(emp.id)) ttC++;
+          }
+        });
+        totalActual += igC + fbC + ttC;
+        totalPossible += daysPassed * 3;
+        rows.push({
+          name: emp.name,
+          nip: emp.nip || '-',
+          bidang: emp.bidang || '—',
+          ig: igC > 0,
+          fb: fbC > 0,
+          tt: ttC > 0,
+        });
+      }
+    });
+    const rate = totalPossible > 0 ? Math.round((totalActual / totalPossible) * 100) : 0;
+    return { title, subtitle, dates, rows, rate, todayStr };
+  };
+
   const handleExportPDF = async (type: 'daily' | 'weekly' | 'monthly', filename: string) => {
     setIsLoading(true);
     try {
@@ -591,74 +659,10 @@ export default function EngagementDashboard() {
       // ---- Logo (fetch SVG → canvas → PNG) ----
       const logoDataUrl = await fetchLogoDataUrl();
 
-      // ---- Tentukan rentang tanggal & judul ----
-      let title = '';
-      let subtitle = '';
-      const todayStr = getLocalISODate(new Date());
-      let dates: string[] = [];
-      if (type === 'daily') {
-        dates = [getLocalISODate(currentDailyDate)];
-        title = 'LAPORAN HARIAN';
-        const d = parseLocalISODate(dates[0]);
-        subtitle = `Rekapitulasi Engagement • ${d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
-      } else if (type === 'weekly') {
-        if (!weeklyReports[0]) return;
-        dates = weeklyReports[0].dates;
-        title = 'LAPORAN MINGGUAN';
-        subtitle = `Rekapitulasi Engagement • Minggu ke-${weeklyReports[0].weekNumber} • ${weeklyReports[0].year}`;
-      } else {
-        if (!monthlyReports[0]) return;
-        dates = monthlyReports[0].dates;
-        title = 'LAPORAN BULANAN';
-        subtitle = `Rekapitulasi Engagement • ${monthlyReports[0].monthName} ${monthlyReports[0].year}`;
-      }
-
-      // ---- Hitung total rate ----
-      let totalActual = 0, totalPossible = 0;
-      const daysPassed = dates.filter(d => d <= todayStr).length || 1;
-
-      // ---- Bangun baris tabel ----
-      const rows: { name: string; nip: string; bidang: string; ig: boolean; fb: boolean; tt: boolean }[] = [];
-      sortedEmployees.forEach(emp => {
-        if (type === 'daily' && dates[0]) {
-          const e = dailyEngagementsMap[dates[0]];
-          if (e) {
-            totalActual += (e.igEngagedEmployeeIds?.includes(emp.id) ? 1 : 0) + (e.fbEngagedEmployeeIds?.includes(emp.id) ? 1 : 0) + (e.tiktokEngagedEmployeeIds?.includes(emp.id) ? 1 : 0);
-          }
-          totalPossible += 3;
-          rows.push({
-            name: emp.name,
-            nip: emp.nip || '-',
-            bidang: emp.bidang || '—',
-            ig: e?.igEngagedEmployeeIds?.includes(emp.id) ?? false,
-            fb: e?.fbEngagedEmployeeIds?.includes(emp.id) ?? false,
-            tt: e?.tiktokEngagedEmployeeIds?.includes(emp.id) ?? false,
-          });
-        } else {
-          let igC = 0, fbC = 0, ttC = 0;
-          dates.forEach(d => {
-            if (d > todayStr) return;
-            const e = dailyEngagementsMap[d];
-            if (e) {
-              if (e.igEngagedEmployeeIds?.includes(emp.id)) igC++;
-              if (e.fbEngagedEmployeeIds?.includes(emp.id)) fbC++;
-              if (e.tiktokEngagedEmployeeIds?.includes(emp.id)) ttC++;
-            }
-          });
-          totalActual += igC + fbC + ttC;
-          totalPossible += daysPassed * 3;
-          rows.push({
-            name: emp.name,
-            nip: emp.nip || '-',
-            bidang: emp.bidang || '—',
-            ig: igC > 0,
-            fb: fbC > 0,
-            tt: ttC > 0,
-          });
-        }
-      });
-
-      const rate = totalPossible > 0 ? Math.round((totalActual / totalPossible) * 100) : 0;
+      // ---- Tentukan rentang tanggal & judul + rows + rate (dari helper) ----
+      const report = buildReportData(type);
+      if (!report) return;
+      const { title, subtitle, rows, rate } = report;
 
       // ---- Header & footer digambar di SEMUA halaman (didDrawPage) ----
       const HEADER_H = 32;
@@ -725,82 +729,145 @@ export default function EngagementDashboard() {
     }
   };
 
-  const handleExportImage = async (ref: React.RefObject<HTMLDivElement | null>, filename: string) => {
-    // Batas data gambar: > 70 pegawai gambar terlalu tinggi → wajib PDF
-    if (sortedEmployees.length > 70) {
+  const handleExportImage = async (type: 'daily' | 'weekly' | 'monthly', filename: string) => {
+    const report = buildReportData(type);
+    if (!report) return;
+    if (report.rows.length > 70) {
       toast.error("Data terlalu banyak untuk export gambar (maks 70 pegawai). Gunakan export PDF.");
       return;
     }
-    const el = ref.current;
-    if (!el) return;
     setIsLoading(true);
-
-    // ★ Paksa render mode cetak SINKRON (tabel desktop penuh tampil, bukan card list)
-    // Tanpa flushSync, setTimeout tidak deterministik dan tabel bisa belum tampil saat capture.
-    flushSync(() => setIsExporting(true));
-    // Tunggu 2 frame agar layout benar-benar ter-render (w-max, tanpa max-h, card list hidden)
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-    // Simpan style asli & set style temporer untuk export penuh (tanpa crop / scrollbar)
-    const origOverflow = el.style.overflow;
-    const origWidth = el.style.width;
-    const origHeight = el.style.height;
-    const origMaxW = el.style.maxWidth;
-    const origMaxH = el.style.maxHeight;
-    // Container tabel di dalam print (max-h-[60vh] / md:max-h-[600px])
-    const tableWrapper = el.querySelector('[class*="max-h-"]') as HTMLElement | null;
-    const origTblMaxH = tableWrapper?.style.maxHeight ?? null;
-    const origTblOverflow = tableWrapper?.style.overflow ?? null;
-    // Wrapper min-w-max di dalam tabel (bikin tabel lebih lebar dari viewport)
-    const minWMax = el.querySelector('[class*="min-w-max"]') as HTMLElement | null;
-    const origMinWMax = minWMax?.style.minWidth ?? null;
-
     try {
-      // ★ Ukur dimensi penuh SETELAH mode cetak diterapkan (flushSync + 2 rAF)
-      const w = el.scrollWidth;
-      const h = el.scrollHeight;
-      el.style.overflow = 'visible';
-      el.style.width = w + 'px';
-      el.style.height = h + 'px';
-      el.style.maxWidth = 'none';
-      el.style.maxHeight = 'none';
-      // Buka batas tinggi tabel (biarkan seluruh baris terekam)
-      if (tableWrapper) {
-        tableWrapper.style.maxHeight = 'none';
-        tableWrapper.style.overflow = 'visible';
+      const logoDataUrl = await fetchLogoDataUrl();
+      const W = 794;
+      const padL = 14;
+      // Kolom: nama, nip, bidang, ig, fb, tt
+      const colW = [0, 110, 62, 52, 42, 42, 42];
+      colW[0] = W - padL * 2 - (colW[1] + colW[2] + colW[3] + colW[4] + colW[5] + colW[6]);
+      const rowH = 30;
+      const headerH = 112;
+      const footH = 34;
+      const totalH = headerH + 32 + report.rows.length * rowH + footH;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = totalH;
+      const ctx = canvas.getContext('2d')!;
+
+      // Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, totalH);
+
+      // Logo
+      let logoImg: HTMLImageElement | null = null;
+      if (logoDataUrl) {
+        logoImg = new Image();
+        logoImg.src = logoDataUrl;
+        await new Promise(r => { logoImg!.onload = r; logoImg!.onerror = r; });
       }
-      // Paksa tabel selebar konten
-      if (minWMax) minWMax.style.minWidth = w + 'px';
 
-      await new Promise(r => requestAnimationFrame(r));
+      // Header
+      let y = 24;
+      if (logoImg && logoImg.complete && logoImg.naturalWidth > 0) {
+        ctx.drawImage(logoImg, padL, y - 16, 24, 24);
+      }
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 20px system-ui';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(report.title, padL + (logoImg && logoImg.complete ? 32 : 0), y);
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 17px system-ui';
+      ctx.fillStyle = '#059669';
+      ctx.fillText(`Rate: ${report.rate}%`, W - padL, y);
+      y += 24;
+      ctx.textAlign = 'left';
+      ctx.font = '12px system-ui';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(report.subtitle, padL + (logoImg && logoImg.complete ? 32 : 0), y);
 
-      const { domToPng } = await import('modern-screenshot');
+      // Tabel header
+      const heads = ['Nama Pegawai', 'NIP', 'Bidang', 'IG', 'FB', 'TT'];
+      const headColors = ['#0f172a', '#0f172a', '#0f172a', '#ec4899', '#3b82f6', '#0f172a'];
+      const tableTop = headerH;
+      const th = 30;
+      ctx.fillStyle = '#f1f5f9';
+      ctx.fillRect(padL, tableTop, W - padL * 2, th);
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.strokeRect(padL, tableTop, W - padL * 2, th);
+      let x = padL;
+      for (let i = 0; i < 6; i++) {
+        ctx.fillStyle = headColors[i];
+        ctx.font = 'bold 11px system-ui';
+        ctx.textAlign = i >= 3 ? 'center' : 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(heads[i], x + (i >= 3 ? colW[i + 1] / 2 : 4), tableTop + th / 2);
+        if (i > 0) {
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.beginPath(); ctx.moveTo(x, tableTop); ctx.lineTo(x, tableTop + th); ctx.stroke();
+        }
+        x += colW[i + 1];
+      }
 
-      const imgData = await domToPng(el, {
-        scale: 2,
-        backgroundColor: '#ffffff',
+      // Baris data
+      const rowBg = ['#ffffff', '#f8fafc'];
+      report.rows.forEach((r, i) => {
+        const top = tableTop + th + i * rowH;
+        ctx.fillStyle = rowBg[i % 2];
+        ctx.fillRect(padL, top, W - padL * 2, rowH);
+        ctx.strokeStyle = '#f1f5f9';
+        ctx.strokeRect(padL, top, W - padL * 2, rowH);
+        x = padL;
+        const vals = [r.name, r.nip, r.bidang];
+        for (let j = 0; j < 6; j++) {
+          if (j < 3) {
+            ctx.fillStyle = '#0f172a';
+            ctx.font = j === 0 ? 'bold 13px system-ui' : '12px system-ui';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(vals[j], x + 4, top + rowH / 2);
+          } else {
+            const engaged = j === 3 ? r.ig : j === 4 ? r.fb : r.tt;
+            if (engaged) {
+              ctx.fillStyle = '#10b981';
+              ctx.font = 'bold 16px system-ui';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText('✓', x + colW[j + 1] / 2, top + rowH / 2);
+            } else {
+              ctx.fillStyle = '#ef4444';
+              ctx.font = 'bold 16px system-ui';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText('✗', x + colW[j + 1] / 2, top + rowH / 2);
+            }
+          }
+          if (j > 0) {
+            ctx.strokeStyle = '#f1f5f9';
+            ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + rowH); ctx.stroke();
+          }
+          x += colW[j + 1];
+        }
       });
+
+      // Footer
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('ReSo — Rekap Engagement Sosmed', W / 2, totalH - 14);
+
+      // Download
+      const blob = await new Promise<Blob>(r => canvas.toBlob(r!, 'image/png'));
       const link = document.createElement('a');
       link.download = `${filename}.png`;
-      link.href = imgData;
+      link.href = URL.createObjectURL(blob);
       link.click();
+      URL.revokeObjectURL(link.href);
       toast.success("Gambar berhasil disimpan");
     } catch (error) {
       console.error(error);
-      toast.error("Gagal menyimpan gambar");
+      toast.error("Gagal membuat gambar");
     } finally {
-      // Restore style
-      el.style.overflow = origOverflow;
-      el.style.width = origWidth;
-      el.style.height = origHeight;
-      el.style.maxWidth = origMaxW;
-      el.style.maxHeight = origMaxH;
-      if (tableWrapper) {
-        tableWrapper.style.maxHeight = origTblMaxH;
-        tableWrapper.style.overflow = origTblOverflow;
-      }
-      if (minWMax && origMinWMax !== null) minWMax.style.minWidth = origMinWMax;
-      setIsExporting(false);
       setIsLoading(false);
     }
   };

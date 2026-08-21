@@ -16,7 +16,7 @@ interface DailyReportViewProps {
   weeklySortMode: string;
   setWeeklySortMode: (mode: 'bidang' | 'name') => void;
   handleExportPDF: (type: 'daily' | 'weekly' | 'monthly', filename: string) => void;
-  handleExportImage: (ref: React.RefObject<HTMLDivElement | null>, filename: string) => void;
+  handleExportImage: (type: 'daily' | 'weekly' | 'monthly', filename: string) => void;
   printDailyRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
   isExporting: boolean;
@@ -96,7 +96,7 @@ export function DailyReportView({
                 <FileText size={14} />
                 PDF
               </Button>
-              <Button onClick={() => handleExportImage(printDailyRef, `recaplink-harian-${dateStr}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs">
+              <Button onClick={() => handleExportImage('daily', `recaplink-harian-${dateStr}`)} disabled={isLoading} variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl h-10 font-bold text-xs">
                 <ImageIcon size={14} />
                 Gambar
               </Button>
