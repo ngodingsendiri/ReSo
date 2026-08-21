@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -733,17 +734,19 @@ export default function EngagementDashboard() {
     const el = ref.current;
     if (!el) return;
     setIsLoading(true);
-    setIsExporting(true); // render mode cetak: tabel desktop penuh tampil (bukan card list)
-    // Tunggu re-render isExporting (tabel jadi w-max, tanpa max-h, mobile card list disembunyikan)
-    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // ★ Paksa render mode cetak SINKRON (tabel desktop penuh tampil, bukan card list)
+    // Tanpa flushSync, setTimeout tidak deterministik dan tabel bisa belum tampil saat capture.
+    flushSync(() => setIsExporting(true));
+    // Tunggu 2 frame agar layout benar-benar ter-render (w-max, tanpa max-h, card list hidden)
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     // Simpan style asli & set style temporer untuk export penuh (tanpa crop / scrollbar)
     const origOverflow = el.style.overflow;
     const origWidth = el.style.width;
+    const origHeight = el.style.height;
     const origMaxW = el.style.maxWidth;
-    // Cari ancestor scroll & nonaktifkan overflow-x-hidden
-    const scrollAncestor = el.closest('.overflow-y-auto') as HTMLElement | null;
-    const origAncOverflow = scrollAncestor?.style.overflowX ?? null;
+    const origMaxH = el.style.maxHeight;
     // Container tabel di dalam print (max-h-[60vh] / md:max-h-[600px])
     const tableWrapper = el.querySelector('[class*="max-h-"]') as HTMLElement | null;
     const origTblMaxH = tableWrapper?.style.maxHeight ?? null;
@@ -753,21 +756,23 @@ export default function EngagementDashboard() {
     const origMinWMax = minWMax?.style.minWidth ?? null;
 
     try {
-      // Lebar natural konten (tabel) — maksimalkan tanpa crop / tanpa sisa
-      const naturalW = Math.max(el.scrollWidth, 794);
+      // ★ Ukur dimensi penuh SETELAH mode cetak diterapkan (flushSync + 2 rAF)
+      const w = el.scrollWidth;
+      const h = el.scrollHeight;
       el.style.overflow = 'visible';
-      el.style.width = naturalW + 'px';
+      el.style.width = w + 'px';
+      el.style.height = h + 'px';
       el.style.maxWidth = 'none';
-      if (scrollAncestor) scrollAncestor.style.overflowX = 'visible';
+      el.style.maxHeight = 'none';
       // Buka batas tinggi tabel (biarkan seluruh baris terekam)
       if (tableWrapper) {
         tableWrapper.style.maxHeight = 'none';
         tableWrapper.style.overflow = 'visible';
       }
-      // Paksa tabel selebar konten (hapus min-w-max yang bikin kepotong)
-      if (minWMax) minWMax.style.minWidth = naturalW + 'px';
+      // Paksa tabel selebar konten
+      if (minWMax) minWMax.style.minWidth = w + 'px';
 
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(r => requestAnimationFrame(r));
 
       const { domToPng } = await import('modern-screenshot');
 
@@ -787,8 +792,9 @@ export default function EngagementDashboard() {
       // Restore style
       el.style.overflow = origOverflow;
       el.style.width = origWidth;
+      el.style.height = origHeight;
       el.style.maxWidth = origMaxW;
-      if (scrollAncestor && origAncOverflow !== null) scrollAncestor.style.overflowX = origAncOverflow;
+      el.style.maxHeight = origMaxH;
       if (tableWrapper) {
         tableWrapper.style.maxHeight = origTblMaxH;
         tableWrapper.style.overflow = origTblOverflow;
