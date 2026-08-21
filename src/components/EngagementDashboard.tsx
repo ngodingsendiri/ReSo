@@ -1479,53 +1479,24 @@ export default function EngagementDashboard() {
                   exit="hidden"
                   className="space-y-4 md:space-y-5"
                 >
-                  <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 md:px-6 rounded-xl border border-slate-200">
-                    <div className="w-full md:w-auto">
-                      {employees.length === 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('employees')}
-                          className="text-xs font-semibold text-slate-700 underline underline-offset-2"
-                        >
-                          Belum ada pegawai — tambah data dulu
-                        </button>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center gap-4 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full md:w-auto justify-between lg:ml-auto">
-                      <Button variant="ghost" size="icon" onClick={() => changeMonth(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
-                        <ChevronLeft size={16} />
-                      </Button>
-                      <div className="text-center px-4 min-w-[140px]">
-                        <h2 className="text-sm font-bold text-slate-900">
-                          {currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}
-                        </h2>
-                      </div>
-                      <Button variant="ghost" size="icon" onClick={() => changeMonth(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
-                        <ChevronRight size={16} />
-                      </Button>
-                    </div>
-                  </motion.div>
-
                   <motion.div variants={itemVariants} className="bg-white rounded-xl p-4 sm:p-5 md:p-6 border border-slate-200">
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-3 md:mb-4">
-                      <div>
-                        {unverifiedAutoFilledDates.length > 0 && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleVerifyAllAutoFilled}
-                            disabled={isVerifyingAll}
-                            className="text-[11px] font-bold border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 h-8"
-                          >
-                            <CheckCircle2 size={13} className="mr-1.5" />
-                            {isVerifyingAll
-                              ? 'Menandai…'
-                              : `Terima ${unverifiedAutoFilledDates.length} rekap otomatis`}
-                          </Button>
-                        )}
+                    {/* Header: bulan nav + indikator + tombol terima */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-3 md:mb-4">
+                      <div className="flex items-center gap-3 bg-slate-50 p-1 rounded-xl border border-slate-200 shrink-0">
+                        <Button variant="ghost" size="icon" onClick={() => changeMonth(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
+                          <ChevronLeft size={16} />
+                        </Button>
+                        <div className="text-center min-w-[130px]">
+                          <h2 className="text-sm font-bold text-slate-900">
+                            {currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}
+                          </h2>
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => changeMonth(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
+                          <ChevronRight size={16} />
+                        </Button>
                       </div>
-                      <div className="flex flex-wrap gap-3 md:gap-5 text-[10px] font-semibold text-slate-500 bg-slate-50 px-3 md:px-5 py-2.5 rounded-xl border border-slate-200 w-full md:w-auto justify-center">
+
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-semibold text-slate-500 bg-slate-50 px-4 py-1.5 rounded-xl border border-slate-200">
                         <div className="flex items-center gap-1.5">
                           <div className="w-2.5 h-2.5 rounded-full bg-slate-900" /> Terisi
                         </div>
@@ -1545,13 +1516,29 @@ export default function EngagementDashboard() {
                           <div className="w-2.5 h-2.5 rounded-full border-2 border-emerald-500 bg-white" /> Hari ini
                         </div>
                       </div>
+
+                      {unverifiedAutoFilledDates.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleVerifyAllAutoFilled}
+                          disabled={isVerifyingAll}
+                          className="text-[11px] font-bold border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 h-8 shrink-0 sm:ml-auto"
+                        >
+                          <CheckCircle2 size={13} className="mr-1.5" />
+                          {isVerifyingAll
+                            ? 'Menandai…'
+                            : `Terima ${unverifiedAutoFilledDates.length} rekap otomatis`}
+                        </Button>
+                      )}
                     </div>
 
+                    {/* Kalender */}
                     <div className="overflow-y-auto">
                       <div className="min-w-[280px] sm:min-w-[400px] h-[calc(100dvh-17rem)] md:h-[calc(100dvh-15rem)] lg:h-[calc(100dvh-14rem)] min-h-[340px]">
-                        <div className="grid grid-cols-7 grid-rows-[repeat(6,minmax(0,1fr))] gap-1 sm:gap-1.5 h-full">
+                        <div className="grid grid-cols-7 grid-rows-[repeat(7,minmax(0,1fr))] gap-1 sm:gap-1.5 h-full">
                           {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(day => (
-                            <div key={day} className="text-center py-1 md:py-1.5 text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            <div key={day} className="text-center py-0.5 md:py-1 text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest self-end">
                               {day}
                             </div>
                           ))}
