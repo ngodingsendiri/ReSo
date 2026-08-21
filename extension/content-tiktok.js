@@ -600,8 +600,8 @@
             <span>Balasan</span>
           </label>
           <div class="tnk-actions">
-            <button type="button" class="tnk-btn tnk-primary" data-tnk="process" title="Rekap — ambil nama" aria-label="Rekap">${svgIcon("play_arrow")}</button>
-            <button type="button" class="tnk-btn tnk-send" data-tnk="process-send" title="Rekap + Kirim ke ReSo" aria-label="Rekap + Kirim ke ReSo">${svgIcon("send")}</button>
+            <button type="button" class="tnk-btn tnk-ghost" data-tnk="process" title="Rekap — ambil nama" aria-label="Rekap">${svgIcon("play_arrow")}</button>
+            <button type="button" class="tnk-btn tnk-primary" data-tnk="process-send" title="Rekap + Kirim ke ReSo" aria-label="Rekap + Kirim ke ReSo">${svgIcon("send")}</button>
             <button type="button" class="tnk-btn" data-tnk="stop" hidden title="Hentikan" aria-label="Hentikan">${svgIcon("stop")}</button>
             <button type="button" class="tnk-btn tnk-success" data-tnk="copy" disabled title="Salin ke clipboard" aria-label="Salin nama">${svgIcon("content_copy")}</button>
             <button type="button" class="tnk-btn tnk-ghost" data-tnk="reset" title="Bersihkan hasil" aria-label="Bersihkan hasil">${svgIcon("restart_alt")}</button>

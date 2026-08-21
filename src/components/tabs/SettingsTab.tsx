@@ -24,6 +24,35 @@ const EXT_ZIP_URL = 'https://github.com/ngodingsendiri/ReSo/releases/latest/down
 const EXT_CRX_URL = 'https://github.com/ngodingsendiri/ReSo/releases/latest/download/reso-extension.crx';
 const EXT_INSTALL_URL = '/install.html';
 
+const SettingRow = ({
+  icon,
+  iconClass,
+  title,
+  desc,
+  children,
+}: {
+  icon: React.ReactNode;
+  iconClass: string;
+  title: string;
+  desc: string;
+  children: React.ReactNode;
+}) => (
+  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 gap-4">
+    <div className="flex items-start sm:items-center gap-3 min-w-0">
+      <div
+        className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center border ${iconClass}`}
+      >
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <h3 className="font-bold text-sm text-slate-900">{title}</h3>
+        <p className="text-xs text-slate-500 leading-snug">{desc}</p>
+      </div>
+    </div>
+    <div className="shrink-0 w-full sm:w-auto">{children}</div>
+  </div>
+);
+
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   recalculateConfig,
   setRecalculateConfig,
@@ -48,35 +77,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       setProvisioning(false);
     }
   };
-
-  const SettingRow = ({
-    icon,
-    iconClass,
-    title,
-    desc,
-    children,
-  }: {
-    icon: React.ReactNode;
-    iconClass: string;
-    title: string;
-    desc: string;
-    children: React.ReactNode;
-  }) => (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 gap-4">
-      <div className="flex items-start sm:items-center gap-3 min-w-0">
-        <div
-          className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center border ${iconClass}`}
-        >
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <h3 className="font-bold text-sm text-slate-900">{title}</h3>
-          <p className="text-xs text-slate-500 leading-snug">{desc}</p>
-        </div>
-      </div>
-      <div className="shrink-0 w-full sm:w-auto">{children}</div>
-    </div>
-  );
 
   return (
     <motion.div
@@ -163,6 +163,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   value={metaToken}
                   onChange={(e) => setMetaToken(e.target.value)}
                   placeholder="Tempel access token Meta di sini…"
+                  aria-label="Token Meta API"
                   className="w-full h-20 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
                 />
                 <Button

@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { flushSync } from 'react-dom';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -94,8 +93,9 @@ export default function EngagementDashboard() {
   const [monthlySortMode, setMonthlySortMode] = useState<'rank' | 'bidang' | 'name'>('rank');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  // Layout cetak — aktif saat export gambar (domToPng) supaya tabel penuh tampil.
-  const [isExporting, setIsExporting] = useState(false);
+  // Layout cetak — dipertahankan sebagai prop untuk kompatibilitas report view,
+  // tapi tidak lagi dipakai image export (kini clone off-screen, tanpa isExporting).
+  const [isExporting] = useState(false);
 
   const [recalculateConfig, setRecalculateConfig] = useState<{
     mode: 'last_day' | 'last_week';
@@ -743,38 +743,70 @@ export default function EngagementDashboard() {
       return;
     }
     const ref = { daily: printDailyRef, weekly: printRef, monthly: printMonthlyRef }[type];
-    const el = ref.current;
-    if (!el) return;
+    const source = ref.current;
+    if (!source) return;
     setIsLoading(true);
-    // Simpan style asli untuk direstore di finally
-    const origOverflow = el.style.overflow;
-    const origMaxHeight = el.style.maxHeight;
-    const tableWrapper = el.querySelector('[class*="max-h-"]') as HTMLElement | null;
-    const origTblMaxH = tableWrapper?.style.maxHeight ?? null;
-    const origTblOverflow = tableWrapper?.style.overflow ?? null;
 
+    // Host off-screen — bebas dari ancestor overflow-hidden, animasi motion,
+    // dan media query responsif. Clone report di sini lalu paksa gaya cetak.
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-10000px;top:0;z-index:-1;pointer-events:none;';
+    let clone: HTMLElement | null = null;
     try {
-      // ★ Render mode cetak SINKRON (tabel desktop penuh, tanpa max-h, card list
-      // mobile disembunyikan). Tanpa flushSync, setTimeout tidak deterministik
-      // dan domToPng bisa capture sebelum mode cetak ter-render.
-      flushSync(() => setIsExporting(true));
+      clone = source.cloneNode(true) as HTMLElement;
+      host.appendChild(clone);
+      document.body.appendChild(host);
+      // Tunggu font/layout clone benar-benar siap.
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-      // Netralkan sementara pembatas tinggi/overflow agar seluruh baris terukur.
-      el.style.overflow = 'visible';
-      el.style.maxHeight = 'none';
+      // ★ Paksa gaya cetak inline pada clone (menang atas class responsif):
+      // - lepas transform/opacity animasi motion
+      // - tabel melebar ke max-content (semua kolom), tanpa max-h/overflow
+      // - card list mobile disembunyikan, wrapper tabel dipaksa tampil penuh
+      clone.style.transform = 'none';
+      clone.style.opacity = '1';
+      clone.style.width = 'max-content';
+      clone.style.maxWidth = 'none';
+      clone.style.overflow = 'visible';
+      const mobileCardList = clone.querySelector('[class*="md:hidden"]') as HTMLElement | null;
+      if (mobileCardList) mobileCardList.style.display = 'none';
+      const tableWrapper = clone.querySelector('[class*="max-h-"]') as HTMLElement | null;
       if (tableWrapper) {
+        tableWrapper.style.display = 'block';
         tableWrapper.style.maxHeight = 'none';
         tableWrapper.style.overflow = 'visible';
+      }
+      const table = clone.querySelector('table') as HTMLElement | null;
+      if (table) {
+        table.style.width = 'max-content';
+      }
+
+      // ★ Padatkan spasi gambar (inline override class responsif layar):
+      // - padding container kecil, tanpa min-h (tidak ada ruang kosong di bawah)
+      // - jarak judul↔tabel rapat, subtitle lebih ramping
+      // - rate box dipadatkan
+      clone.style.padding = '12px';
+      clone.style.minHeight = '0';
+      const header = clone.firstElementChild as HTMLElement | null;
+      if (header) {
+        header.style.marginBottom = '10px';
+        header.style.paddingBottom = '10px';
+        const subtitle = header.querySelector('h3 + p') as HTMLElement | null;
+        if (subtitle) {
+          subtitle.style.fontSize = '11px';
+          subtitle.style.marginTop = '2px';
+        }
+        const rateBox = header.querySelector('[class*="rounded-lg"][class*="bg-slate-50"]') as HTMLElement | null;
+        if (rateBox) rateBox.style.padding = '6px 10px';
       }
       await new Promise(r => requestAnimationFrame(r));
 
       // ★ Lebar/tinggi konten penuh — dioper EKSPLISIT ke domToPng supaya canvas
       // selebar konten (bukan getBoundingClientRect yang terkunci max-h).
-      const w = el.scrollWidth;
-      const h = el.scrollHeight;
+      const w = clone.scrollWidth;
+      const h = clone.scrollHeight;
       const { domToPng } = await import('modern-screenshot');
-      const imgData = await domToPng(el, {
+      const imgData = await domToPng(clone, {
         scale: 2,
         backgroundColor: '#ffffff',
         width: w,
@@ -790,13 +822,7 @@ export default function EngagementDashboard() {
       console.error(error);
       toast.error("Gagal membuat gambar");
     } finally {
-      el.style.overflow = origOverflow;
-      el.style.maxHeight = origMaxHeight;
-      if (tableWrapper) {
-        tableWrapper.style.maxHeight = origTblMaxH;
-        tableWrapper.style.overflow = origTblOverflow;
-      }
-      setIsExporting(false);
+      host.remove();
       setIsLoading(false);
     }
   };

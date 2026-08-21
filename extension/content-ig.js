@@ -595,8 +595,8 @@
             <span>Balasan</span>
           </label>
           <div class="ing-actions">
-            <button type="button" class="ing-btn ing-primary" data-ing="process" title="Rekap — ambil username" aria-label="Rekap">${svgIcon("play_arrow")}</button>
-            <button type="button" class="ing-btn ing-send" data-ing="process-send" title="Rekap + Kirim ke ReSo" aria-label="Rekap + Kirim ke ReSo">${svgIcon("send")}</button>
+            <button type="button" class="ing-btn ing-ghost" data-ing="process" title="Rekap — ambil username" aria-label="Rekap">${svgIcon("play_arrow")}</button>
+            <button type="button" class="ing-btn ing-primary" data-ing="process-send" title="Rekap + Kirim ke ReSo" aria-label="Rekap + Kirim ke ReSo">${svgIcon("send")}</button>
             <button type="button" class="ing-btn" data-ing="stop" hidden title="Hentikan" aria-label="Hentikan">${svgIcon("stop")}</button>
             <button type="button" class="ing-btn ing-success" data-ing="copy" disabled title="Salin ke clipboard" aria-label="Salin username">${svgIcon("content_copy")}</button>
             <button type="button" class="ing-btn ing-ghost" data-ing="reset" title="Bersihkan hasil" aria-label="Bersihkan hasil">${svgIcon("restart_alt")}</button>

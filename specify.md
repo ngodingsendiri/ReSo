@@ -95,7 +95,7 @@ Bukan vanity metrics (DAU publik), melainkan:
 |---------|--------|
 | **Employee** | Master pegawai yang dimonitor: `name`, `nip`, `bidang`, handle IG/FB/TikTok (masing-masing bisa 2 akun) |
 | **DailyEngagement** | Rekap per tanggal: raw text per platform, daftar employee ID yang match, link postingan |
-| **Admin** | UID yang diizinkan akses (dinamis), di samping allowlist email hardcode |
+| **Admin** | Marker `dinas/{uid}/admins/{uid}` (auto-provision saat login, open registration) |
 | **SystemSetting** | Konfigurasi global (logo app, Meta API token, dll.) |
 
 ### 4.2 Definisi “engagement” di ReSo
@@ -158,9 +158,7 @@ Gunakan daftar ini sebagai **peta fitur resmi saat ini**. Fitur baru idealnya me
 ### 5.1 Autentikasi & otorisasi
 
 - Login **Google** (Firebase Auth).
-- Akses hanya jika:
-  - email masuk allowlist hardcode, **atau**
-  - dokumen `admins/{uid}` ada di Firestore.
+- **Open registration**: setiap akun Google terverifikasi yang login = 1 dinas; `/api/provision` menulis marker `dinas/{uid}/admins/{uid}`.
 - Email harus **verified** (aturan security Firestore).
 - Copy UI: *Internal Use Only*.
 
@@ -174,7 +172,7 @@ Gunakan daftar ini sebagai **peta fitur resmi saat ini**. Fitur baru idealnya me
 | **Laporan Mingguan** | Skor per pegawai dalam seminggu; rate per bidang; top/bottom; sort nama/bidang; export |
 | **Laporan Bulanan** | Skor bulanan + breakdown % per platform; sort rank/bidang/nama; export |
 | **Data Pegawai** | CRUD pegawai; search/sort; import Excel/CSV; export; template Excel |
-| **Pengaturan** | Install PWA, cek update, upload logo, recalculate data |
+| **Pengaturan** | Simpan token Meta API; recalculate data; download ekstensi; info dinas |
 
 ### 5.3 Integrasi Meta (Facebook Graph API)
 
@@ -184,26 +182,23 @@ Gunakan daftar ini sebagai **peta fitur resmi saat ini**. Fitur baru idealnya me
 - FB: karena batasan privasi API, fokusnya **link post** (bukan full list commenter setara IG).
 - TikTok: **belum** ada tarik API otomatis — **input manual tetap didukung penuh** (disepakati: TikTok platform inti; otomasi sulit, alur manual jangan dihilangkan).
 
-### 5.4 PWA & notifikasi
+### 5.4 Export laporan
 
-- Installable PWA (vite-plugin-pwa).
-- Notifikasi lokal pada 14:45 & 15:00 WIB (jika permission granted).
-- Logo app dapat diganti (disimpan di Firestore / cache localStorage untuk favicon).
+- **PDF** A4 multi-page (autoTable), header/footer di tiap halaman.
+- **Gambar** (domToPng): satu lembar, maks **60 pegawai** — lewat batas tombol Gambar otomatis nonaktif (pakai PDF/Excel).
+- **Excel** (xlsx): harian = Nama/NIP/Bidang/IG/FB/TT; mingguan/bulanan = kolom per tanggal (0–3) + Total + %ENG.
 
 ### 5.5 Backend
 
-- Express server (`server.ts`) + Vite dev middleware.
-- Endpoint utama domain: `POST /api/recalculate` (matching ulang + commit Firestore via REST + Bearer token user).
-- Health: `GET /api/health`.
+- **Vercel Functions** (`api/`): `POST /api/engagement` (jalur tulis ekstensi), `POST /api/provision` (bootstrap dinas), `GET /api/health`.
+- Tidak ada Express server; semua operasi pakai token operator + REST Firestore.
 
 ### 5.6 Stack teknis (faktual)
 
 - React 19 + TypeScript + Vite
 - Tailwind CSS + komponen UI (shadcn/base-ui style)
-- Firebase Auth + Firestore
-- Express + tsx
-- Recharts, xlsx, papaparse, jspdf, modern-screenshot, motion
-- PWA (service worker)
+- Firebase Auth + Firestore (proyek `reso-id`, satu DB `(default)`, subtree `dinas/{uid}`)
+- Recharts, xlsx, papaparse, jspdf(+autotable), modern-screenshot, motion
 
 ---
 

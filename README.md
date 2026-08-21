@@ -11,7 +11,6 @@ Dokumen acuan:
 
 - React 19 + TypeScript + Vite + Tailwind
 - Firebase Auth (Google) + Firestore
-- PWA (service worker + offline shell)
 - Ekstensi Chrome MV3 (di `extension/`)
 - Deploy target: **Vercel free** (`rekapsosmed.vercel.app`)
 
@@ -101,7 +100,7 @@ Dashboard (React + Firebase SDK)
   │ 8. Tampilkan rekap, laporan harian/mingguan/bulanan
   │ 9. Matching nama dengan master pegawai
   ▼
-Export PDF (A4 multi-page) / Gambar (maks 70 pegawai)
+Export PDF (A4 multi-page) / Gambar (maks 60 pegawai, satu lembar) / Excel (per-hari)
 
 --- Token Flow ---
 Web App login → push RESO_CONNECT (idToken) → extension
@@ -134,7 +133,8 @@ Web App login → push RESO_CONNECT (idToken) → extension
 - **Per hari, bukan per postingan**: `dailyEngagement/{date}` menggabungkan SEMUA komentar dari semua post tanggal itu.
 - **Dedupe case-insensitive**: nama yang sama dari post berbeda tidak dobel.
 - **Idempoten**: kirim ulang = update (merge), bukan duplikat.
-- **Export gambar**: maksimal 70 pegawai. Untuk > 70 pegawai, gunakan export PDF (A4 multi-page).
+- **Export gambar**: maksimal 60 pegawai (satu lembar). Untuk > 60 pegawai, tombol Gambar otomatis nonaktif, gunakan export PDF (A4 multi-page) atau Excel.
+- **Export Excel**: format per-hari (daily: Nama/NIP/Bidang/IG/FB/TT; mingguan/bulanan: kolom per tanggal + Total + %ENG).
 - **Notifikasi jam engagement dihapus** — tidak ada push reminder.
 
 ## Catatan

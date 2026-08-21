@@ -621,8 +621,8 @@
             <span>Balasan</span>
           </label>
           <div class="fnk-actions">
-            <button type="button" class="fnk-btn fnk-primary" data-fnk="process" title="Rekap — ambil nama" aria-label="Rekap">${svgIcon("play_arrow")}</button>
-            <button type="button" class="fnk-btn fnk-send" data-fnk="process-send" title="Rekap + Kirim ke ReSo" aria-label="Rekap + Kirim ke ReSo">${svgIcon("send")}</button>
+            <button type="button" class="fnk-btn fnk-ghost" data-fnk="process" title="Rekap — ambil nama" aria-label="Rekap">${svgIcon("play_arrow")}</button>
+            <button type="button" class="fnk-btn fnk-primary" data-fnk="process-send" title="Rekap + Kirim ke ReSo" aria-label="Rekap + Kirim ke ReSo">${svgIcon("send")}</button>
             <button type="button" class="fnk-btn" data-fnk="stop" hidden title="Hentikan" aria-label="Hentikan">${svgIcon("stop")}</button>
             <button type="button" class="fnk-btn fnk-success" data-fnk="copy" disabled title="Salin ke clipboard" aria-label="Salin nama">${svgIcon("content_copy")}</button>
             <button type="button" class="fnk-btn fnk-ghost" data-fnk="reset" title="Bersihkan hasil" aria-label="Bersihkan hasil">${svgIcon("restart_alt")}</button>

@@ -4,17 +4,11 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|sw\\.js|workbox-|manifest\\.webmanifest|favicon\\.ico|icon-|maskable-|pwa-icon|apple-touch).*)",
+      "source": "/((?!api/|assets/|favicon\\.ico|logo\\.svg|install\\.html|reso-extension\\.crx|reso-extension\\.zip).*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
-    {
-      "source": "/sw.js",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
-      ]
-    },
     {
       "source": "/assets/(.*)",
       "headers": [

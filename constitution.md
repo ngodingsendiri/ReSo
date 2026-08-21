@@ -33,10 +33,9 @@ Bayangkan ReSo seperti **kantor kecil**:
 |--------|---------|---------|
 | **UI / Frontend** | Meja front office + formulir | React di browser (tombol, kalender, laporan) |
 | **Database** | Lemari arsip | **Firestore** (pegawai, rekap harian, settings) |
-| **Auth** | Satpam pintu masuk | **Firebase Auth** (login Google + allowlist) |
-| **API / Backend** | Ruang kerja belakang (opsional) | Endpoint seperti recalculate — di Vercel biasanya **function**, bukan “server nyala 24 jam” |
+| **Auth** | Satpam pintu masuk | **Firebase Auth** (login Google, open registration) |
+| **API / Backend** | Ruang kerja belakang (opsional) | Endpoint seperti engagement/provision — di Vercel berupa **function**, bukan “server nyala 24 jam” |
 | **Hosting** | Gedung tempat app dipasang | **Vercel gratis** menyajikan file web + function singkat |
-| **PWA** | App yang bisa “dipasang” di HP | Icon di home screen, notifikasi pengingat |
 
 **Alur kerja harian yang dilindungi:**
 
@@ -100,7 +99,7 @@ Disepakati pemilik: belum ada rencana fitur baru atau rombak cara kerja.
 
 - Sentuh **file mana pun** (tidak ada zona “larang sentuh file”)  
 - Refactor **jika** mengurangi bug / mempermudah maintenance **dan** perilaku user-facing tetap  
-- Perbaiki Meta fetch, matching, export, PWA, auth edge-case  
+- Perbaiki Meta fetch, matching, export, auth edge-case  
 - Sederhanakan recalculate (karena jarang dipakai) tanpa merusak save rekap harian  
 
 ---
@@ -112,7 +111,7 @@ Disepakati pemilik: belum ada rencana fitur baru atau rombak cara kerja.
 | Layanan | Peran | Catatan gratis / batasan |
 |---------|--------|---------------------------|
 | **Vercel (Hobby)** | Hosting frontend + serverless function | Bukan VPS: **tidak** ada Express “nyala terus di port 3000” seperti laptop |
-| **Firebase Auth** | Login Google | Kuota free tier; tetap jaga allowlist |
+| **Firebase Auth** | Login Google | Kuota free tier; email harus verified |
 | **Firestore** | Database utama | Baca/tulis dihitung; jangan query gila-gilaan tanpa filter |
 | **Meta Graph API** | Tarik post/komen IG (dll.) | Token & limit API Meta; jangan spam request |
 | **Browser user** | Menjalankan UI, matching, export PDF | Export & matching berat = beban di HP/PC operator |
@@ -152,7 +151,7 @@ Disepakati pemilik: belum ada rencana fitur baru atau rombak cara kerja.
 
 ### 3.3 Yang sering bikin app “jelek di Vercel free” — dilarang
 
-- Menambah dependency berat tanpa perlu (bundle membengkak → PWA/HP lemot).
+- Menambah dependency berat tanpa perlu (bundle membengkak → HP lemot).
 - Server-side session custom yang bentrok Firebase Auth tanpa desain.
 - Menyimpan file besar (logo base64 raksasa, dump Excel) tanpa batas ukuran.
 - Endpoint yang body-nya mengirim **seluruh** history engagement + employees tanpa batas (timeout/payload).
@@ -205,7 +204,7 @@ Ganti stack besar = **keputusan produk + migrasi**, bukan refactor harian agent.
 | # | Hukum |
 |---|--------|
 | S1 | Default: **yang tidak login / tidak authorized = tidak bisa baca-tulis data rekap & pegawai** |
-| S2 | Allowlist email + `admins/{uid}` + email verified — jangan dilonggarkan jadi “siapa saja Google boleh masuk” |
+| S2 | Open registration (siapa pun Google verified boleh login = 1 dinas) + email verified; isolasi data via rules `dinas/{uid}` — jangan kembalikan ke allowlist hardcode tanpa persetujuan |
 | S3 | Firestore rules adalah **pagar terakhir** — perubahan rules harus selaras model field aktual (termasuk TikTok & akun ke-2) |
 | S4 | Jangan commit service account JSON / private key |
 | S5 | Jangan log token Meta / ID token user ke console production |
@@ -266,7 +265,7 @@ Ganti stack besar = **keputusan produk + migrasi**, bukan refactor harian agent.
 | # | Hukum |
 |---|--------|
 | U1 | Optimalkan untuk **operator rekap harian**, bukan demo investor |
-| U2 | Mobile/PWA penting (operator sering di HP) — jangan hancurkan layout mobile demi desktop-only |
+| U2 | Mobile penting (operator sering di HP) — jangan hancurkan layout mobile demi desktop-only |
 | U3 | Notifikasi 14:45 & 15:00: jangan dihapus tanpa kesepakatan |
 | U4 | Error harus **bisa dibaca manusia** (Bahasa Indonesia), bukan stack trace mentah ke user |
 | U5 | Export laporan = fitur kerja, bukan hiasan — jangan dibiarkan rusak setelah refactor CSS |
@@ -307,7 +306,7 @@ Ganti stack besar = **keputusan produk + migrasi**, bukan refactor harian agent.
 5. Pastikan **static deploy Vercel free** bersih & build selalu lulus.  
 6. Kurangi ketergantungan production pada Express long-running.  
 7. Modularisasi monolit **tanpa** ubah perilaku (opsional, saat bantu fix).  
-8. Performa/bundle/PWA polish.  
+8. Performa/bundle polish.  
 9. README yang benar menjelaskan ReSo.  
 10. Raw text + master pegawai tetap bisa jadi sumber truth.
 
