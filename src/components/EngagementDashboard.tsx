@@ -695,19 +695,19 @@ export default function EngagementDashboard() {
           r.name,
           r.nip,
           r.bidang,
-          r.ig ? 'V' : 'X',
-          r.fb ? 'V' : 'X',
-          r.tt ? 'V' : 'X',
+          r.ig ? 'Eng' : '—',
+          r.fb ? 'Eng' : '—',
+          r.tt ? 'Eng' : '—',
         ]),
         styles: { fontSize: 6, cellPadding: 1.5 },
         headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7 },
         columnStyles: {
-          0: { cellWidth: 58 },
-          1: { cellWidth: 28 },
-          2: { cellWidth: 18 },
-          3: { cellWidth: 14, halign: 'center' },
-          4: { cellWidth: 14, halign: 'center' },
-          5: { cellWidth: 14, halign: 'center' },
+          0: { cellWidth: 56 },
+          1: { cellWidth: 26 },
+          2: { cellWidth: 16 },
+          3: { cellWidth: 16, halign: 'center' },
+          4: { cellWidth: 16, halign: 'center' },
+          5: { cellWidth: 16, halign: 'center' },
         },
         margin: { left: margin, right: margin, top: HEADER_H, bottom: 12 },
         pageBreak: 'auto',
@@ -733,6 +733,9 @@ export default function EngagementDashboard() {
     const el = ref.current;
     if (!el) return;
     setIsLoading(true);
+    setIsExporting(true); // render mode cetak: tabel desktop penuh tampil (bukan card list)
+    // Tunggu re-render isExporting (tabel jadi w-max, tanpa max-h, mobile card list disembunyikan)
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     // Simpan style asli & set style temporer untuk export penuh (tanpa crop / scrollbar)
     const origOverflow = el.style.overflow;
@@ -745,13 +748,15 @@ export default function EngagementDashboard() {
     const tableWrapper = el.querySelector('[class*="max-h-"]') as HTMLElement | null;
     const origTblMaxH = tableWrapper?.style.maxHeight ?? null;
     const origTblOverflow = tableWrapper?.style.overflow ?? null;
-    // Wrapper min-w-max di dalam tabel (bikin tabel lebih lebar dari 794px)
+    // Wrapper min-w-max di dalam tabel (bikin tabel lebih lebar dari viewport)
     const minWMax = el.querySelector('[class*="min-w-max"]') as HTMLElement | null;
     const origMinWMax = minWMax?.style.minWidth ?? null;
 
     try {
+      // Lebar natural konten (tabel) — maksimalkan tanpa crop / tanpa sisa
+      const naturalW = Math.max(el.scrollWidth, 794);
       el.style.overflow = 'visible';
-      el.style.width = '794px';
+      el.style.width = naturalW + 'px';
       el.style.maxWidth = 'none';
       if (scrollAncestor) scrollAncestor.style.overflowX = 'visible';
       // Buka batas tinggi tabel (biarkan seluruh baris terekam)
@@ -759,10 +764,9 @@ export default function EngagementDashboard() {
         tableWrapper.style.maxHeight = 'none';
         tableWrapper.style.overflow = 'visible';
       }
-      // Paksa tabel selebar 794px (hapus min-w-max yang bikin kepotong)
-      if (minWMax) minWMax.style.minWidth = '794px';
+      // Paksa tabel selebar konten (hapus min-w-max yang bikin kepotong)
+      if (minWMax) minWMax.style.minWidth = naturalW + 'px';
 
-      // Tunggu style teraplikasi (tidak perlu setIsExporting — style langsung)
       await new Promise(resolve => setTimeout(resolve, 50));
 
       const { domToPng } = await import('modern-screenshot');
@@ -770,7 +774,6 @@ export default function EngagementDashboard() {
       const imgData = await domToPng(el, {
         scale: 2,
         backgroundColor: '#ffffff',
-        width: 794,
       });
       const link = document.createElement('a');
       link.download = `${filename}.png`;
@@ -791,6 +794,7 @@ export default function EngagementDashboard() {
         tableWrapper.style.overflow = origTblOverflow;
       }
       if (minWMax && origMinWMax !== null) minWMax.style.minWidth = origMinWMax;
+      setIsExporting(false);
       setIsLoading(false);
     }
   };
