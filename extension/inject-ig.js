@@ -696,12 +696,61 @@
   }
 
   /**
+   * Temukan tombol "Muat komentar lainnya" / "Load more comments" / "Lihat
+   * komentar lainnya" (+ balasan) di dalam dialog komentar. IG kadang TIDAK
+   * memuat batch berikutnya hanya dengan scroll — butuh klik eksplisit.
+   * Selektor mencakup role=button, div[tabindex=0], span[dir=auto], a.
+   */
+  function findLoadMoreButtons(scope) {
+    const soft =
+      /load more comments|lihat lebih banyak komentar|lihat komentar lainnya|muat komentar|view more comments|show more comments|lihat semua komentar|lihat balasan lainnya|load more replies|view more replies|lihat lebih banyak balasan|lihat balasan/i;    const out = [];
+    const root = scope || document;
+    try {
+      const els = root.querySelectorAll(
+        '[role="button"], div[tabindex="0"], span[dir="auto"], a[role="link"], button'
+      );
+      for (const el of els) {
+        if (!el || typeof el.getBoundingClientRect !== "function") continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) continue;
+        const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
+          .replace(/\s+/g, " ")
+          .trim();
+        if (!t || t.length > 140) continue;
+        if (soft.test(t)) out.push(el);
+      }
+    } catch {
+      /* ignore */
+    }
+    return out;
+  }
+
+  /** Klik semua tombol load-more yang terlihat; return jumlah yang diklik. */
+  async function expandLoadMore(scope) {
+    let clicked = 0;
+    for (const b of findLoadMoreButtons(scope).slice(0, 6)) {
+      if (stopFlag) break;
+      try {
+        b.click();
+        clicked++;
+        await sleepWhile(500);
+      } catch {
+        /* ignore */
+      }
+    }
+    return clicked;
+  }
+
+  /**
    * Open the comments view automatically so IG fires the comments API and
    * the background can capture the URL template — no manual click needed.
    */
   async function tryOpenComments() {
     if (commentDialogOpen()) {
       scrollCommentContainer();
+      // Dialog sudah terbuka — tetap klik tombol load-more bila ada (IG
+      // kadang tidak memuat batch berikutnya hanya dengan scroll).
+      await expandLoadMore();
       return true;
     }
     const candidates = [
@@ -1070,6 +1119,9 @@
           const before = nameMap.size;
           scrapeDomUsernames();
           scrollCommentContainer();
+          // Klik tombol "Muat komentar lainnya" bila IG tidak memuat batch
+          // berikutnya lewat scroll (layout dialog/tab tertentu).
+          await expandLoadMore();
           post("PROGRESS", {
             names: snapshot(),
             message: `Mengumpulkan… ${nameMap.size} username (mode scroll)`,

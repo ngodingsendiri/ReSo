@@ -2,6 +2,14 @@
 
 Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [1.0.56] — 23 Agustus 2026
+
+### IG: auto-klik "Muat komentar lainnya" + ketahanan arsitektur 3 platform (audit)
+- **IG tidak lagi butuh klik manual**: `scrollCommentContainer` hanya scroll, tapi Instagram di beberapa layout tidak memuat batch berikutnya tanpa klik eksplisit tombol "Muat komentar lainnya"/"Load more comments"/"Lihat balasan lainnya". Fungsi baru `findLoadMoreButtons` + `expandLoadMore` (role=button, div[tabindex=0], span[dir=auto], a[role=link], button; regex multi-bahasa; guard isVisible & panjang teks; stopFlag-aware) dipanggil di `tryOpenComments` (dialog sudah terbuka) dan loop scroll mode DOM.
+- **`tests/architecture-resilience.test.mjs` (baru, +18 test)**: mensimulasikan perubahan arsitektur di FB/IG/TT — selector DOM berubah (findPostRoot/findExpandButtons/scrapeDom*/commentPanelOpen/findLoadMoreButtons → fallback aman, array kosong, tidak crash), field API berubah nama (parsePage IG/TT: has_more_comments/cursor tidak dikenal → false/null, komentar tetap diparse), response null/garbage → batchSize 0, struktur rehydration TikTok berubah, CSRF cookie IG hilang → empty string, dan `fetchJson` 403 → blocked error.
+- **Hardening extractor test**: dukungan template literal backtick (interpolasi `${...}` tidak mengacau hitungan brace).
+- Test: suite naik **432 → 455**, deterministik (2× run stabil), `npm run check` tetap hijau.
+
 ## [1.0.55] — 23 Agustus 2026
 
 ### Stress test ekstrem + hardening parser (audit ketahanan)

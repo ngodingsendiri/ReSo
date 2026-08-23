@@ -22,6 +22,9 @@ const src = fs.readFileSync(
 function extract(fnName) {
   const idx = src.indexOf(`function ${fnName}(`);
   assert.ok(idx >= 0, `function ${fnName} not found in inject-ig.js`);
+  // Pertahankan modifier `async` (fungsi seperti expandLoadMore memakai
+  // `await` — tanpa ini ekstraksi jadi fungsi sinkron yang tak valid).
+  const start = idx - (src.slice(Math.max(0, idx - 6), idx) === "async " ? 6 : 0);
   // Lewati daftar parameter: `{` pertama bisa milik destructuring
   // (mis. buildUrl(templateUrl, { nextMaxId, reply, ... })) — brace badan
   // fungsi selalu muncul setelah `) {` penutup parameter.
@@ -37,7 +40,7 @@ function extract(fnName) {
       if (depth === 0) break;
     }
   }
-  return src.slice(idx, i + 1);
+  return src.slice(start, i + 1);
 }
 
 // ===================== payloadMatchesMedia (anti kontaminasi lintas post) =====================
@@ -845,4 +848,91 @@ test("intercept IG: hook XHR — includeReplies OFF, endpoint balasan tidak diin
   x.send();
   net.fireLoad(x);
   assert.deepEqual(h.ingested, [], "guard endpoint balasan aktif DI JALUR HOOK (parity FB v1.0.42)");
+});
+
+// ===================== findLoadMoreButtons / expandLoadMore (muat komentar lainnya) =====================
+// Tombol "Muat komentar lainnya" / "Load more comments" perlu diklik agar IG
+// memuat batch berikutnya di dialog (scroll saja tidak cukup di beberapa layout).
+
+function makeIgExpander() {
+  const fnSrc = [
+    "let stopFlag = false;",
+    "let sleepWhile = async () => {};",
+    extract("findLoadMoreButtons"),
+    extract("expandLoadMore"),
+    "return { findLoadMoreButtons, expandLoadMore, setSleep: (fn) => { sleepWhile = fn; }, setStop: (v) => { stopFlag = v; } };",
+  ].join("\n");
+  return new Function(fnSrc)();
+}
+
+function runFindLoadMore(doc) {
+  const realDoc = globalThis.document;
+  globalThis.document = makeDocument(doc);
+  try {
+    const { findLoadMoreButtons } = makeIgExpander();
+    return findLoadMoreButtons();
+  } finally {
+    globalThis.document = realDoc;
+  }
+}
+
+test("findLoadMoreButtons IG: pola load-more terdeteksi", () => {
+  const doc = el("div", {}, [
+    el("div", { role: "button" }, [], "Muat komentar lainnya"),
+    el("span", { dir: "auto" }, [], "Load more comments"),
+    el("button", {}, [], "Lihat lebih banyak komentar"),
+    el("div", { role: "button" }, [], "Lihat balasan lainnya"),
+    el("div", { role: "button" }, [], "Kirim"), // tidak match
+    el("span", { dir: "auto" }, [], "View more replies"),
+  ]);
+  const out = runFindLoadMore(doc);
+  assert.equal(out.length, 5, "5 tombol load-more terdeteksi, Kirim dilewati");
+  assert.ok(out.every((b) => b.innerText !== "Kirim"));
+});
+
+test("findLoadMoreButtons IG: aria-label fallback saat innerText kosong", () => {
+  const doc = el("div", {}, [
+    el("div", { role: "button", "aria-label": "Muat komentar lainnya" }, [], ""),
+    el("div", { role: "button", "aria-label": "Load more comments" }, [], ""),
+    el("div", { role: "button", "aria-label": "Suka" }, [], ""), // tidak match
+  ]);
+  const out = runFindLoadMore(doc);
+  assert.equal(out.length, 2, "deteksi lewat aria-label");
+});
+
+test("findLoadMoreButtons IG: elemen non-visible / rect kecil dilewati", () => {
+  const hidden = el("div", { role: "button" }, [], "Muat komentar lainnya");
+  hidden.getBoundingClientRect = () => ({ width: 0, height: 0 });
+  const visible = el("div", { role: "button" }, [], "Load more comments");
+  const doc = el("div", {}, [hidden, visible]);
+  const out = runFindLoadMore(doc);
+  assert.equal(out.length, 1, "hanya yang terlihat yang terdeteksi");
+  assert.equal(out[0], visible);
+});
+
+test("findLoadMoreButtons IG: teks panjang >140 karakter dilewati", () => {
+  const long = el("div", { role: "button" }, [], "Muat komentar lainnya ".repeat(10)); // >140
+  const normal = el("div", { role: "button" }, [], "Muat komentar lainnya");
+  const doc = el("div", {}, [long, normal]);
+  const out = runFindLoadMore(doc);
+  assert.equal(out.length, 1, "teks panjang dilewati");
+  assert.equal(out[0], normal);
+});
+
+test("expandLoadMore IG: stopFlag mencegah klik lebih lanjut", async () => {
+  const h = makeIgExpander();
+  h.setSleep(async () => {}); // instant sleep
+  h.setStop(true);
+  const doc = el("div", {}, [
+    el("div", { role: "button" }, [], "Muat komentar lainnya"),
+    el("div", { role: "button" }, [], "Load more comments"),
+  ]);
+  const realDoc = globalThis.document;
+  globalThis.document = makeDocument(doc);
+  try {
+    const n = await h.expandLoadMore();
+    assert.equal(n, 0, "stopFlag aktif → tidak ada yang diklik");
+  } finally {
+    globalThis.document = realDoc;
+  }
 });
