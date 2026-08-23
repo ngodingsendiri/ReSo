@@ -32,8 +32,7 @@ Yang **boleh berbeda** (identitas brand platform):
 header  : logo-ic (ikon platform) · title · tombol min (close)
 body    : status → hint → count → badge API → check "Balasan" →
           tools (search · sort) → list (preview) → actions
-actions : process (play_arrow) · stop · copy (content_copy) · reset (restart_alt) ·
-          merge (merge_type)   [grid 3 kolom]
+actions : send (Rekap + Kirim ke ReSo) · stop · reset (restart_alt)  [grid 3 kolom]
 FAB     : forum + data-count badge
 ```
 - Ikon tombol aksi **tidak boleh beda urutan/lambang** antar platform.

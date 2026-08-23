@@ -12,7 +12,7 @@ Tanpa dependensi, tanpa backend, tanpa API key. Semua berjalan di browser Anda.
 - 📸 **Instagram** — ekstrak **username** komentator (mis. `user123`, tanpa `@`) dari post & reel. **Wajib login IG** di browser (paling rapuh dari ketiga platform — gunakan dengan hati-hati).
 - 🔄 **Deduplikasi otomatis** — nama yang sama (besar/kecil huruf) hanya dihitung sekali.
 - 🧹 **Filter pintar** — buang label UI ("Like", "Komentar", "Follow"), timestamp ("2 jam yang lalu", "5h"), URL, dan noise lain.
-- 🎛️ **Panel 6 aksi** — Rekap (ambil nama), Copas (salin ke clipboard), **Rekap + Kirim ke ReSo** (kirim langsung ke database ReSo via API), Hentikan, Bersihkan hasil, dan checkbox Balasan.
+- 🎛️ **Panel 3 aksi** — **Rekap + Kirim ke ReSo** (ambil nama & kirim langsung ke database ReSo via API), **Hentikan**, **Bersihkan hasil**, dan checkbox Balasan.
 - 📅 **Deteksi tanggal & jam posting** — saat Rekap+Kirim, ekstensi memindai DOM post (FB: `data-utime`/"9 Agu pukul 07.30", IG: `<time datetime>` ISO, TikTok: `createTime` dari rehydration JSON) dan mengirim `date` + `postedAt` ke ReSo; satu hari bisa menampung banyak post.
 - ⚡ **Facebook tanpa scroll** — replay GraphQL pagination otomatis; query dibangun langsung dari ID postingan bila belum ada capture, jadi tidak perlu buka/scroll semua komentar dulu.
 - 🛡️ **Proteksi rate-limit, sesi & checkpoint (FB + IG)** — backoff adaptif saat HTTP 429 (mengikuti `Retry-After`), deteksi sesi tidak aktif (FB redirect login) & checkpoint (IG) dengan pesan jelas, batas request per run (top-level + balasan), retry halaman kosong, dan penghentian aman saat akun butuh verifikasi.
@@ -75,11 +75,10 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
 
 ### Facebook
 1. Buka **1 postingan** (permalink), bukan home feed.
-2. Pastikan komentar terlihat, lalu buka panel (FAB ikon di pojok kanan-bawah atau ikon di bar Like/Comment/Share) dan klik **Proses**. Badge API (ikon ✓ Siap / ! Belum) di panel/popup muncul saat berada di halaman post permalink.
+2. Pastikan komentar terlihat, lalu buka panel (FAB ikon di pojok kanan-bawah atau ikon di bar Like/Comment/Share) dan klik **Rekap + Kirim ke ReSo**. Badge API (ikon ✓ Siap / ! Belum) di panel/popup muncul saat berada di halaman post permalink.
 
 > 💡 **Widget panel default tertutup** — FAB kecil di pojok kanan-bawah tidak menutupi halaman saat scrolling; jumlah hasil terlihat di badge FAB. Panel hanya terbuka saat kamu klik FAB.
-3. Tunggu hingga selesai / partial, lalu **Copy nama**.
-4. Paste di Excel — 1 nama per baris.
+3. Tunggu hingga selesai — hasil otomatis dikirim ke rekap ReSo tanggal posting.
 
 > ⚙️ Saat FB membatasi request (HTTP 429), engine menunggu sejenak lalu lanjut (backoff).
 > Jika sesi tidak aktif, run berhenti aman dengan pesan "Sesi Facebook tidak aktif…" —
@@ -88,7 +87,7 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
 ### TikTok
 1. Buka **1 video** (URL berisi `/video/...`), bukan feed For You saja.
 2. Klik ikon **komentar** sampai daftar komentar muncul (badge *"API komentar: siap"*).
-3. Klik **Proses**, tunggu selesai, lalu **Copy nama**.
+3. Klik **Rekap + Kirim ke ReSo**, tunggu selesai — hasil otomatis dikirim ke rekap ReSo.
 
 > ⚙️ Saat TikTok membatasi request (HTTP 429), engine menunggu sejenak lalu lanjut (backoff).
 > Jika sesi tidak aktif (401), run berhenti aman dengan pesan "Sesi TikTok tidak aktif…" —
@@ -98,7 +97,7 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
 ### Instagram
 1. **Login Instagram** di browser ini (wajib — tanpa sesi, komentar tidak bisa dimuat).
 2. Buka **1 post/reel** (URL `/p/...` atau `/reel/...`), klik ikon **komentar** sampai list muncul.
-3. Klik **Proses**, tunggu selesai, lalu **Copy username** — hasil adalah username IG tanpa `@`.
+3. Klik **Rekap + Kirim ke ReSo**, tunggu selesai — username (tanpa `@`) otomatis dikirim ke rekap ReSo.
 4. ⚠️ Instagram paling rentan rate-limit/checkpoint — ekstensi menunggu (backoff) saat 429, berhenti aman saat akun butuh verifikasi ("checkpoint"), saat IG meminta jeda ("Please wait…") atau membatasi akun ("FeedbackRequired"), dan saat permintaan diblokir anti-bot (HTTP 403 — diagnosis akurat, bukan keliru bilang "login"). Replay selalu menyasar post yang sedang dibuka (media_id ditulis ulang dari halaman); endpoint balasan punya fallback `child_comments/`; request menyertakan header `X-IG-WWW-Claim` seperti web IG asli. Ada **cooldown antar-run** (15 dtk, 60 dtk setelah rate limit) agar Proses beruntun tidak memicu checkpoint. Template komentar tidak lagi tertimpa post lain saat run aktif (guard mid-run), dan popup kini konsisten memakai kata "username".
 
 ## Pengaturan (Options)
