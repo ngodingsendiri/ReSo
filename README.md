@@ -1,6 +1,6 @@
 # ReSo — Rekap Engagement Sosmed
 
-Aplikasi internal **Diskominfo** untuk merekap engagement pegawai ke media sosial lembaga (Instagram, Facebook, TikTok), lengkap dengan ekstensi Chrome **ReSoEx** yang menarik nama komentator secara otomatis.
+Aplikasi rekap engagement pegawai ke media sosial lembaga (Instagram, Facebook, TikTok), dirancang untuk berbagai instansi/organisasi, lengkap dengan ekstensi Chrome **ReSoEx** yang menarik nama komentator secara otomatis.
 
 Dokumen acuan:
 

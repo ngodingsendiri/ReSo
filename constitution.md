@@ -326,7 +326,7 @@ Ganti stack besar = **keputusan produk + migrasi**, bukan refactor harian agent.
 
 ## 11. Ringkasan satu paragraf (untuk agent)
 
-ReSo adalah tool **internal Diskominfo** di **Vercel free (`*.vercel.app`)** + **Firebase**, full gratis, dipakai **operator**. Fitur & **cara kerja saat ini sudah ideal** — mode default agent adalah **penyempurnaan** (audit, bugfix, akurasi, stabilitas), **bukan** fitur baru atau rombak workflow. Semua file boleh disentuh; yang sakral adalah **perilaku rekap harian**, data historis, skor biner, window 15:00, dan raw text. **Recalculate jarang dipakai** — jangan over-engineer. Jika ragu: **lebih andal, sama cara kerjanya, tetap gratis**.
+ReSo adalah tool rekap engagement pegawai untuk berbagai instansi/organisasi (multi-tenant) di **Vercel free (`*.vercel.app`)** + **Firebase**, full gratis, dipakai **operator**. Fitur & **cara kerja saat ini sudah ideal** — mode default agent adalah **penyempurnaan** (audit, bugfix, akurasi, stabilitas), **bukan** fitur baru atau rombak workflow. Semua file boleh disentuh; yang sakral adalah **perilaku rekap harian**, data historis, skor biner, window 15:00, dan raw text. **Recalculate jarang dipakai** — jangan over-engineer. Jika ragu: **lebih andal, sama cara kerjanya, tetap gratis**.
 
 ---
 

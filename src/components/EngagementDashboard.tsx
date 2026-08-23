@@ -8,6 +8,7 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   History,
   Settings,
   Instagram,
@@ -101,11 +102,14 @@ export default function EngagementDashboard() {
   }>({
     mode: 'last_day'
   });
+  const [recalcResult, setRecalcResult] = useState<string | null>(null);
 
   // Meta API State
   const [metaToken, setMetaToken] = useState('');
   const [isFetchingMeta, setIsFetchingMeta] = useState(false);
   const [isSavingToken, setIsSavingToken] = useState(false);
+  const [isMetaExpanded, setIsMetaExpanded] = useState(false);
+  const [activeLinkTab, setActiveLinkTab] = useState<'ig' | 'fb' | 'tiktok'>('ig');
 
   // Load Meta Token from Firestore on mount
   useEffect(() => {
@@ -146,6 +150,21 @@ export default function EngagementDashboard() {
       toast.error("Gagal menyimpan token ke server");
     } finally {
       setIsSavingToken(false);
+    }
+  };
+
+  const handleClearMetaToken = async () => {
+    if (!user) return;
+    try {
+      await setDoc(dinasDoc(db, user.uid, 'settings', 'meta_api'), {
+        value: '',
+        updatedAt: serverTimestamp()
+      });
+      setMetaToken('');
+      toast.success('Token Meta API dihapus');
+    } catch (err) {
+      console.error('Error clearing meta token:', err);
+      toast.error('Gagal menghapus token Meta API');
     }
   };
 
@@ -656,25 +675,47 @@ export default function EngagementDashboard() {
     try {
       const { jsPDF } = await import('jspdf');
       const autoTable = (await import('jspdf-autotable')).default;
-      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-      const pageW = 210;
-      const pageH = 297;
-      const margin = 14;
+      const report = buildReportData(type);
+      if (!report) return;
+      const { title, subtitle, rows, rate, dates, todayStr } = report;
+
+      // Bulanan punya banyak kolom tanggal (28–31) → landscape agar 1 baris
+      // pegawai muat; mingguan (7 hari) cukup portrait dengan kolom maksimal.
+      const landscape = type === 'monthly';
+      const pageW = landscape ? 297 : 210;
+      const pageH = landscape ? 210 : 297;
+      const margin = 12;
+      const pdf = new jsPDF({ orientation: landscape ? 'l' : 'p', unit: 'mm', format: 'a4' });
 
       // ---- Logo (fetch SVG → canvas → PNG) ----
       const logoDataUrl = await fetchLogoDataUrl();
 
-      // ---- Tentukan rentang tanggal & judul + rows + rate (dari helper) ----
-      const report = buildReportData(type);
-      if (!report) return;
-      const { title, subtitle, rows, rate } = report;
+      // ---- Hitung per-tanggal (0–3 platform) untuk weekly/monthly ----
+      const daysPassed = dates.filter((d) => d <= todayStr).length || 1;
+      const perEmp = new Map<string, { perDay: number[]; total: number }>();
+      for (const r of rows) {
+        const perDay = dates.map((d) => {
+          if (d > todayStr) return 0;
+          const e = dailyEngagementsMap[d];
+          let c = 0;
+          if (e) {
+            if (e.igEngagedEmployeeIds?.includes(r._empId)) c++;
+            if (e.fbEngagedEmployeeIds?.includes(r._empId)) c++;
+            if (e.tiktokEngagedEmployeeIds?.includes(r._empId)) c++;
+          }
+          return c;
+        });
+        perEmp.set(r._empId, {
+          perDay,
+          total: perDay.reduce((a, b) => a + b, 0),
+        });
+      }
 
       // ---- Header & footer digambar di SEMUA halaman (didDrawPage) ----
       const HEADER_H = 32;
       let pageNum = 0;
       const drawHeaderFooter = () => {
         pageNum++;
-        // Header: logo + judul + subtitle (kiri), rate (kanan)
         if (logoDataUrl) {
           pdf.addImage(logoDataUrl, 'PNG', margin, 8, 14, 14);
         }
@@ -691,33 +732,84 @@ export default function EngagementDashboard() {
         pdf.setFontSize(7);
         pdf.setFont('helvetica', 'normal');
         pdf.text(`ReSo • Gen: ${new Date().toLocaleDateString('id-ID')}`, pageW - margin, 22, { align: 'right' });
-        // Footer
         pdf.setFontSize(7);
         pdf.text(`Hal. ${pageNum}`, pageW - margin, pageH - 8, { align: 'right' });
         pdf.text('ReSo — Rekap Engagement Sosmed', margin, pageH - 8);
       };
 
+      // ---- Susun head & body ----
+      // Bulanan: judul sudah memuat bulan → header tanggal cukup ANGKA HARI
+      // (hemat ruang untuk kolom yang sempit); mingguan tetap "1 Agu".
+      const dateLabels = dates.map((d) => {
+        const p = parseLocalISODate(d);
+        return type === 'monthly'
+          ? String(p.getDate())
+          : p.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      });
+      let head: string[];
+      let body: (string | number)[][];
+      let colWidths: number[];
+
+      if (type === 'daily') {
+        head = ['Nama Pegawai', 'NIP', 'Bidang', 'IG', 'FB', 'TT'];
+        body = rows.map((r) => [
+          r.name, r.nip, r.bidang,
+          r.ig ? 'Eng' : 'x', r.fb ? 'Eng' : 'x', r.tt ? 'Eng' : 'x',
+        ]);
+        colWidths = [74, 34, 42, 12, 12, 12];
+      } else {
+        head = ['Nama Pegawai', 'NIP', 'Bidang', ...dateLabels, 'Total', '% ENG'];
+        body = rows.map((r) => {
+          const { perDay, total } = perEmp.get(r._empId) || { perDay: dates.map(() => 0), total: 0 };
+          return [
+            r.name, r.nip, r.bidang,
+            ...perDay,
+            total,
+            Math.round((total / (daysPassed * 3)) * 100),
+          ];
+        });
+        // Lebar tabel = pageW − margin×2; nama/nip/bidang tetap, sisanya untuk tanggal.
+        // Mingguan portrait: 186mm untuk 7 tanggal + Total + %ENG.
+        // Bulanan landscape: 273mm untuk 28–31 tanggal + Total + %ENG.
+        // NIP bulanan dibuat sempit + font khusus (di didParseCell) agar 18
+        // digit tetap 1 baris, sisa ruang diberikan ke kolom tanggal.
+        const fixed = type === 'weekly' ? [42, 20, 18, 12, 14] : [34, 13, 13, 8, 10];
+        const fixedTotal = fixed[0] + fixed[1] + fixed[2] + fixed[3] + fixed[4];
+        const avail = pageW - margin * 2 - fixedTotal;
+        const dateW = Math.floor((avail / dates.length) * 10) / 10;
+        colWidths = [...fixed.slice(0, 3), ...dates.map(() => dateW), fixed[3], fixed[4]];
+      }
+
       // ---- Tabel autoTable (auto page break, header+footer tiap halaman) ----
+      const isDense = type === 'monthly';
       autoTable(pdf, {
         startY: HEADER_H,
-        head: [['Nama Pegawai', 'NIP', 'Bidang', 'IG', 'FB', 'TT']],
-        body: rows.map(r => [
-          r.name,
-          r.nip,
-          r.bidang,
-          r.ig ? 'Eng' : '—',
-          r.fb ? 'Eng' : '—',
-          r.tt ? 'Eng' : '—',
-        ]),
-        styles: { fontSize: 6, cellPadding: 1.5 },
-        headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 7 },
-        columnStyles: {
-          0: { cellWidth: 56 },
-          1: { cellWidth: 26 },
-          2: { cellWidth: 16 },
-          3: { cellWidth: 16, halign: 'center' },
-          4: { cellWidth: 16, halign: 'center' },
-          5: { cellWidth: 16, halign: 'center' },
+        head: [head],
+        body,
+        styles: {
+          fontSize: type === 'daily' ? 8 : isDense ? 5 : 7,
+          cellPadding: type === 'daily' ? 2.2 : 1.2,
+          overflow: 'linebreak',
+          valign: 'middle',
+        },
+        headStyles: {
+          fillColor: [241, 245, 249],
+          textColor: [15, 23, 42],
+          fontStyle: 'bold',
+          fontSize: type === 'daily' ? 9 : isDense ? 5.5 : 7.5,
+        },
+        columnStyles: Object.fromEntries(
+          colWidths.map((w, i) => [i, { cellWidth: w, ...(i >= 3 ? { halign: 'center' as const } : {}) }])
+        ),
+        didParseCell: (data) => {
+          // NIP bulanan: kolom sempit (13mm) → font khusus agar 18 digit
+          // tetap 1 baris, tanpa melipat ke 2 baris.
+          if (isDense && data.section === 'body' && data.column.index === 1) {
+            data.cell.styles.fontSize = 4;
+            data.cell.styles.overflow = 'hidden';
+            data.cell.styles.cellPadding = { top: 0.5, right: 0.8, bottom: 0.5, left: 0.8 };
+            data.cell.styles.halign = 'center';
+          }
         },
         margin: { left: margin, right: margin, top: HEADER_H, bottom: 12 },
         pageBreak: 'auto',
@@ -833,8 +925,15 @@ export default function EngagementDashboard() {
     setIsLoading(true);
     try {
       // Kolom per tanggal untuk mingguan/bulanan: nilai 0–3 (jumlah platform aktif).
+      // Tambahkan tahun bila rentang lintas tahun (mis. Des 2026 → Jan 2027).
+      const years = new Set(dates.map((d) => parseLocalISODate(d).getFullYear()));
+      const showYear = years.size > 1;
       const dateLabels = dates.map((d) =>
-        parseLocalISODate(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+        parseLocalISODate(d).toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'short',
+          ...(showYear ? { year: 'numeric' } : {}),
+        })
       );
       const daysPassed = dates.filter((d) => d <= todayStr).length || 1;
 
@@ -845,7 +944,7 @@ export default function EngagementDashboard() {
 
       const body: (string | number)[][] = rows.map((r) => {
         if (type === 'daily') {
-          return [r.name, r.nip, r.bidang, r.ig ? 'Eng' : '—', r.fb ? 'Eng' : '—', r.tt ? 'Eng' : '—'];
+          return [r.name, r.nip, r.bidang, r.ig ? 'Eng' : 'x', r.fb ? 'Eng' : 'x', r.tt ? 'Eng' : 'x'];
         }
         // Mingguan/bulanan: hitung per tanggal (0–3) dari dailyEngagementsMap.
         let total = 0;
@@ -1181,6 +1280,7 @@ export default function EngagementDashboard() {
       }
 
       toast.success(`Kalkulasi ulang selesai. ${updates.length} data tanggal diperbarui.`);
+      setRecalcResult(`Terakhir: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} — ${updates.length} data diperbarui`);
     } catch (error: unknown) {
       console.error('Error recalculating data:', error);
       const message = error instanceof Error ? error.message : 'Kesalahan tidak diketahui';
@@ -1225,6 +1325,14 @@ export default function EngagementDashboard() {
     }
     return days;
   }, [currentMonth, dailyEngagementsMap]);
+
+  const monthSummary = useMemo(() => {
+    const filled = calendarDays.filter(d => d.isFilled).length;
+    const needReview = calendarDays.filter(d => d.isAutoFilled && !d.isVerified).length;
+    const verified = calendarDays.filter(d => d.isVerified).length;
+    const unmatched = calendarDays.filter(d => d.hasUnmatched).length;
+    return { filled, needReview, verified, unmatched };
+  }, [calendarDays]);
 
   const weeklyReports = useMemo(() => {
     if (employees.length === 0) return [];
@@ -1626,110 +1734,193 @@ export default function EngagementDashboard() {
                 >
                   <motion.div variants={itemVariants} className="bg-white rounded-xl p-4 sm:p-5 md:p-6 border border-slate-200">
                     {/* Header: bulan nav + indikator + tombol terima */}
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-3 md:mb-4">
-                      <div className="flex items-center gap-3 bg-slate-50 p-1 rounded-xl border border-slate-200 shrink-0">
-                        <Button variant="ghost" size="icon" onClick={() => changeMonth(-1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
-                          <ChevronLeft size={16} />
-                        </Button>
-                        <div className="text-center min-w-[130px]">
-                          <h2 className="text-sm font-bold text-slate-900">
-                            {currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}
-                          </h2>
+                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5 mb-3">
+                      <div className="flex items-center justify-between lg:justify-start gap-2">
+                        <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200 shrink-0">
+                          <Button variant="ghost" size="icon" onClick={() => changeMonth(-1)} className="rounded-lg h-7 w-7 text-slate-600 hover:bg-white shrink-0">
+                            <ChevronLeft size={14} />
+                          </Button>
+                          <div className="text-center min-w-[128px]">
+                            <h2 className="text-sm font-bold text-slate-900">
+                              {currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}
+                            </h2>
+                          </div>
+                          <Button variant="ghost" size="icon" onClick={() => changeMonth(1)} className="rounded-lg h-7 w-7 text-slate-600 hover:bg-white shrink-0">
+                            <ChevronRight size={14} />
+                          </Button>
                         </div>
-                        <Button variant="ghost" size="icon" onClick={() => changeMonth(1)} className="rounded-lg h-8 w-8 text-slate-600 hover:bg-white shrink-0">
-                          <ChevronRight size={16} />
-                        </Button>
-                      </div>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-semibold text-slate-500 bg-slate-50 px-4 py-1.5 rounded-xl border border-slate-200">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full bg-slate-900" /> Terisi
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Perlu review
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Terverifikasi
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-black text-amber-500 leading-none">!</span> Belum terpetakan
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full bg-white border-2 border-slate-200" /> Kosong
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full border-2 border-emerald-500 bg-white" /> Hari ini
-                        </div>
-                      </div>
-
-                      {unverifiedAutoFilledDates.length > 0 && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={handleVerifyAllAutoFilled}
-                          disabled={isVerifyingAll}
-                          className="text-[11px] font-bold border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 h-8 shrink-0 sm:ml-auto"
+                          onClick={() => setSelectedDate(getLocalISODate(new Date()))}
+                          className="text-[11px] font-bold border-slate-200 text-slate-600 hover:bg-slate-100 h-8 shrink-0 lg:hidden"
                         >
-                          <CheckCircle2 size={13} className="mr-1.5" />
-                          {isVerifyingAll
-                            ? 'Menandai…'
-                            : `Terima ${unverifiedAutoFilledDates.length} rekap otomatis`}
+                          Hari ini
                         </Button>
-                      )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-slate-900" /> Terisi
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-amber-400" /> Perlu review
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500" /> Terverifikasi
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-black text-amber-500 leading-none">!</span> Belum terpetakan
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full bg-white border-2 border-slate-200" /> Kosong
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full border-2 border-emerald-500 bg-white" /> Hari ini
+                          </div>
+                        </div>
+
+                        {unverifiedAutoFilledDates.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleVerifyAllAutoFilled}
+                            disabled={isVerifyingAll}
+                            className="text-[11px] font-bold border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 h-8 shrink-0"
+                          >
+                            <CheckCircle2 size={13} className="mr-1.5" />
+                            {isVerifyingAll
+                              ? 'Menandai…'
+                              : `Terima ${unverifiedAutoFilledDates.length} rekap otomatis`}
+                          </Button>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Kalender */}
-                    <div className="overflow-y-auto">
-                      <div className="min-w-[280px] sm:min-w-[400px] h-[calc(100dvh-17rem)] md:h-[calc(100dvh-15rem)] lg:h-[calc(100dvh-14rem)] min-h-[340px]">
-                        <div className="grid grid-cols-7 grid-rows-[repeat(7,minmax(0,1fr))] gap-1 sm:gap-1.5 h-full">
-                          {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(day => (
-                            <div key={day} className="text-center py-0.5 md:py-1 text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest self-end">
-                              {day}
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
+                      {/* Kalender */}
+                      <div className="overflow-y-auto min-w-0">
+                        <div className="min-w-[280px] sm:min-w-[400px] h-[calc(100dvh-14.5rem)] md:h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-10.5rem)] min-h-[340px]">
+                          <div className="grid grid-cols-7 grid-rows-[repeat(7,minmax(0,1fr))] gap-0.5 sm:gap-1 h-full">
+                            {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(day => (
+                              <div key={day} className="text-center py-0.5 md:py-1 text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest self-end">
+                                {day}
+                              </div>
+                            ))}
+                            {calendarDays.map((day, idx) => (
+                              <div key={idx} className="h-full min-h-0">
+                                {day.day ? (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedDate(day.date);
+                                      setIsInputModalOpen(true);
+                                    }}
+                                    disabled={day.isFuture}
+                                    className={cn(
+                                      "w-full h-full rounded-md md:rounded-lg flex flex-col items-center justify-center gap-0.5 md:gap-1 transition-all relative group border",
+                                      day.isFuture ? "bg-slate-50/50 cursor-not-allowed opacity-30 border-transparent" : 
+                                      day.isToday && day.isFilled ? "bg-slate-900 text-white border-slate-900 ring-1 ring-inset ring-emerald-300" :
+                                      day.isFilled ? "bg-slate-900 text-white border-slate-900 hover:bg-slate-800" :
+                                      day.isToday ? "bg-white text-slate-900 border-emerald-500 border-2 hover:bg-emerald-50" :
+                                      "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
+                                    )}
+                                  >
+                                    <span className="text-sm sm:text-base font-bold leading-none">{day.day}</span>
+                                    {day.isToday && !day.isFilled && (
+                                      <span className="text-[7px] font-bold text-emerald-600 leading-none">Hari ini</span>
+                                    )}
+                                    <div className="flex gap-0.5">
+                                      {day.isAutoFilled && (
+                                        <div className={cn("w-1 h-1 rounded-full", day.isVerified ? (day.isToday ? "bg-emerald-300" : "bg-emerald-400") : (day.isToday ? "bg-amber-300" : "bg-amber-400"))} />
+                                      )}
+                                      {day.hasUnmatched && (
+                                        <span className="text-[8px] font-black text-amber-500 leading-none" title="Ada nama belum terpetakan">!</span>
+                                      )}
+                                      {day.isFilled && (
+                                        <>
+                                          <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-pink-300" : "bg-pink-400")} />
+                                          <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-blue-300" : "bg-blue-400")} />
+                                          <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-slate-300" : "bg-slate-500")} />
+                                        </>
+                                      )}
+                                    </div>
+                                  </button>
+                                ) : (
+                                  <div className="w-full h-full" />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Ringkasan bulan */}
+                      <div className="hidden lg:flex flex-col gap-3 min-w-0">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-widest">
+                            Ringkasan bulan
+                          </h4>
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+                                <div className="w-2 h-2 rounded-full bg-slate-900" />
+                                Hari terisi
+                              </div>
+                              <span className="text-sm font-bold text-slate-900">{monthSummary.filled}</span>
                             </div>
-                          ))}
-                          {calendarDays.map((day, idx) => (
-                            <div key={idx} className="h-full min-h-0">
-                              {day.day ? (
-                                <button
-                                  onClick={() => {
-                                    setSelectedDate(day.date);
-                                    setIsInputModalOpen(true);
-                                  }}
-                                  disabled={day.isFuture}
-                                  className={cn(
-                                    "w-full h-full rounded-lg md:rounded-xl flex flex-col items-center justify-center gap-0.5 md:gap-1 transition-all relative group border",
-                                    day.isFuture ? "bg-slate-50/50 cursor-not-allowed opacity-30 border-transparent" : 
-                                    day.isToday && day.isFilled ? "bg-slate-900 text-white border-slate-900 ring-2 ring-emerald-400 ring-offset-1" :
-                                    day.isFilled ? "bg-slate-900 text-white border-slate-900 hover:bg-slate-800" :
-                                    day.isToday ? "bg-white text-slate-900 border-emerald-500 border-2 hover:bg-emerald-50" :
-                                    "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
-                                  )}
-                                >
-                                  <span className="text-sm sm:text-base font-bold leading-none">{day.day}</span>
-                                  {day.isToday && !day.isFilled && (
-                                    <span className="text-[8px] font-bold text-emerald-600 leading-none">Hari ini</span>
-                                  )}
-                                  <div className="flex gap-0.5">
-                                    {day.isAutoFilled && (
-                                      <div className={cn("w-1 h-1 rounded-full", day.isVerified ? (day.isToday ? "bg-emerald-300" : "bg-emerald-400") : (day.isToday ? "bg-amber-300" : "bg-amber-400"))} />
-                                    )}
-                                    {day.hasUnmatched && (
-                                      <span className="text-[8px] font-black text-amber-500 leading-none" title="Ada nama belum terpetakan">!</span>
-                                    )}
-                                    {day.isFilled && (
-                                      <>
-                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-pink-300" : "bg-pink-400")} />
-                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-blue-300" : "bg-blue-400")} />
-                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-slate-300" : "bg-slate-500")} />
-                                      </>
-                                    )}
-                                  </div>
-                                </button>
-                              ) : (
-                                <div className="w-full h-full" />
-                              )}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+                                <div className="w-2 h-2 rounded-full bg-amber-400" />
+                                Perlu review
+                              </div>
+                              <span className="text-sm font-bold text-amber-600">{monthSummary.needReview}</span>
                             </div>
-                          ))}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                Terverifikasi
+                              </div>
+                              <span className="text-sm font-bold text-emerald-600">{monthSummary.verified}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+                                <span className="w-2 h-2 rounded-full bg-amber-200 flex items-center justify-center text-[8px] font-black text-amber-600 leading-none">!</span>
+                                Belum terpetakan
+                              </div>
+                              <span className="text-sm font-bold text-amber-600">{monthSummary.unmatched}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-widest">
+                            Aksi cepat
+                          </h4>
+                          <div className="space-y-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedDate(getLocalISODate(new Date()));
+                                setIsInputModalOpen(true);
+                              }}
+                              className="w-full justify-start text-[11px] font-bold text-slate-600 h-9 rounded-lg"
+                            >
+                              <PlusCircle size={14} className="mr-1.5" />
+                              Input rekap hari ini
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setActiveTab('employees')}
+                              className="w-full justify-start text-[11px] font-bold text-slate-600 h-9 rounded-lg"
+                            >
+                              <Users2 size={14} className="mr-1.5" />
+                              Kelola pegawai
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1751,7 +1942,7 @@ export default function EngagementDashboard() {
                           onClick={(e) => e.stopPropagation()}
                           className="bg-white w-full max-w-xl rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[88vh] sm:max-h-[82vh] shadow-2xl border border-slate-200"
                         >
-                          <div className="p-5 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
+                          <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
                             <div>
                               <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">Input Rekapitulasi</h3>
                               <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
@@ -1793,59 +1984,98 @@ export default function EngagementDashboard() {
                             </Button>
                           </div>
                           
-                          <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto pb-safe">
+                          <div className="p-4 sm:p-5 space-y-3 sm:space-y-4 overflow-y-auto pb-safe">
                             {/* Meta fetch — token dikelola di Pengaturan */}
-                            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
-                              <div className="flex items-center justify-between gap-2">
+                            <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => setIsMetaExpanded((v) => !v)}
+                                className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 hover:bg-slate-100/70 transition-colors"
+                              >
                                 <div className="flex items-center gap-2 min-w-0">
                                   <RefreshCw size={15} className="text-slate-600 shrink-0" />
                                   <h4 className="text-sm font-bold text-slate-800 truncate">Tarik via Meta API</h4>
+                                  <Badge variant="outline" className="text-[10px] font-semibold border-slate-200 text-slate-500 shrink-0 hidden sm:inline-flex">
+                                    15:00 WIB
+                                  </Badge>
                                 </div>
-                                <Badge variant="outline" className="text-[10px] font-semibold border-slate-200 text-slate-500 shrink-0">
-                                  15:00 WIB
-                                </Badge>
-                              </div>
-                              <Button 
-                                onClick={handleFetchRecentMeta}
-                                disabled={isFetchingMeta || !metaToken.trim()}
-                                className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl"
-                              >
-                                {isFetchingMeta
-                                  ? 'Menarik data…'
-                                  : !metaToken.trim()
-                                    ? 'Token belum diatur'
-                                    : `Tarik post (${parseLocalISODate(addLocalDays(selectedDate, -1)).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} → ${parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })})`}
-                              </Button>
-                              {!metaToken.trim() ? (
-                                <button
-                                  type="button"
-                                  onClick={() => { closeInputModal(); setActiveTab('settings'); }}
-                                  className="text-[11px] font-semibold text-slate-600 underline underline-offset-2"
-                                >
-                                  Atur token Meta di Pengaturan
-                                </button>
-                              ) : (
-                                <p className="text-[11px] text-slate-500 leading-snug">
-                                  IG: komentar + link. FB: link post. Window 15:00 H−1 s/d 15:00 hari rekap (WIB).
-                                </p>
+                                <ChevronDown
+                                  size={16}
+                                  className={cn('text-slate-400 shrink-0 transition-transform', isMetaExpanded && 'rotate-180')}
+                                />
+                              </button>
+                              {isMetaExpanded && (
+                                <div className="px-3.5 pb-3.5 space-y-2">
+                                  <Button 
+                                    onClick={handleFetchRecentMeta}
+                                    disabled={isFetchingMeta || !metaToken.trim()}
+                                    className="w-full h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg"
+                                  >
+                                    {isFetchingMeta
+                                      ? 'Menarik data…'
+                                      : !metaToken.trim()
+                                        ? 'Token belum diatur'
+                                        : `Tarik post (${parseLocalISODate(addLocalDays(selectedDate, -1)).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} → ${parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })})`}
+                                  </Button>
+                                  {!metaToken.trim() ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => { closeInputModal(); setActiveTab('settings'); }}
+                                      className="text-[11px] font-semibold text-slate-600 underline underline-offset-2"
+                                    >
+                                      Atur token Meta di Pengaturan
+                                    </button>
+                                  ) : (
+                                    <p className="text-[11px] text-slate-500 leading-snug">
+                                      IG: komentar + link. FB: link post. Window 15:00 H−1 s/d 15:00 hari rekap (WIB).
+                                    </p>
+                                  )}
+                                </div>
                               )}
                             </div>
 
                             {/* Meta Links Section */}
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                              <div className="flex items-center justify-between">
+                            <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                              <div className="flex items-center justify-between px-4 pt-3">
                                 <div className="flex items-center gap-2">
                                   <LinkIcon size={16} className="text-slate-400" />
                                   <h4 className="text-sm font-bold text-slate-700">Link Postingan {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</h4>
                                 </div>
                               </div>
                               
-                              <div className="space-y-3">
+                              {/* Tab platform */}
+                              <div className="flex items-center gap-1 px-3 pt-2.5">
+                                {(['ig', 'fb', 'tiktok'] as const).map((p) => {
+                                  const counts = { ig: igLinks.length, fb: fbLinks.length, tiktok: tiktokLinks.length }[p];
+                                  const active = activeLinkTab === p;
+                                  const label = p === 'ig' ? 'IG' : p === 'fb' ? 'FB' : 'TikTok';
+                                  const Icon = p === 'ig' ? Instagram : p === 'fb' ? Facebook : TiktokIcon;
+                                  return (
+                                    <button
+                                      key={p}
+                                      type="button"
+                                      onClick={() => setActiveLinkTab(p)}
+                                      className={cn(
+                                        'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors',
+                                        active ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-100 border border-transparent'
+                                      )}
+                                    >
+                                      <Icon size={13} className={p === 'ig' ? 'text-pink-500' : p === 'fb' ? 'text-blue-500' : 'text-slate-700'} />
+                                      {label}
+                                      <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full', active ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600')}>
+                                        {counts}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="p-3">
                                 {/* Smart Link Input */}
                                 <div>
                                   <textarea
                                     placeholder="Paste banyak link IG/FB sekaligus di sini (pisahkan dengan spasi atau enter)..."
-                                    className="w-full h-16 p-2 rounded-lg border border-slate-200 bg-white focus:ring-slate-900/5 transition-all text-xs resize-none"
+                                    className="w-full h-12 p-2 rounded-lg border border-slate-200 bg-white focus:ring-slate-900/5 transition-all text-xs resize-none"
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault();
@@ -1884,92 +2114,96 @@ export default function EngagementDashboard() {
                                   <p className="text-[9px] text-slate-400 mt-1">Tekan Enter untuk menambahkan. Sistem otomatis memisahkan link IG dan FB.</p>
                                 </div>
 
-                                {/* IG Links */}
-                                <div className="flex flex-wrap gap-2 items-center">
-                                  <Instagram size={14} className="text-pink-500" />
-                                  {igLinks.length > 0 ? (
-                                    igLinks.map((link, idx) => (
-                                      <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-pink-50 text-pink-700 text-xs font-medium border border-pink-100">
-                                        <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
-                                          Post IG {idx + 1}
-                                          <ExternalLink size={10} />
-                                        </a>
-                                        <button 
-                                          onClick={() => {
-                                            const newLinks = [...igLinks];
-                                            newLinks.splice(idx, 1);
-                                            setIgLinks(newLinks);
-                                          }}
-                                          className="ml-1 p-0.5 hover:bg-pink-200 rounded-full transition-colors"
-                                        >
-                                          <X size={10} />
-                                        </button>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <span className="text-xs text-slate-400 italic">Belum ada postingan IG</span>
+                                {/* Active platform links */}
+                                <div className="flex flex-wrap gap-2 items-center mt-2.5">
+                                  {activeLinkTab === 'ig' && (
+                                    <>
+                                      <Instagram size={14} className="text-pink-500" />
+                                      {igLinks.length > 0 ? (
+                                        igLinks.map((link, idx) => (
+                                          <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-pink-50 text-pink-700 text-xs font-medium border border-pink-100">
+                                            <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                                              Post IG {idx + 1}
+                                              <ExternalLink size={10} />
+                                            </a>
+                                            <button 
+                                              onClick={() => {
+                                                const newLinks = [...igLinks];
+                                                newLinks.splice(idx, 1);
+                                                setIgLinks(newLinks);
+                                              }}
+                                              className="ml-1 p-0.5 hover:bg-pink-200 rounded-full transition-colors"
+                                            >
+                                              <X size={10} />
+                                            </button>
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <span className="text-xs text-slate-400 italic">Belum ada postingan IG</span>
+                                      )}
+                                    </>
                                   )}
-                                </div>
-
-                                {/* FB Links */}
-                                <div className="flex flex-wrap gap-2 items-center">
-                                  <Facebook size={14} className="text-blue-500" />
-                                  {fbLinks.length > 0 ? (
-                                    fbLinks.map((link, idx) => (
-                                      <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100">
-                                        <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
-                                          Post FB {idx + 1}
-                                          <ExternalLink size={10} />
-                                        </a>
-                                        <button 
-                                          onClick={() => {
-                                            const newLinks = [...fbLinks];
-                                            newLinks.splice(idx, 1);
-                                            setFbLinks(newLinks);
-                                          }}
-                                          className="ml-1 p-0.5 hover:bg-blue-200 rounded-full transition-colors"
-                                        >
-                                          <X size={10} />
-                                        </button>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <span className="text-xs text-slate-400 italic">Belum ada postingan FB</span>
+                                  {activeLinkTab === 'fb' && (
+                                    <>
+                                      <Facebook size={14} className="text-blue-500" />
+                                      {fbLinks.length > 0 ? (
+                                        fbLinks.map((link, idx) => (
+                                          <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100">
+                                            <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                                              Post FB {idx + 1}
+                                              <ExternalLink size={10} />
+                                            </a>
+                                            <button 
+                                              onClick={() => {
+                                                const newLinks = [...fbLinks];
+                                                newLinks.splice(idx, 1);
+                                                setFbLinks(newLinks);
+                                              }}
+                                              className="ml-1 p-0.5 hover:bg-blue-200 rounded-full transition-colors"
+                                            >
+                                              <X size={10} />
+                                            </button>
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <span className="text-xs text-slate-400 italic">Belum ada postingan FB</span>
+                                      )}
+                                    </>
                                   )}
-                                </div>
-
-                                {/* TikTok Links */}
-                                <div className="flex flex-wrap gap-2 items-center">
-                                  <span className="font-bold text-slate-800 text-sm italic pr-1 leading-none">t</span>
-                                  {tiktokLinks.length > 0 ? (
-                                    tiktokLinks.map((link, idx) => (
-                                      <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 text-xs font-medium border border-slate-200">
-                                        <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
-                                          Post TikTok {idx + 1}
-                                          <ExternalLink size={10} />
-                                        </a>
-                                        <button 
-                                          onClick={() => {
-                                            const newLinks = [...tiktokLinks];
-                                            newLinks.splice(idx, 1);
-                                            setTiktokLinks(newLinks);
-                                          }}
-                                          className="ml-1 p-0.5 hover:bg-slate-300 rounded-full transition-colors"
-                                        >
-                                          <X size={10} />
-                                        </button>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <span className="text-xs text-slate-400 italic">Belum ada postingan TikTok</span>
+                                  {activeLinkTab === 'tiktok' && (
+                                    <>
+                                      <span className="font-bold text-slate-800 text-sm italic pr-1 leading-none">t</span>
+                                      {tiktokLinks.length > 0 ? (
+                                        tiktokLinks.map((link, idx) => (
+                                          <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 text-xs font-medium border border-slate-200">
+                                            <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                                              Post TikTok {idx + 1}
+                                              <ExternalLink size={10} />
+                                            </a>
+                                            <button 
+                                              onClick={() => {
+                                                const newLinks = [...tiktokLinks];
+                                                newLinks.splice(idx, 1);
+                                                setTiktokLinks(newLinks);
+                                              }}
+                                              className="ml-1 p-0.5 hover:bg-slate-300 rounded-full transition-colors"
+                                            >
+                                              <X size={10} />
+                                            </button>
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <span className="text-xs text-slate-400 italic">Belum ada postingan TikTok</span>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-4">
-                              <div className="space-y-2">
-                                <label className="text-xs font-semibold text-slate-500 flex items-center gap-2">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
                                   <Instagram size={12} className="text-pink-500" />
                                   List IG
                                 </label>
@@ -1977,11 +2211,11 @@ export default function EngagementDashboard() {
                                   value={igRawInput}
                                   onChange={(e) => setIgRawInput(e.target.value)}
                                   placeholder="Paste list nama atau username di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
+                                  className="w-full h-28 md:h-40 p-2.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
                                 />
                               </div>
-                              <div className="space-y-2">
-                                <label className="text-xs font-semibold text-slate-500 flex items-center gap-2">
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
                                   <Facebook size={12} className="text-blue-500" />
                                   List FB
                                 </label>
@@ -1989,19 +2223,19 @@ export default function EngagementDashboard() {
                                   value={fbRawInput}
                                   onChange={(e) => setFbRawInput(e.target.value)}
                                   placeholder="Paste list nama atau username di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
+                                  className="w-full h-28 md:h-40 p-2.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
                                 />
                               </div>
-                              <div className="space-y-2">
-                                <label className="text-xs font-semibold text-slate-500 flex items-center gap-2">
-                                  <TiktokIcon size={16} className="text-slate-800" />
+                              <div className="space-y-1.5">
+                                <label className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                                  <TiktokIcon size={15} className="text-slate-800" />
                                   List TikTok
                                 </label>
                                 <textarea
                                   value={tiktokRawInput}
                                   onChange={(e) => setTiktokRawInput(e.target.value)}
                                   placeholder="Paste list nama akun TikTok di sini..."
-                                  className="w-full h-24 md:h-32 p-3 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
+                                  className="w-full h-28 md:h-40 p-2.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
                                 />
                               </div>
                             </div>
@@ -2014,14 +2248,14 @@ export default function EngagementDashboard() {
                             />
                           </div>
 
-                          <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
-                            <Button variant="ghost" onClick={closeInputModal} className="font-bold text-xs rounded-xl h-11 px-5">
+                          <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                            <Button variant="ghost" onClick={closeInputModal} className="font-bold text-xs rounded-lg h-9 px-4">
                               Batal
                             </Button>
                             <Button 
                               onClick={handleSaveEngagement} 
                               disabled={isLoading}
-                              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl h-11 px-6 border-none"
+                              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-lg h-9 px-5 border-none"
                             >
                               {isLoading ? 'Menyimpan…' : 'Simpan Rekap'}
                             </Button>
@@ -2192,7 +2426,9 @@ export default function EngagementDashboard() {
                 metaToken={metaToken}
                 setMetaToken={setMetaToken}
                 handleSaveMetaToken={handleSaveMetaToken}
+                handleClearMetaToken={handleClearMetaToken}
                 isSavingToken={isSavingToken}
+                recalcResult={recalcResult}
               />
             )}
           </AnimatePresence>

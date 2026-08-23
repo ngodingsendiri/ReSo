@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Employee } from '../types';
 import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Table, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Trash2, Plus, UserPlus, Save, X, Download, Upload, FileSpreadsheet, Users, Instagram, Facebook, User, CreditCard, UserCircle, Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Trash2, UserPlus, Save, X, Download, Upload, FileSpreadsheet, Users, Instagram, Facebook, User, CreditCard, UserCircle, Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
 import { toast } from 'sonner';
 import { useAuth } from './FirebaseProvider';
@@ -67,11 +68,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employee, index: number, onEdit: (e: Employee) => void, onDelete: (id: string) => void }) => {
   return (
-    <motion.tr 
-      variants={itemVariants}
-      whileHover={{ backgroundColor: "rgba(241, 245, 249, 0.5)" }}
-      className="group transition-all border-b border-slate-50"
-    >
+    <tr className="group transition-colors border-b border-slate-50 hover:bg-slate-50/40">
       <TableCell className="pl-6 py-3">
         <div className="flex items-center gap-3">
           <motion.div 
@@ -130,7 +127,7 @@ const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employe
           </Button>
         </div>
       </TableCell>
-    </motion.tr>
+    </tr>
   );
 });
 
@@ -141,20 +138,19 @@ const containerVariants = {
   visible: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.05
+      staggerChildren: 0.02
     }
   }
 };
 
 const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 15 },
+  hidden: { opacity: 0, y: 8 },
   visible: { 
     opacity: 1, 
     y: 0,
     transition: {
       type: "tween",
-      stiffness: 260,
-      damping: 20
+      duration: 0.15
     }
   }
 };
@@ -163,9 +159,6 @@ export default function EmployeeManager() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [formData, setFormData] = useState({ name: '', nip: '', bidang: '', igUsername: '', igUsername2: '', fbName: '', fbName2: '', tiktokName: '', tiktokName2: '' });
-  const [showIg2, setShowIg2] = useState(false);
-  const [showFb2, setShowFb2] = useState(false);
-  const [showTiktok2, setShowTiktok2] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -175,12 +168,24 @@ export default function EmployeeManager() {
   const [searchQuery, setSearchQuery] = useState('');
   type SortField = 'name' | 'bidang' | 'nip';
   const [sortConfig, setSortConfig] = useState<{ field: SortField, direction: 'asc' | 'desc' } | null>({ field: 'name', direction: 'asc' });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const filteredAndSortedEmployees = React.useMemo(() => {
     let result = [...employees];
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(emp => emp.name.toLowerCase().includes(q));
+      result = result.filter(emp =>
+        emp.name.toLowerCase().includes(q) ||
+        (emp.nip || '').toLowerCase().includes(q) ||
+        (emp.bidang || '').toLowerCase().includes(q) ||
+        (emp.igUsername || '').toLowerCase().includes(q) ||
+        (emp.igUsername2 || '').toLowerCase().includes(q) ||
+        (emp.fbName || '').toLowerCase().includes(q) ||
+        (emp.fbName2 || '').toLowerCase().includes(q) ||
+        (emp.tiktokName || '').toLowerCase().includes(q) ||
+        (emp.tiktokName2 || '').toLowerCase().includes(q)
+      );
     }
     if (sortConfig) {
       result.sort((a, b) => {
@@ -193,6 +198,24 @@ export default function EmployeeManager() {
     }
     return result;
   }, [employees, searchQuery, sortConfig]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedEmployees.length / pageSize));
+  const paginatedEmployees = React.useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredAndSortedEmployees.slice(start, start + pageSize);
+  }, [filteredAndSortedEmployees, page, pageSize]);
+
+  // Reset ke halaman 1 saat pencarian/sortir berubah.
+  React.useEffect(() => {
+    setPage(1);
+  }, [searchQuery, sortConfig]);
+
+  // Daftar bidang yang sudah ada (autocomplete form).
+  const bidangOptions = React.useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach((e) => { if (e.bidang?.trim()) set.add(e.bidang.trim()); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'id'));
+  }, [employees]);
 
   const handleSort = (field: SortField) => {
     setSortConfig(current => {
@@ -268,9 +291,6 @@ export default function EmployeeManager() {
 
   const resetForm = () => {
     setFormData({ name: '', nip: '', bidang: '', igUsername: '', igUsername2: '', fbName: '', fbName2: '', tiktokName: '', tiktokName2: '' });
-    setShowIg2(false);
-    setShowFb2(false);
-    setShowTiktok2(false);
     setIsAdding(false);
     setEditingId(null);
   };
@@ -307,9 +327,6 @@ export default function EmployeeManager() {
       tiktokName: emp.tiktokName || '',
       tiktokName2: emp.tiktokName2 || ''
     });
-    setShowIg2(!!emp.igUsername2);
-    setShowFb2(!!emp.fbName2);
-    setShowTiktok2(!!emp.tiktokName2);
     setEditingId(emp.id);
     setIsAdding(true);
     
@@ -434,6 +451,7 @@ export default function EmployeeManager() {
     let successCount = 0;
     let updatedCount = 0;
     let newCount = 0;
+    let invalidNipCount = 0;
     setIsUploading(true);
     
     try {
@@ -464,6 +482,11 @@ export default function EmployeeManager() {
           const tiktokName2 = String(row.tiktokName2 || row['Nama Profil TikTok 2'] || row['TikTok 2'] || '').trim();
 
           if (name && nip) {
+            // Validasi format NIP (18 digit numerik) — bukan blokir, hanya warning
+            // karena NIP lama/asing bisa berbeda format.
+            if (!/^\d{18}$/.test(nip)) {
+              invalidNipCount++;
+            }
             // Optional fields: on update, skip empty so import partial tidak mengosongkan handle yang sudah ada
             const optionalFields: Record<string, string> = {};
             if (bidang) optionalFields.bidang = bidang;
@@ -524,7 +547,12 @@ export default function EmployeeManager() {
       }
 
       if (successCount > 0) {
-        toast.success(`Berhasil memproses data: ${newCount} ditambahkan, ${updatedCount} diperbarui`);
+        const base = `Berhasil memproses data: ${newCount} ditambahkan, ${updatedCount} diperbarui`;
+        if (invalidNipCount > 0) {
+          toast.warning(`${base}. ${invalidNipCount} baris NIP bukan 18 digit numerik — periksa kembali.`);
+        } else {
+          toast.success(base);
+        }
       } else {
         toast.error("Tidak ada data valid yang ditemukan di file");
       }
@@ -667,17 +695,23 @@ export default function EmployeeManager() {
                         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-900 transition-colors">
                           <Users size={14} />
                         </div>
-                        <Input 
-                          placeholder="Contoh: Bidang Aspirasi" 
+                        <input
+                          list="bidang-options"
+                          placeholder="Cari atau ketik bidang baru..."
                           value={formData.bidang}
                           onChange={(e) => setFormData({...formData, bidang: e.target.value})}
-                          className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
+                          className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 pl-10 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                         />
+                        <datalist id="bidang-options">
+                          {bidangOptions.map((b) => <option key={b} value={b} />)}
+                        </datalist>
                       </div>
                     </div>
-                    <div className="space-y-1.5 md:col-span-2 flex flex-col">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">Instagram</label>
-                      <div className={cn("grid gap-4", showIg2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">
+                        Instagram <span className="text-[9px] font-normal text-slate-400 normal-case">(utama & ke-2)</span>
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="relative group">
                           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-pink-500 transition-colors">
                             <Instagram size={14} />
@@ -689,32 +723,24 @@ export default function EmployeeManager() {
                             className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-pink-200"
                           />
                         </div>
-                        {showIg2 && (
-                          <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-pink-500 transition-colors">
-                              <Instagram size={14} />
-                            </div>
-                            <Input 
-                              placeholder="@username (Akun ke-2)" 
-                              value={formData.igUsername2}
-                              onChange={(e) => setFormData({...formData, igUsername2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-pink-200"
-                            />
-                            <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowIg2(false); setFormData({...formData, igUsername2: ''}); }}>
-                              <X size={14} />
-                            </Button>
+                        <div className="relative group">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-pink-500 transition-colors">
+                            <Instagram size={14} />
                           </div>
-                        )}
+                          <Input 
+                            placeholder="@username (Akun ke-2)" 
+                            value={formData.igUsername2}
+                            onChange={(e) => setFormData({...formData, igUsername2: e.target.value})}
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-pink-200"
+                          />
+                        </div>
                       </div>
-                      {!showIg2 && (
-                        <button type="button" className="text-xs font-semibold text-slate-400 hover:text-slate-700 flex items-center gap-1.5 px-2 mt-2 w-max transition-colors" onClick={() => setShowIg2(true)}>
-                          <Plus size={14} /> Tambah Akun Ke-2
-                        </button>
-                      )}
                     </div>
-                    <div className="space-y-1.5 md:col-span-2 flex flex-col">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">Facebook</label>
-                      <div className={cn("grid gap-4", showFb2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">
+                        Facebook <span className="text-[9px] font-normal text-slate-400 normal-case">(utama & ke-2)</span>
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="relative group">
                           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
                             <Facebook size={14} />
@@ -726,32 +752,24 @@ export default function EmployeeManager() {
                             className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-blue-200"
                           />
                         </div>
-                        {showFb2 && (
-                          <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
-                              <Facebook size={14} />
-                            </div>
-                            <Input 
-                              placeholder="Nama Profil FB (Akun ke-2)" 
-                              value={formData.fbName2}
-                              onChange={(e) => setFormData({...formData, fbName2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-blue-200"
-                            />
-                            <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowFb2(false); setFormData({...formData, fbName2: ''}); }}>
-                              <X size={14} />
-                            </Button>
+                        <div className="relative group">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                            <Facebook size={14} />
                           </div>
-                        )}
+                          <Input 
+                            placeholder="Nama Profil FB (Akun ke-2)" 
+                            value={formData.fbName2}
+                            onChange={(e) => setFormData({...formData, fbName2: e.target.value})}
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-blue-200"
+                          />
+                        </div>
                       </div>
-                      {!showFb2 && (
-                        <button type="button" className="text-xs font-semibold text-slate-400 hover:text-slate-700 flex items-center gap-1.5 px-2 mt-2 w-max transition-colors" onClick={() => setShowFb2(true)}>
-                          <Plus size={14} /> Tambah Akun Ke-2
-                        </button>
-                      )}
                     </div>
-                    <div className="space-y-1.5 md:col-span-2 flex flex-col">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">TikTok</label>
-                      <div className={cn("grid gap-4", showTiktok2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 ml-1">
+                        TikTok <span className="text-[9px] font-normal text-slate-400 normal-case">(utama & ke-2)</span>
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="relative group">
                           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-800 transition-colors">
                             <TiktokIcon size={14} />
@@ -763,28 +781,18 @@ export default function EmployeeManager() {
                             className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
                           />
                         </div>
-                        {showTiktok2 && (
-                           <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-800 transition-colors">
-                              <TiktokIcon size={14} />
-                            </div>
-                            <Input 
-                              placeholder="Nama Profil TikTok (Akun ke-2)" 
-                              value={formData.tiktokName2}
-                              onChange={(e) => setFormData({...formData, tiktokName2: e.target.value})}
-                              className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
-                            />
-                            <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => { setShowTiktok2(false); setFormData({...formData, tiktokName2: ''}); }}>
-                              <X size={14} />
-                            </Button>
+                        <div className="relative group">
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-800 transition-colors">
+                            <TiktokIcon size={14} />
                           </div>
-                        )}
+                          <Input 
+                            placeholder="Nama Profil TikTok (Akun ke-2)" 
+                            value={formData.tiktokName2}
+                            onChange={(e) => setFormData({...formData, tiktokName2: e.target.value})}
+                            className="rounded-xl bg-white border-slate-200 h-10 pl-10 text-sm focus-visible:ring-1 focus-visible:ring-slate-300"
+                          />
+                        </div>
                       </div>
-                      {!showTiktok2 && (
-                        <button type="button" className="text-xs font-semibold text-slate-400 hover:text-slate-700 flex items-center gap-1.5 px-2 mt-2 w-max transition-colors" onClick={() => setShowTiktok2(true)}>
-                          <Plus size={14} /> Tambah Akun Ke-2
-                        </button>
-                      )}
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-slate-50">
@@ -815,7 +823,7 @@ export default function EmployeeManager() {
         <CardContent className="p-0">
           {/* Desktop Table - Hidden on small screens */}
           <div className="hidden md:block">
-            <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
+            <div className="overflow-x-auto overflow-y-auto">
               <div className="min-w-[800px]">
                 <Table>
                   <TableHeader className="bg-slate-50/50 sticky top-0 z-10">
@@ -854,7 +862,7 @@ export default function EmployeeManager() {
                     animate="visible"
                     className="[&_tr:last-child]:border-0"
                   >
-                    {filteredAndSortedEmployees.length === 0 ? (
+                    {paginatedEmployees.length === 0 ? (
                       <motion.tr variants={itemVariants} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                         <TableCell colSpan={5} className="h-48 text-center text-slate-400">
                           <div className="flex flex-col items-center gap-2">
@@ -864,11 +872,11 @@ export default function EmployeeManager() {
                         </TableCell>
                       </motion.tr>
                     ) : (
-                      filteredAndSortedEmployees.map((emp, index) => (
+                      paginatedEmployees.map((emp, index) => (
                           <EmployeeRow 
                             key={emp.id} 
                             emp={emp} 
-                            index={index} 
+                            index={(page - 1) * pageSize + index + 1} 
                             onEdit={startEdit} 
                             onDelete={confirmDelete}
                           />
@@ -883,13 +891,13 @@ export default function EmployeeManager() {
           {/* Mobile Card Layout - Shown on small screens */}
           <div className="md:hidden">
             <div className="divide-y divide-slate-100">
-              {filteredAndSortedEmployees.length === 0 ? (
+              {paginatedEmployees.length === 0 ? (
                 <div className="px-6 py-12 text-center text-slate-400 space-y-2">
                   <Users size={32} className="mx-auto opacity-20" />
                   <p className="text-xs font-medium">Belum ada data pegawai</p>
                 </div>
               ) : (
-                filteredAndSortedEmployees.map((emp, index) => (
+                paginatedEmployees.map((emp, index) => (
                   <motion.div 
                     key={emp.id}
                     initial={{ opacity: 0 }}
@@ -899,7 +907,7 @@ export default function EmployeeManager() {
                     <div className="flex justify-between items-start gap-2">
                       <div className="flex gap-3 flex-1 min-w-0">
                         <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold text-xs shrink-0 tracking-tighter">
-                          {index + 1}
+                          {(page - 1) * pageSize + index + 1}
                         </div>
                         <div className="min-w-0 flex-1">
                           <h4 className="font-bold text-slate-900 text-sm whitespace-normal line-clamp-2 leading-tight">{emp.name}</h4>
@@ -936,18 +944,18 @@ export default function EmployeeManager() {
                           {emp.bidang || 'N/A'}
                         </span>
                       </div>
-                      <div className="flex flex-wrap gap-4 pt-1">
+                      <div className="flex flex-col gap-1.5 pt-1">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
-                          <Instagram size={13} className={emp.igUsername ? "text-pink-500" : "text-slate-300"} />
-                          <span className="truncate max-w-[80px]">{emp.igUsername || '-'}</span>
+                          <Instagram size={13} className={emp.igUsername || emp.igUsername2 ? "text-pink-500 shrink-0" : "text-slate-300 shrink-0"} />
+                          <span className="truncate">{emp.igUsername || '-'}{emp.igUsername2 ? ` · ${emp.igUsername2}` : ''}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
-                          <Facebook size={13} className={emp.fbName ? "text-blue-500" : "text-slate-300"} />
-                          <span className="truncate max-w-[80px]">{emp.fbName || '-'}</span>
+                          <Facebook size={13} className={emp.fbName || emp.fbName2 ? "text-blue-500 shrink-0" : "text-slate-300 shrink-0"} />
+                          <span className="truncate">{emp.fbName || '-'}{emp.fbName2 ? ` · ${emp.fbName2}` : ''}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
-                          <TiktokIcon size={13} className={emp.tiktokName ? "text-slate-800" : "text-slate-300"} />
-                          <span className="truncate max-w-[80px]">{emp.tiktokName || '-'}</span>
+                          <TiktokIcon size={13} className={emp.tiktokName || emp.tiktokName2 ? "text-slate-800 shrink-0" : "text-slate-300 shrink-0"} />
+                          <span className="truncate">{emp.tiktokName || '-'}{emp.tiktokName2 ? ` · ${emp.tiktokName2}` : ''}</span>
                         </div>
                       </div>
                     </div>
@@ -956,54 +964,96 @@ export default function EmployeeManager() {
               )}
             </div>
           </div>
+
+          {/* Pagination */}
+          {filteredAndSortedEmployees.length > 0 && (
+            <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-t border-slate-100 flex-wrap">
+              <p className="text-[11px] text-slate-500 font-medium">
+                Menampilkan {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredAndSortedEmployees.length)} dari {filteredAndSortedEmployees.length} pegawai
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                  className="h-8 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold text-slate-600 px-2 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                  title="Jumlah per halaman"
+                >
+                  {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} / hal</option>)}
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="h-8 rounded-lg text-[11px] font-bold border-slate-200 text-slate-600"
+                >
+                  Sebelumnya
+                </Button>
+                <span className="text-[11px] font-bold text-slate-500 px-1">Hal {page} / {totalPages}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="h-8 rounded-lg text-[11px] font-bold border-slate-200 text-slate-600"
+                >
+                  Berikutnya
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Delete Confirmation Modal */}
-      <AnimatePresence>
-        {deleteConfirmId && (
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[2px]"
-            onClick={cancelDelete}
-            role="presentation"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ ease: "easeOut", duration: 0.18 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-sm rounded-2xl border border-slate-200 overflow-hidden shadow-xl"
+      {/* Delete Confirmation Modal — di-portal ke body supaya tidak ter-clip
+          oleh transform/overflow ancestor (animasi tab motion). */}
+      {createPortal(
+        <AnimatePresence>
+          {deleteConfirmId && (
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[2px]"
+              onClick={cancelDelete}
+              role="presentation"
             >
-              <div className="p-6 text-center space-y-3">
-                <div className="w-14 h-14 bg-rose-50 rounded-xl flex items-center justify-center mx-auto border border-rose-100">
-                  <Trash2 size={24} className="text-rose-600" />
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ ease: "easeOut", duration: 0.18 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white w-full max-w-sm rounded-2xl border border-slate-200 overflow-hidden shadow-xl"
+              >
+                <div className="p-6 text-center space-y-3">
+                  <div className="w-14 h-14 bg-rose-50 rounded-xl flex items-center justify-center mx-auto border border-rose-100">
+                    <Trash2 size={24} className="text-rose-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 tracking-tight">Hapus pegawai?</h3>
+                  <p className="text-xs font-medium text-slate-500 leading-relaxed px-2">
+                    Tindakan ini tidak bisa dibatalkan. Data pegawai dihapus permanen dari sistem.
+                  </p>
                 </div>
-                <h3 className="text-lg font-bold text-slate-900 tracking-tight">Hapus pegawai?</h3>
-                <p className="text-xs font-medium text-slate-500 leading-relaxed px-2">
-                  Tindakan ini tidak bisa dibatalkan. Data pegawai dihapus permanen dari sistem.
-                </p>
-              </div>
-              <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-2">
-                <Button 
-                  variant="outline" 
-                  onClick={cancelDelete} 
-                  className="flex-1 font-bold text-xs h-11 rounded-xl"
-                >
-                  Batal
-                </Button>
-                <Button 
-                  onClick={executeDelete} 
-                  variant="destructive"
-                  className="flex-1 font-bold text-xs h-11 rounded-xl border-none"
-                >
-                  Hapus
-                </Button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+                <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={cancelDelete} 
+                    className="flex-1 font-bold text-xs h-11 rounded-xl"
+                  >
+                    Batal
+                  </Button>
+                  <Button 
+                    onClick={executeDelete} 
+                    variant="destructive"
+                    className="flex-1 font-bold text-xs h-11 rounded-xl border-none"
+                  >
+                    Hapus
+                  </Button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }

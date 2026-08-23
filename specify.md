@@ -14,7 +14,7 @@ Disepakati pemilik proyek. AI agent **tidak boleh** menginterpretasi ulang poin-
 |---|-----------|--------|
 | 1 | **Pengguna utama = operator/admin**, bukan setiap pegawai login untuk cek skor sendiri | Terkunci |
 | 2 | **Engagement = kehadiran di daftar interaksi** (biner per platform/hari). App untuk merekap pegawai yang melakukan engagement ke **sosmed lembaga** | Terkunci |
-| 3 | **Konteks organisasi = Diskominfo** | Terkunci |
+| 3 | **Konteks organisasi = instansi/lembaga (multi-tenant)** | Terkunci |
 | 4 | **TikTok tetap platform inti** meski input masih manual (otomasi TikTok sulit / belum andal) | Terkunci |
 | 5 | **Window & reminder 15:00 / 14:45 WIB** adalah aturan operasional resmi, bukan temporary hack | Terkunci |
 | 6 | **Arah dev: penyempurnaan** (akurasi, stabilitas, otomasi yang sudah ada) — **bukan** fitur besar baru / rombak cara kerja | Terkunci |
@@ -26,7 +26,7 @@ Disepakati pemilik proyek. AI agent **tidak boleh** menginterpretasi ulang poin-
 
 ## 1. Ringkasan satu kalimat
 
-**ReSo** adalah aplikasi web internal Diskominfo untuk **merekap, memverifikasi, dan melaporkan** apakah pegawai telah melakukan **engagement** (interaksi) pada konten media sosial **lembaga** (Instagram, Facebook, TikTok) pada hari kerja tertentu — dioperasikan oleh **admin/operator**, bukan self-service pegawai.
+**ReSo** adalah aplikasi web rekap engagement pegawai ke media sosial lembaga (Instagram, Facebook, TikTok) yang dirancang untuk berbagai instansi/organisasi (multi-tenant) — dioperasikan oleh **admin/operator**, bukan self-service pegawai.
 
 ---
 
