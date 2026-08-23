@@ -19,8 +19,9 @@ export interface MatchableEmployee {
 }
 
 /** Normalize for comparison: lowercase, collapse whitespace. */
-export function normalizeMatchText(str: string): string {
-  return str.toLowerCase().replace(/\s+/g, ' ').trim();
+export function normalizeMatchText(str: unknown): string {
+  const s = typeof str === 'string' ? str : str == null ? '' : String(str);
+  return s.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 function stripAt(handle: string): string {
