@@ -1910,6 +1910,7 @@ function scanPageForPostDate(root, now) {
     els = [];
   }
   for (const el of els) {
+    if (!el) continue;
     const raw = el.getAttribute && el.getAttribute("data-utime");
     const n = Number(raw);
     if (Number.isFinite(n) && n > 0) {
@@ -1935,6 +1936,7 @@ function scanPageForPostDate(root, now) {
       els = [];
     }
     for (const el of els) {
+      if (!el) continue;
       const dt = el.getAttribute && el.getAttribute("datetime");
       const txt = (el.textContent || "").trim().replace(/\s+/g, " ");
       if (typeof dt === "string" && isValidISODate(dt.slice(0, 10))) {
@@ -1956,6 +1958,7 @@ function scanPageForPostDate(root, now) {
     const limit = Math.min(all.length, 400);
     for (let i = 0; i < limit; i++) {
       const el = all[i];
+      if (!el) continue;
       const aria = el.getAttribute && el.getAttribute("aria-label");
       consider(aria, null);
       if (found.suggestedDate) break;

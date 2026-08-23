@@ -2,6 +2,13 @@
 
 Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [1.0.55] — 23 Agustus 2026
+
+### Stress test ekstrem + hardening parser (audit ketahanan)
+- **`tests/extreme-stress.test.mjs` (baru, +29 test)**: audit ketahanan menyeluruh — fuzz `normalizeCommentName`/`normalizeNickname`/`normalizeInstagramUsername` (ribuan karakter acak incl. emoji/zero-width/control chars), payload GraphQL Relay raksasa (10 MB), nested brace 10.000 level, 10.000 komentar dalam satu JSON, chunk `for(;;);` bercampur sampah, XSS/SQL-injection injection, edge case `fbIdB64`/`normalizeFeedbackId`/`createTimeFromRehydration`/`parsePostAgeText`, dan **konkurensi antrian** (50 enqueue concurrent, enqueue+flush bersamaan — area paling rawan lost-update tanpa lock).
+- **Bug nyata ditemukan & diperbaiki**: `scanPageForPostDate` crash (`Cannot read properties of null (reading 'getAttribute')`) saat `querySelectorAll` mengembalikan elemen `null` — kini di-guard di ketiga lintasan. Perilaku parser lain terbukti aman: `walkJson` punya guard kedalaman (50), `splitJsonChunks` toleran sampah, `extractGraphqlNames` string-aware.
+- Test: suite naik **403 → 432**, stress deterministik (3× run stabil).
+
 ## [1.0.54] — 23 Agustus 2026
 
 ### FB: paksa "Semua Komentar" benar-benar berfungsi — fix portal menu + "Lihat komentar lainnya" auto-expand
