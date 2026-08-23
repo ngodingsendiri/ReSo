@@ -2,6 +2,11 @@
 
 Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [1.0.53] — 23 Agustus 2026
+
+### Icon transparan (perbaikan visual di toolbar gelap)
+- Icon ekstensi (`extension/icons/icon16/48/128.png`) di-render ulang dari `logo.svg` sebagai **PNG transparan** — background solid `#0F172A` dihapus. Toolbar/OS dengan tema gelap tidak lagi menampilkan kotak gelap di belakang logo.
+
 ## [Unreleased]
 
 ### Single-database multi-tenant (Spark/gratis) + distribusi ZIP primary
