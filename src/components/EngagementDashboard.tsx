@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate, addLocalDays } from '../lib/date';
 import { matchEmployeesToEngagement, matchEngagementDetail, engagedIdsEqual, mergeUniqueLines } from '../lib/matching';
 import { collectUnverifiedAutoFilled } from '../lib/engagement-api';
+import { APP_VERSION } from '../lib/version';
 
 import { DashboardTab } from './tabs/DashboardTab';
 import { SettingsTab } from './tabs/SettingsTab';
@@ -1548,6 +1549,9 @@ export default function EngagementDashboard() {
         </div>
 
         <div className="p-5 mt-auto border-t border-slate-200 bg-slate-50/80">
+          <p className="mb-3 text-center text-[10px] font-medium text-slate-400">
+            ReSo v{APP_VERSION}
+          </p>
           {user && (
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3 px-1">

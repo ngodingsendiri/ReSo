@@ -15,6 +15,12 @@ const resoLogin = document.getElementById("resoLogin");
 const resoRetry = document.getElementById("resoRetry");
 const resoOpen = document.getElementById("resoOpen");
 const resoReset = document.getElementById("resoReset");
+const extVersion = document.getElementById("extVersion");
+
+// Versi ekstensi = manifest.json (dist/sinkron via stamp-version saat build).
+if (extVersion) {
+  extVersion.textContent = `ReSo Ekstensi v${chrome.runtime.getManifest().version}`;
+}
 
 async function getResoUrlStored() {
   try {

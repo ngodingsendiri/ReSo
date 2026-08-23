@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { RefreshCw, KeyRound, Download, ExternalLink, Database, Loader2 } from 'lucide-react';
+import { RefreshCw, KeyRound, Download, ExternalLink, Database, Loader2, Info } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { useAuth } from '../FirebaseProvider';
+import { APP_VERSION } from '../../lib/version';
 
 interface SettingsTabProps {
   recalculateConfig: { mode: 'last_day' | 'last_week' };
@@ -220,6 +221,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 {isLoading ? 'Memproses…' : 'Jalankan'}
               </Button>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 px-1 pt-1 text-[11px] text-slate-400">
+            <Info size={13} className="shrink-0" />
+            <span>
+              Versi aplikasi <span className="font-bold text-slate-500">{APP_VERSION}</span>
+            </span>
           </div>
         </div>
       </div>
