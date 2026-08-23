@@ -21,12 +21,12 @@ export function userDb(_uid: string): Firestore {
 
 /** Koleksi dalam subtree dinas: `dinas/{uid}/{name}`. */
 export function dinasCollection(db: Firestore, uid: string, name: string): CollectionReference {
-  return collection(db, 'dinas', uid.toLowerCase(), name);
+  return collection(db, 'dinas', uid, name);
 }
 
 /** Dokumen dalam subtree dinas: `dinas/{uid}/{name}/{id}`. */
 export function dinasDoc(db: Firestore, uid: string, name: string, id: string): DocumentReference {
-  return doc(db, 'dinas', uid.toLowerCase(), name, id);
+  return doc(db, 'dinas', uid, name, id);
 }
 
 export const googleProvider = new GoogleAuthProvider();

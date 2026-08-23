@@ -7,21 +7,15 @@
  *  - Saluran balikan unik per permintaan (`respondTo`) disediakan oleh
  *    content script ekstensi.
  *
- * PENTING (keamanan sesi app): ekstensi HANYA diberi idToken (masa ~1 jam),
- * BUKAN refresh token. Firebase `securetoken` MEMUTAR & MENCABUT refresh token
- * sumber setiap kali di-mint — jadi memberi ekstensi refresh token (asli
- * maupun hasil `rotateRefreshToken`) akan membatalkan sesi dashboard ReSo
- * sendiri → operator logout. Oleh karena itu `provideTokens` di App.tsx hanya
- * mengembalikan idToken; refresh ekstensi ditangani ulang via push on-focus /
- * handoff ulang saat tab ReSo terbuka. Fungsi `rotateRefreshToken` tetap ada
- * untuk keperluan lain tapi TIDAK boleh dipakai untuk memprovisioning ekstensi.
+ * KEAMANAN SESI: ekstensi HANYA diberi idToken (~1 jam), BUKAN refresh token.
+ * Firebase `securetoken` MEMUTAR & MENCABUT refresh token sumber setiap kali
+ * di-mint — memberi ekstensi refresh token akan membatalkan sesi dashboard
+ * sendiri → logout. `provideTokens` di App.tsx hanya mengembalikan idToken;
+ * refresh ekstensi via push on-focus / handoff ulang saat tab ReSo terbuka.
  */
-
-import firebaseConfig from '../../firebase-applet-config.json';
 
 export interface HandoffTokens {
   idToken: string;
-  refreshToken: string;
   uid: string;
   email: string | null;
 }
@@ -30,48 +24,6 @@ export interface HandoffRequest {
   requestId?: unknown;
   origin?: unknown;
   respondTo?: unknown;
-}
-
-/**
- * Mint pasangan token segar dari refresh token sesi (Firebase REST).
- * Mengembalikan null jika refresh token kosong / gagal / bentuk tak valid.
- * Saat respons tidak membawa refresh_token baru, token lama dipertahankan.
- */
-export async function rotateRefreshToken(
-  refreshToken: string,
-  apiKey = firebaseConfig.apiKey,
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ idToken: string; refreshToken: string } | null> {
-  if (!refreshToken) return null;
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-  });
-  let r: Response;
-  try {
-    r = await fetchImpl(
-      `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-      },
-    );
-  } catch {
-    return null;
-  }
-  const data = (await r.json().catch(() => ({}))) as {
-    id_token?: unknown;
-    refresh_token?: unknown;
-  };
-  if (!r.ok || typeof data.id_token !== 'string' || !data.id_token) return null;
-  return {
-    idToken: data.id_token,
-    refreshToken:
-      typeof data.refresh_token === 'string' && data.refresh_token
-        ? data.refresh_token
-        : refreshToken,
-  };
 }
 
 export type HandoffTokenProvider = () => Promise<HandoffTokens | null>;
@@ -113,7 +65,6 @@ export function createTokenHandoffHandler(
         if (tokens) {
           respond({
             idToken: tokens.idToken,
-            refreshToken: tokens.refreshToken,
             uid: tokens.uid,
             email: tokens.email,
           });

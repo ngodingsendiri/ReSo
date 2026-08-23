@@ -1201,7 +1201,7 @@ async function applyResoConnect(payload) {
   if (pinned && pinned !== url) return false;
   const auth = {
     idToken: payload.idToken,
-    refreshToken: typeof payload.refreshToken === "string" ? payload.refreshToken : null,
+    refreshToken: null,
     uid: typeof payload.uid === "string" ? payload.uid : null,
     email: typeof payload.email === "string" ? payload.email : null,
     savedAt: Date.now(),
@@ -1317,7 +1317,7 @@ async function handoffResoAuthFromTab() {
     if (!r || !r.idToken) continue;
     const auth = {
       idToken: r.idToken,
-      refreshToken: r.refreshToken || null,
+      refreshToken: null,
       uid: r.uid || null,
       email: r.email || null,
       savedAt: Date.now(),
@@ -1656,9 +1656,6 @@ async function checkResoConnection() {
   let authenticated = false;
   if (auth && typeof auth.idToken === "string" && auth.idToken) {
     authenticated = jwtExpSeconds(auth.idToken) * 1000 - 60000 > Date.now();
-  }
-  if (!authenticated && auth && typeof auth.refreshToken === "string" && auth.refreshToken) {
-    authenticated = true; // bisa mint tanpa tab → sesi hidup
   }
   const reachable = await resoHealthReachable();
   const pending = (await getResoPending()).length;

@@ -26,20 +26,49 @@ const EngagementChart = React.lazy(() => import('../EngagementChart'));
 
 const containerVariants: import('motion/react').Variants = {
   hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.04, delayChildren: 0.02 }
-  }
+  visible: { opacity: 1, transition: { staggerChildren: 0.04, delayChildren: 0.02 } },
 };
 
 const itemVariants: import('motion/react').Variants = {
   hidden: { opacity: 0, y: 6 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { type: 'tween', ease: 'easeOut', duration: 0.18 }
-  }
+  visible: { opacity: 1, y: 0, transition: { type: 'tween', ease: 'easeOut', duration: 0.18 } },
 };
+
+const colorMap: Record<string, string> = {
+  rose: 'bg-rose-50 text-rose-600 border-rose-100',
+  sky: 'bg-sky-50 text-sky-600 border-sky-100',
+  violet: 'bg-violet-50 text-violet-600 border-violet-100',
+  emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+};
+
+const StatCard = React.memo(function StatCard({
+  title,
+  value,
+  icon,
+  color,
+  subtitle,
+}: {
+  title: string;
+  value: string;
+  icon: React.ReactNode;
+  color: string;
+  subtitle?: string;
+}) {
+  return (
+    <Card className="h-full border border-slate-200 rounded-xl overflow-hidden bg-white">
+      <div className="p-4 sm:p-5 flex flex-col h-full justify-between gap-3">
+        <div className="flex justify-between items-start">
+          <p className="text-[11px] font-semibold text-slate-500">{title}</p>
+          <div className={cn('p-2 rounded-lg border', colorMap[color])}>{icon}</div>
+        </div>
+        <div>
+          <p className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{value}</p>
+          {subtitle && <p className="text-[10px] text-slate-400 mt-0.5">{subtitle}</p>}
+        </div>
+      </div>
+    </Card>
+  );
+});
 
 export type DashboardStats = {
   totalEmployees: number;

@@ -155,6 +155,7 @@ function htmlAssets(file) {
     .filter((v) => !v.startsWith("http") && !v.startsWith("#"));
 }
 verify("popup.html", htmlAssets(join(DIST, "popup.html")), "popup.html");
+verify("options.html", htmlAssets(join(DIST, "options.html")), "options.html");
 
 // 3) Referensi sekunder — import module (background/shared-module)
 function moduleImports(file) {

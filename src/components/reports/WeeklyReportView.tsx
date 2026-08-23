@@ -23,13 +23,12 @@ interface WeeklyReportViewProps {
   canExportImage: boolean;
   printRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
-  isExporting: boolean;
   sortedEmployees: Employee[];
   dailyEngagementsMap: Record<string, DailyEngagement>;
 }
 
 export function WeeklyReportView(props: WeeklyReportViewProps) {
-  const { weeklyReports, weeklyStats, weeklyDatesList, changeWeek, weeklySortMode, setWeeklySortMode, handleExportPDF, handleExportImage, handleExportExcel, canExportImage, printRef, isLoading, isExporting, sortedEmployees, dailyEngagementsMap } = props;
+  const { weeklyReports, weeklyStats, weeklyDatesList, changeWeek, weeklySortMode, setWeeklySortMode, handleExportPDF, handleExportImage, handleExportExcel, canExportImage, printRef, isLoading, sortedEmployees, dailyEngagementsMap } = props;
   const wr = weeklyReports[0];
   return (
     <motion.div key="reports" variants={containerVariants} initial="hidden" animate="visible" exit="hidden" className="space-y-6 md:space-y-8">
@@ -65,29 +64,28 @@ export function WeeklyReportView(props: WeeklyReportViewProps) {
         </div>
       </motion.div>
 
-      <motion.div variants={itemVariants} ref={printRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
-        <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
-          <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
-            <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", "text-2xl")}>Laporan Mingguan</h3>
-            <p className={cn("font-bold text-slate-500 uppercase tracking-widest", "text-sm")}>Rekapitulasi Engagement • Minggu ke-{wr?.weekNumber} • {wr?.year}</p>
+      <motion.div variants={itemVariants} ref={printRef} className="bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col p-4 sm:p-6 md:p-10">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 gap-2 mb-8 pb-6">
+          <div className="space-y-0.5">
+            <h3 className="font-black text-slate-900 tracking-tight uppercase text-2xl">Laporan Mingguan</h3>
+            <p className="font-bold text-slate-500 uppercase tracking-widest text-sm">Rekapitulasi Engagement • Minggu ke-{wr?.weekNumber} • {wr?.year}</p>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
               {weeklyStats.bidangRates?.map((br: any, idx: number) => (
-                <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-200 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
-                  <span className={cn("font-bold uppercase tracking-wider text-slate-500 leading-none", "text-[7px] md:text-[8px]")}>{br.bidang}</span>
-                  <span className={cn("font-bold text-emerald-600 leading-none", "text-[8px] md:text-[10px]")}>{br.rate}%</span>
+                <div key={idx} className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 md:px-2 md:py-1">
+                  <span className="font-bold uppercase tracking-wider text-slate-500 leading-none text-[7px] md:text-[8px]">{br.bidang}</span>
+                  <span className="font-bold text-emerald-600 leading-none text-[8px] md:text-[10px]">{br.rate}%</span>
                 </div>
               ))}
             </div>
-            <div className={cn("bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
+            <div className="bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0 text-left md:text-right p-3">
               <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", "text-[10px]")}>ReSo</p>
               <p className={cn("text-slate-500 leading-none", "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
             </div>
           </div>
         </div>
-        {!isExporting && (
-          <div className="md:hidden space-y-2 mb-4">
+        <div className="md:hidden space-y-2 mb-4">
             {sortedEmployees.map((emp) => {
               const total = weeklyStats.employeeTotals[emp.id] || 0;
               const max = weeklyStats.maxEngagements || 1;
@@ -108,10 +106,10 @@ export function WeeklyReportView(props: WeeklyReportViewProps) {
               );
             })}
           </div>
-        )}
-        <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]", !isExporting && "hidden md:block")}>
+
+        <div className="flex-1 rounded-xl border border-slate-200 overflow-auto max-h-[60vh] md:max-h-[600px] hidden md:block">
           <div className="min-w-max">
-            <Table id="engagement-table" className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
+            <Table id="engagement-table" className="border-collapse w-full">
               <TableHeader>
                 <TableRow className="bg-slate-50/50 border-b border-slate-200">
                   <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-200 px-3 py-2 font-bold text-slate-900 whitespace-nowrap text-[10px] uppercase tracking-wider">Nama Pegawai</TableHead>
@@ -171,7 +169,6 @@ export function WeeklyReportView(props: WeeklyReportViewProps) {
             </Table>
           </div>
         </div>
-        {isExporting && <div className="mt-2 text-[8px] text-slate-500 font-medium italic">* Catatan: pencatatan mengacu pada window 15.00 WIB (postingan 24 jam terakhir).</div>}
       </motion.div>
     </motion.div>
   );

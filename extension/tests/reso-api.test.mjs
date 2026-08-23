@@ -194,7 +194,7 @@ test("sendNamesToResoApi: tanpa token tersimpan → handoff dari tab ReSo terbuk
     assert.equal(out.ok, true, "ok");
     assert.equal(apiCalls[0].init.headers.Authorization, "Bearer tok-handoff", "token hasil handoff");
     assert.equal(store.resoAuth.idToken, "tok-handoff", "handoff disimpan ke storage");
-    assert.equal(store.resoAuth.refreshToken, "rt-handoff");
+    assert.equal(store.resoAuth.refreshToken, null, "refreshToken tidak disimpan (idToken saja)");
   } finally {
     restoreFetch();
     restore();
@@ -669,7 +669,7 @@ test("checkResoConnection: token valid + API sehat → connected; pending dihitu
   }
 });
 
-test("checkResoConnection: tanpa auth tapi punya refresh token → authenticated; API mati → tidak connected", async () => {
+test("checkResoConnection: tanpa auth tapi punya refresh token → TIDAK authenticated (idToken saja)", async () => {
   const prevCache = globalThis.__RESO_HEALTH_CACHE_MS;
   globalThis.__RESO_HEALTH_CACHE_MS = 0;
   const restoreFetch = mockFetch({ health: false });
@@ -681,9 +681,9 @@ test("checkResoConnection: tanpa auth tapi punya refresh token → authenticated
   });
   try {
     const s = await checkResoConnection();
-    assert.equal(s.authenticated, true, "refresh token = sesi bisa hidup lagi");
+    assert.equal(s.authenticated, false, "refresh token tidak lagi membuat authenticated (idToken kadaluarsa → false)");
     assert.equal(s.reachable, false, "API down");
-    assert.equal(s.connected, false, "API tak terjangkau → tidak connected");
+    assert.equal(s.connected, false, "tidak authenticated → tidak connected");
     assert.equal(s.pending, 0);
   } finally {
     globalThis.__RESO_HEALTH_CACHE_MS = prevCache;
@@ -801,7 +801,7 @@ test("applyResoConnect: tolak url bukan https & tanpa idToken; simpan bila valid
     );
     const a = await getResoAuth();
     assert.equal(a.idToken, fakeTokenAud(FAR_FUTURE, RESO_FIREBASE.projectId));
-    assert.equal(a.refreshToken, "rt");
+    assert.equal(a.refreshToken, null, "refreshToken tidak disimpan (idToken saja)");
   } finally {
     restore();
   }

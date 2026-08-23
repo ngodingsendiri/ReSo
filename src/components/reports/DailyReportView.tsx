@@ -21,7 +21,6 @@ interface DailyReportViewProps {
   canExportImage: boolean;
   printDailyRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
-  isExporting: boolean;
   sortedEmployees: Employee[];
   dailyEngagementsMap: Record<string, DailyEngagement>;
   dailyEngagementRate: number;
@@ -38,7 +37,6 @@ export function DailyReportView({
   canExportImage,
   printDailyRef,
   isLoading,
-  isExporting,
   sortedEmployees,
   dailyEngagementsMap,
   dailyEngagementRate,
@@ -118,27 +116,26 @@ export function DailyReportView({
         </div>
       </motion.div>
 
-      <motion.div variants={itemVariants} ref={printDailyRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
-        <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-8 pb-6")}>
-          <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
-            <h3 className={cn("font-black text-slate-900 tracking-tight uppercase", "text-2xl")}>Laporan Harian</h3>
-            <p className={cn("font-bold text-slate-500 uppercase tracking-widest", "text-sm")}>Rekapitulasi Engagement • {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+      <motion.div variants={itemVariants} ref={printDailyRef} className="bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col p-4 sm:p-6 md:p-10">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 gap-2 mb-8 pb-6">
+          <div className="space-y-0.5">
+            <h3 className="font-black text-slate-900 tracking-tight uppercase text-2xl">Laporan Harian</h3>
+            <p className="font-bold text-slate-500 uppercase tracking-widest text-sm">Rekapitulasi Engagement • {currentDailyDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
           </div>
-          <div className={cn("flex items-center bg-slate-50 rounded-lg border border-slate-200", isExporting ? "p-1.5 gap-2" : "p-3 gap-4")}>
+          <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 p-3 gap-4">
             <div className="flex flex-col items-end justify-center">
-              <p className={cn("font-black text-emerald-600 leading-none", "text-[18px]")}>{dailyEngagementRate}%</p>
-              <p className={cn("font-bold text-slate-500 uppercase tracking-widest leading-none", "text-[8px] mt-1")}>Rate</p>
+              <p className="font-black text-emerald-600 leading-none text-[18px]">{dailyEngagementRate}%</p>
+              <p className="font-bold text-slate-500 uppercase tracking-widest leading-none text-[8px] mt-1">Rate</p>
             </div>
-            <div className={cn("w-px bg-slate-200", isExporting ? "h-5" : "h-7")}></div>
+            <div className="w-px bg-slate-200 h-7"></div>
             <div className="flex flex-col justify-center text-right">
-              <p className={cn("font-bold text-slate-900 uppercase tracking-widest leading-none", "text-[10px]")}>ReSo</p>
-              <p className={cn("text-slate-500 leading-none", "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
+              <p className="font-bold text-slate-900 uppercase tracking-widest leading-none text-[10px]">ReSo</p>
+              <p className="text-slate-500 leading-none text-[8px] mt-1">Gen: {new Date().toLocaleDateString('id-ID')}</p>
             </div>
           </div>
         </div>
 
-        {!isExporting && (
-          <div className="md:hidden space-y-2 mb-4">
+        <div className="md:hidden space-y-2 mb-4">
             {sortedEmployees.map((emp) => {
               const engagement = dailyEngagementsMap[dateStr];
               const hasIg = engagement?.igEngagedEmployeeIds?.includes(emp.id);
@@ -168,11 +165,10 @@ export function DailyReportView({
               <p className="text-center text-sm text-slate-400 py-8">Belum ada data pegawai.</p>
             )}
           </div>
-        )}
 
-        <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]", !isExporting && "hidden md:block")}>
+        <div className="flex-1 rounded-xl border border-slate-200 overflow-auto max-h-[60vh] md:max-h-[600px] hidden md:block">
           <div className="min-w-max">
-            <Table className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
+            <Table className="border-collapse w-full">
               <TableHeader>
                 <TableRow className="bg-slate-50/50 border-b border-slate-200">
                   <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-200 px-1.5 py-1 font-bold text-slate-900 whitespace-nowrap text-[10px] uppercase tracking-wider h-auto">Nama Pegawai</TableHead>
@@ -254,11 +250,6 @@ export function DailyReportView({
             </Table>
           </div>
         </div>
-        {isExporting && (
-          <div className="mt-2 text-[8px] text-slate-500 font-medium italic">
-            * Catatan: pencatatan mengacu pada window 15.00 WIB (postingan 24 jam terakhir).
-          </div>
-        )}
       </motion.div>
     </motion.div>
   );

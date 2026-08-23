@@ -69,7 +69,7 @@ export default async function handler(req: unknown, res: unknown) {
       return;
     }
 
-    const u = user.uid.toLowerCase();
+    const u = user.uid;
     const markerUrl =
       `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/dinas/${u}/admins/${u}`;
     const markerBody = {
@@ -89,7 +89,9 @@ export default async function handler(req: unknown, res: unknown) {
 
     if (!marker.ok) {
       const text = await marker.text().catch(() => '');
-      console.log(`[provision] marker write failed for ${u}: ${text.slice(0, 200)}`);
+      console.error(`[provision] marker write failed for ${u}: ${text.slice(0, 200)}`);
+      json(res, 500, { ok: false, error: `Gagal menyiapkan database dinas: ${text.slice(0, 200)}` });
+      return;
     }
 
     json(res, 200, {

@@ -54,9 +54,8 @@ export default function App() {
   useEffect(() => {
     const provideTokens: HandoffTokenProvider = async () => {
       if (!user) return null;
-      // idToken segar (force refresh) — satu-satunya kredensial yang diberikan.
       const idToken = await user.getIdToken(true);
-      return { idToken, refreshToken: '', uid: user.uid, email: user.email ?? null };
+      return { idToken, uid: user.uid, email: user.email ?? null };
     };
     const onGetToken = createTokenHandoffHandler(provideTokens, window.location.origin);
     window.addEventListener('reso:get-token', onGetToken);

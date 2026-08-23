@@ -23,11 +23,10 @@ interface MonthlyReportViewProps {
   canExportImage: boolean;
   printMonthlyRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean;
-  isExporting: boolean;
 }
 
 export function MonthlyReportView(props: MonthlyReportViewProps) {
-  const { monthlyReports, monthlyStats, sortedMonthlyEmployees, changeMonthlyReportDate, monthlySortMode, setMonthlySortMode, handleExportPDF, handleExportImage, handleExportExcel, canExportImage, printMonthlyRef, isLoading, isExporting } = props;
+  const { monthlyReports, monthlyStats, sortedMonthlyEmployees, changeMonthlyReportDate, monthlySortMode, setMonthlySortMode, handleExportPDF, handleExportImage, handleExportExcel, canExportImage, printMonthlyRef, isLoading } = props;
   const mr = monthlyReports[0];
   return (
     <motion.div key="monthly-reports" variants={containerVariants} initial="hidden" animate="visible" exit="hidden" className="space-y-6 md:space-y-8">
@@ -63,29 +62,28 @@ export function MonthlyReportView(props: MonthlyReportViewProps) {
         </div>
       </motion.div>
 
-      <motion.div variants={itemVariants} ref={printMonthlyRef} className={cn("bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col", isExporting ? "p-3 w-max" : "p-4 sm:p-6 md:p-10")}>
-        <div className={cn("flex justify-between border-b border-slate-200 gap-2", isExporting ? "flex-row items-end mb-2 pb-2" : "flex-col md:flex-row items-start md:items-center mb-6 pb-5")}>
-          <div className={cn(isExporting ? "space-y-0 flex flex-col justify-end" : "space-y-0.5")}>
-            <h3 className={cn("font-bold text-slate-900 tracking-tight", "text-xl")}>Laporan Bulanan</h3>
-            <p className={cn("font-medium text-slate-500", "text-sm")}>{mr?.monthName} {mr?.year}</p>
+      <motion.div variants={itemVariants} ref={printMonthlyRef} className="bg-white rounded-xl border border-slate-200 min-h-[400px] md:min-h-[600px] flex flex-col p-4 sm:p-6 md:p-10">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 gap-2 mb-6 pb-5">
+          <div className="space-y-0.5">
+            <h3 className="font-bold text-slate-900 tracking-tight text-xl">Laporan Bulanan</h3>
+            <p className="font-medium text-slate-500 text-sm">{mr?.monthName} {mr?.year}</p>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <div className="flex flex-wrap items-center justify-end gap-1 md:gap-1.5">
               {monthlyStats.bidangRates?.map((br: any, idx: number) => (
-                <div key={idx} className={cn("flex items-center gap-1 bg-slate-50 border border-slate-200 rounded", isExporting ? "px-1 py-0.5" : "px-1.5 py-0.5 md:px-2 md:py-1")}>
-                  <span className={cn("font-semibold text-slate-500 leading-none", "text-[10px]")}>{br.bidang}</span>
-                  <span className={cn("font-bold text-emerald-600 leading-none", "text-[10px]")}>{br.rate}%</span>
+                <div key={idx} className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 md:px-2 md:py-1">
+                  <span className="font-semibold text-slate-500 leading-none text-[10px]">{br.bidang}</span>
+                  <span className="font-bold text-emerald-600 leading-none text-[10px]">{br.rate}%</span>
                 </div>
               ))}
             </div>
-            <div className={cn("bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0", isExporting ? "text-right p-1.5 h-full" : "text-left md:text-right p-3")}>
+            <div className="bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-center shrink-0 text-left md:text-right p-3">
               <p className={cn("font-bold text-slate-900 leading-none", "text-[10px]")}>ReSo</p>
               <p className={cn("text-slate-500 leading-none", "text-[8px] mt-1")}>Gen: {new Date().toLocaleDateString('id-ID')}</p>
             </div>
           </div>
         </div>
-        {!isExporting && (
-          <div className="md:hidden space-y-2 mb-4">
+        <div className="md:hidden space-y-2 mb-4">
             {sortedMonthlyEmployees.map((emp) => {
               const total = monthlyStats.employeeTotals[emp.id] || 0;
               const max = monthlyStats.maxEngagements || 1;
@@ -114,10 +112,10 @@ export function MonthlyReportView(props: MonthlyReportViewProps) {
               );
             })}
           </div>
-        )}
-        <div className={cn("flex-1 rounded-xl border border-slate-200", !isExporting && "overflow-auto max-h-[60vh] md:max-h-[600px]", !isExporting && "hidden md:block")}>
+
+        <div className="flex-1 rounded-xl border border-slate-200 overflow-auto max-h-[60vh] md:max-h-[600px] hidden md:block">
           <div className="min-w-max">
-            <Table id="engagement-monthly-table" className={cn("border-collapse", isExporting ? "w-max" : "w-full")}>
+            <Table id="engagement-monthly-table" className="border-collapse w-full">
               <TableHeader>
                 <TableRow className="bg-slate-50/50 border-b border-slate-200">
                   <TableHead className="sticky left-0 z-20 bg-slate-50 border-r border-slate-200 px-3 py-1.5 font-bold text-slate-900 whitespace-nowrap text-xs uppercase tracking-wider">Nama Pegawai</TableHead>
@@ -156,7 +154,6 @@ export function MonthlyReportView(props: MonthlyReportViewProps) {
             </Table>
           </div>
         </div>
-        {isExporting && <div className="mt-2 text-[8px] text-slate-500 font-medium italic">* Catatan: pencatatan mengacu pada window 15.00 WIB (postingan 24 jam terakhir).</div>}
       </motion.div>
     </motion.div>
   );

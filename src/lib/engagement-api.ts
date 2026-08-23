@@ -172,7 +172,7 @@ export function mergePostedAt(existing: unknown, value: string): string[] {
 
 /** Tolak tanggal yang terlalu jauh ke masa depan (toleransi +1 hari WIB). */
 export function isDateTooFarFuture(v: string, now = new Date()): boolean {
-  const today = now.toISOString().slice(0, 10);
+  const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   const [y, m, d] = today.split('-').map(Number);
   const max = new Date(Date.UTC(y, m - 1, d + 1));
   const [vy, vm, vd] = v.split('-').map(Number);

@@ -93,9 +93,6 @@ export default function EngagementDashboard() {
   const [monthlySortMode, setMonthlySortMode] = useState<'rank' | 'bidang' | 'name'>('rank');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  // Layout cetak — dipertahankan sebagai prop untuk kompatibilitas report view,
-  // tapi tidak lagi dipakai image export (kini clone off-screen, tanpa isExporting).
-  const [isExporting] = useState(false);
 
   const [recalculateConfig, setRecalculateConfig] = useState<{
     mode: 'last_day' | 'last_week';
@@ -1484,6 +1481,7 @@ export default function EngagementDashboard() {
 
       {/* Sidebar */}
       <aside 
+        aria-label="Navigasi utama"
         className={cn(
           "fixed inset-y-0 left-0 w-72 bg-white border-r border-slate-200 flex flex-col z-50 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0",
           !isSidebarOpen ? "-translate-x-full" : "translate-x-0"
@@ -1498,7 +1496,7 @@ export default function EngagementDashboard() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Rekap Engagement Sosmed</p>
               </div>
             </div>
-            <Button variant="ghost" size="icon" className="lg:hidden rounded-full" onClick={() => setIsSidebarOpen(false)}>
+            <Button variant="ghost" size="icon" className="lg:hidden rounded-full" onClick={() => setIsSidebarOpen(false)} aria-label="Tutup menu">
               <XCircle className="text-slate-400" size={24} />
             </Button>
           </div>
@@ -1585,6 +1583,7 @@ export default function EngagementDashboard() {
           size="icon" 
           className="lg:hidden fixed top-3 left-3 z-40 rounded-lg h-10 w-10 bg-white/95 backdrop-blur-md border border-slate-200 text-slate-600 shadow-sm hover:bg-white" 
           onClick={() => setIsSidebarOpen(true)}
+          aria-label="Buka menu navigasi"
           title="Buka menu"
         >
           <Menu size={20} />
@@ -2117,7 +2116,6 @@ export default function EngagementDashboard() {
                   canExportImage={canExportImage}
                   printDailyRef={printDailyRef}
                   isLoading={isLoading}
-                  isExporting={isExporting}
                   sortedEmployees={sortedEmployees}
                   dailyEngagementsMap={dailyEngagementsMap}
                   dailyEngagementRate={dailyEngagementRate}
@@ -2138,7 +2136,6 @@ export default function EngagementDashboard() {
                   canExportImage={canExportImage}
                   printRef={printRef}
                   isLoading={isLoading}
-                  isExporting={isExporting}
                   sortedEmployees={sortedEmployees}
                   dailyEngagementsMap={dailyEngagementsMap}
                 />
@@ -2158,7 +2155,6 @@ export default function EngagementDashboard() {
                   canExportImage={canExportImage}
                   printMonthlyRef={printMonthlyRef}
                   isLoading={isLoading}
-                  isExporting={isExporting}
                 />
               )}
 
