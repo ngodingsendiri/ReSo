@@ -1088,6 +1088,116 @@ test("tryOpenComments FB: tanpa scope → document; aria-label dihitung sebagai 
   }
 });
 
+// ===================== setAllCommentsSort (paksa dropdown "Semua Komentar") =====================
+// Dropdown sortir FB dirender lewat PORTAL ke document.body — menu `[role="menu"]`
+// berada DI LUAR postRoot. Harness mengeksekusi fungsi ASLI: qsa + isVisible +
+// waitVisibleMenu + setAllCommentsSort; `sleepWhile` di-stub agar test bisa
+// menyuntikkan menu saat poll (verifikasi polling, bukan sekadar sleep tetap).
+
+function makeFbSort() {
+  const fnSrc = [
+    "let postRoot = null;",
+    "let sleepWhile = async () => {};",
+    extract("qsa"),
+    extract("isVisible"),
+    extract("waitVisibleMenu"),
+    extract("setAllCommentsSort"),
+    "return { setAllCommentsSort, setSleep: (fn) => { sleepWhile = fn; } };",
+  ].join("\n");
+  return new Function(fnSrc)();
+}
+
+/** Jalankan setAllCommentsSort asli dengan stub document + getComputedStyle. */
+async function runSort(h, scope, portal) {
+  const body = el("body", {}, portal);
+  const doc = makeDocument(body);
+  doc.body = body;
+  const realDoc = globalThis.document;
+  const realCss = globalThis.getComputedStyle;
+  globalThis.document = doc;
+  globalThis.getComputedStyle = (e) =>
+    e.__style || { visibility: "visible", display: "block", opacity: "1" };
+  try {
+    await h.setAllCommentsSort(scope);
+  } finally {
+    globalThis.document = realDoc;
+    globalThis.getComputedStyle = realCss;
+  }
+}
+
+test("setAllCommentsSort FB: menu di PORTAL document.body (bukan postRoot) — opsi Semua Komentar diklik", async () => {
+  const sortBtn = el("div", { role: "button" }, [], "Paling relevan");
+  const post = el("div", {}, [sortBtn]);
+  const menuItem = el("div", { role: "menuitem" }, [], "Semua Komentar");
+  const menu = el("div", { role: "menu" }, [menuItem]);
+  const h = makeFbSort();
+  await runSort(h, post, [menu]);
+  assert.equal(sortBtn._clickCount, 1, "tombol sortir diklik");
+  assert.equal(menuItem._clickCount, 1, "opsi Semua Komentar diklik (menu di document.body)");
+});
+
+test("setAllCommentsSort FB: menu terlambat muncul — polling menemukannya saat sleep", async () => {
+  const sortBtn = el("div", { role: "button" }, [], "Paling relevan");
+  const post = el("div", {}, [sortBtn]);
+  const menuItem = el("div", { role: "menuitem" }, [], "All comments");
+  let injected = false;
+  const h = makeFbSort();
+  h.setSleep(async () => {
+    if (!injected) {
+      injected = true;
+      // Simulasi portal: menu (dengan opsi) baru disuntikkan ke document.body
+      // saat polling — verifikasi waitVisibleMenu tidak menyerah pada iterasi
+      // pertama yang masih kosong.
+      const menu = el("div", { role: "menu" }, [menuItem]);
+      globalThis.document.body.children.push(menu);
+    }
+    return true; // sleepWhile asli resolve true saat tidak di-stop
+  });
+  await runSort(h, post, []); // portal kosong awalnya — menu muncul belakangan
+  assert.equal(sortBtn._clickCount, 1);
+  assert.equal(menuItem._clickCount, 1, "menu yang muncul belakangan tetap terdeteksi");
+});
+
+test("setAllCommentsSort FB: sudah 'Semua Komentar' (label aktif) → tidak klik apa pun (idempotent)", async () => {
+  const sortBtn = el("div", { role: "button" }, [], "Semua Komentar");
+  const post = el("div", {}, [sortBtn]);
+  const h = makeFbSort();
+  await runSort(h, post, []);
+  assert.equal(clicks(sortBtn), 0, "label aktif sudah Semua Komentar — tidak membuka menu");
+});
+
+test("setAllCommentsSort FB: menu tak punya opsi Semua Komentar → menu ditutup (body.click)", async () => {
+  const sortBtn = el("div", { role: "button" }, [], "Paling relevan");
+  const post = el("div", {}, [sortBtn]);
+  const menuItem = el("div", { role: "menuitem" }, [], "Terbaru");
+  const menu = el("div", { role: "menu" }, [menuItem]);
+  const body = el("body", {}, [menu]);
+  const doc = makeDocument(body);
+  doc.body = body;
+  const h = makeFbSort();
+  const realDoc = globalThis.document;
+  const realCss = globalThis.getComputedStyle;
+  globalThis.document = doc;
+  globalThis.getComputedStyle = (e) =>
+    e.__style || { visibility: "visible", display: "block", opacity: "1" };
+  try {
+    await h.setAllCommentsSort(post);
+  } finally {
+    globalThis.document = realDoc;
+    globalThis.getComputedStyle = realCss;
+  }
+  assert.equal(clicks(sortBtn), 1);
+  assert.equal(clicks(menuItem), 0, "Terbaru TIDAK diklik (bukan Semua Komentar)");
+  assert.equal(clicks(body), 1, "menu ditutup lewat body.click()");
+});
+
+test("setAllCommentsSort FB: tombol sortir tidak ditemukan → no-op", async () => {
+  const post = el("div", {}, [el("div", { role: "button" }, [], "Kirim")]);
+  const h = makeFbSort();
+  await runSort(h, post, []);
+  // tidak ada throw; tidak ada klik (harness tidak crash)
+});
+
 // ===================== drainGqlBuffer (buffer respons GraphQL) =====================
 // Buffer XHR/fetch GraphQL: `pushGqlBuffer(text)` (guard: panjang ≥ 60 + teks
 // memuat `"name":` ATAU author/Comment; cap GQL_BUFFER_MAX=50 FIFO) lalu

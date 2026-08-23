@@ -1931,7 +1931,7 @@
     const soft =
       /view more comments|see more comments|lihat komentar|previous comments|komentar sebelumnya|view more replies|lihat balasan|more comments|more replies|lihat selengkapnya|show more|tampilkan/i;
     const out = [];
-    qsa('[role="button"], div[tabindex="0"]', root || document).forEach((el) => {
+    qsa('[role="button"], div[tabindex="0"], span[dir="auto"], a[role="link"]', root || document).forEach((el) => {
       if (!isVisible(el)) return;
       const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
         .replace(/\s+/g, " ")
@@ -1981,48 +1981,85 @@
    * Best-effort & idempotent: bila sudah "Semua Komentar" / menu tak ada,
    * tidak melakukan apa-apa.
    */
+  /**
+   * Tunggu menu dropdown [role="menu"] yang terlihat muncul.
+   *
+   * Facebook (Comet) me-render menu lewat PORTAL ke document.body — di luar
+   * postRoot — jadi menu dicari di SELURUH dokumen, bukan di dalam post.
+   * Poll sampai muncul (bukan sleep tetap) karena render menu async.
+   */
+  async function waitVisibleMenu(maxMs) {
+    const end = Date.now() + maxMs;
+    while (Date.now() < end) {
+      const menu = qsa('[role="menu"]', document).find((m) => isVisible(m));
+      if (menu) return menu;
+      if (!(await sleepWhile(150))) return null;
+    }
+    return null;
+  }
+
   async function setAllCommentsSort(scope) {
     const root = scope || postRoot || document;
 
     // 1) Cari tombol sortir: label "Paling relevan" / "Most relevant" / "Relevan".
     //    (Opsi aktif bisa juga "Terbaru"/"Newest" — tetap buka menunya supaya
-    //    bisa pindah ke "Semua Komentar".)
+    //    bisa pindah ke "Semua Komentar".) Fallback aria-label "sort/urutkan
+    //    komentar" bila label teks berubah.
     const SORT_LABEL = /paling relevan|most relevant|^relevan$|^recent$|^terbaru$|^newest$/i;
-    let sortButton = null;
-    qsa('[role="button"], div[role="combobox"], [aria-haspopup="menu"], [aria-label]', root)
-      .forEach((el) => {
-        if (sortButton || !isVisible(el)) return;
-        const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
-          .replace(/\s+/g, " ")
-          .trim();
-        if (t && t.length < 60 && SORT_LABEL.test(t)) sortButton = el;
-      });
+    const SORT_ARIA_FALLBACK =
+      /(?:sort|urutkan|urutan)\b[^]{0,40}(?:comment|komentar)|(?:comment|komentar)[^]{0,40}\b(?:sort|urutkan|urutan)/i;
+    const ALL_COMMENTS = /semua\s+komentar|all\s+comments/i;
+
+    const isSortTrigger = (el) => {
+      if (!isVisible(el)) return false;
+      const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!t || t.length >= 60) return false;
+      return SORT_LABEL.test(t) || SORT_ARIA_FALLBACK.test(t);
+    };
+
+    const triggerSel =
+      '[role="button"], div[role="combobox"], [aria-haspopup="menu"], [aria-label]';
+    let sortButton = qsa(triggerSel, root).find(isSortTrigger);
+    // Beberapa bentuk render menaruh trigger sortir DI LUAR postRoot — coba
+    // juga di seluruh dokumen sebelum menyerah.
+    if (!sortButton) {
+      sortButton = qsa(triggerSel, document).find(isSortTrigger);
+    }
     if (!sortButton) return;
+
+    // Sudah "Semua Komentar" → tidak perlu apa-apa (idempotent).
+    const current =
+      `${sortButton.innerText || ""} ${sortButton.getAttribute("aria-label") || ""}`;
+    if (ALL_COMMENTS.test(current)) return;
 
     try {
       sortButton.scrollIntoView({ block: "center" });
       sortButton.click();
-      await sleepWhile(500);
 
-      // 2) Dari menu terbuka, pilih opsi "Semua Komentar" / "All comments".
-      const ALL_COMMENTS = /semua\s+komentar|all\s+comments/i;
-      let picked = false;
-      qsa('[role="menuitem"], [role="option"], [role="button"], [aria-label]', root)
-        .forEach((el) => {
-          if (picked || !isVisible(el)) return;
-          const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
-            .replace(/\s+/g, " ")
-            .trim();
-          if (t && t.length < 60 && ALL_COMMENTS.test(t)) {
-            el.click();
-            picked = true;
-          }
-        });
-      // Tutup menu bila opsi tak ditemukan (hindari menu terbuka mengganggu).
-      if (!picked) {
+      // 2) Menu muncul lewat PORTAL di document.body — tunggu sampai tampil.
+      const menu = await waitVisibleMenu(1800);
+      if (!menu) {
         try { document.body.click(); } catch { /* ignore */ }
+        return;
       }
-      await sleepWhile(700);
+
+      // 3) Dari menu terbuka, pilih opsi "Semua Komentar" / "All comments".
+      for (const el of qsa('[role="menuitem"], [role="option"]', menu)) {
+        if (!isVisible(el)) continue;
+        const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
+          .replace(/\s+/g, " ")
+          .trim();
+        if (t && t.length < 60 && ALL_COMMENTS.test(t)) {
+          el.click();
+          await sleepWhile(700);
+          return;
+        }
+      }
+      // Tidak ada opsi "Semua Komentar" → tutup menu (hindari mengganggu).
+      try { document.body.click(); } catch { /* ignore */ }
+      await sleepWhile(200);
     } catch {
       /* ignore */
     }
@@ -2142,7 +2179,9 @@
       await tryOpenComments(postRoot);
       // 1a) Paksa "Semua Komentar" (bukan "Paling relevan") supaya DOM fallback
       //     & capture melihat SEMUA komentar — tanpa perlu user mengganti
-      //     dropdown sortir secara manual. Best-effort.
+      //     dropdown sortir secara manual. Beri waktu section komentar
+      //     ter-render dulu (tombol sortir baru muncul setelah komentar terbuka).
+      await sleepWhile(600);
       await setAllCommentsSort(postRoot);
       await sleepWhile(800);
       drainGqlBuffer();

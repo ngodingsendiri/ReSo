@@ -2,6 +2,15 @@
 
 Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [1.0.54] — 23 Agustus 2026
+
+### FB: paksa "Semua Komentar" benar-benar berfungsi — fix portal menu + "Lihat komentar lainnya" auto-expand
+- **Bug kritis di `setAllCommentsSort`**: menu dropdown sortir Facebook di-render lewat **portal ke `document.body`**, bukan di dalam post. Kode sebelumnya mencari `[role="menuitem"]` hanya di dalam `postRoot` → opsi "Semua Komentar" tidak pernah ditemukan → dropdown tidak berubah. Sekarang `waitVisibleMenu` mencari `[role="menu"]` di **seluruh dokumen** dengan polling (1,8 dtk) — cocok dengan struktur portal Comet.
+- **Tombol sortir**: fallback `aria-label` pattern "sort/urutkan komentar" bila label teks berubah.
+- **"Lihat komentar lainnya" auto-expand**: `findExpandButtons` sekarang juga memilih `span[dir="auto"]` dan `a[role="link"]` — FB sering merender tombol ekspansi sebagai span biasa, bukan role=button.
+- **Timing**: `setAllCommentsSort` dipanggil setelah `sleepWhile(600)` — beri waktu section komentar ter-render dulu.
+- Test: 5 test baru untuk `setAllCommentsSort` (portal, polling, idempotent, menu tanpa opsi, no-op).
+
 ## [1.0.53] — 23 Agustus 2026
 
 ### Icon transparan (perbaikan visual di toolbar gelap)
