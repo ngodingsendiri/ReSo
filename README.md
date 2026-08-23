@@ -141,3 +141,5 @@ Web App login → push RESO_CONNECT (idToken) → extension
 
 - Mode pengembangan default: **penyempurnaan**, bukan rombak workflow (lihat constitution).
 - Logo di-hardcode sebagai SVG (`public/logo.svg`) — tidak ada fitur upload logo.
+- **Versi aplikasi** tampil di sidebar kiri ("ReSo vX.X.X") dan halaman Pengaturan. Versi dibaca dari `package.json` saat build — naikkan manual tiap rilis.
+- **Versi ekstensi** tampil di popup ("ReSo Ekstensi vX.X.X"). Versi dibaca dari `extension/manifest.json` (disinkron lewat `stamp-version.mjs` saat `npm run build`). Naikkan di `extension/package.json` tiap rilis; GitHub Actions mem-pack dan merilis otomatis.
