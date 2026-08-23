@@ -1219,8 +1219,8 @@ const RSX_ENABLED_KEY = "rsx_enabled";
 // dailyEngagement/{date} di-merge (dedupe case-insensitive) + engagedEmployeeIds
 // dihitung ulang server-side pakai modul matching ReSo. Idempotent (diulang =
 // update), satu hari bisa banyak post. TANPA membuka tab ReSo: token diambil
-// dari chrome.storage (handoff sekali dari sesi login ReSo) dan di-refresh via
-// Firebase REST (refresh token).
+// dari chrome.storage (handoff sekali dari sesi login ReSo) dan di-refresh
+// via push on-focus / handoff ulang saat tab ReSo terbuka.
 //
 // Config = nilai publik firebase-applet-config.json repo ReSo (aman dibagikan,
 // bukan secret).
