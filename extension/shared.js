@@ -1125,13 +1125,13 @@ function reasonToMessage(reason, count, platform, extra) {
 // token sesi) dan sendNamesToResoApi (POST /api/engagement).
 //
 // Untuk ekstensi yang dipublikasikan: tiap user men-deploy ReSo ke domain
-// Vercel sendiri (mis. rekapsosmed.vercel.app), sehingga domain TIDAK boleh
+// Vercel sendiri (mis. reso.sekretariat.fun), sehingga domain TIDAK boleh
 // di-hardcode. Domain sebenarnya dipelajari dari web app ReSo itu sendiri:
 // saat app dimuat, ia mendorong `{url, idToken, refreshToken, ...}` ke ekstensi
 // (pesan RESO_CONNECT via chrome.runtime.sendMessage — lihat applyResoConnect).
 // Domain juga BISA di-pin manual lewat `resoUrl` di storage (Options) sebagai
 // jangkar keamanan / fallback. Tanpa keduanya, dipakai RESO_URL default.
-const RESO_URL = "https://rekapsosmed.vercel.app";
+const RESO_URL = "https://reso.sekretariat.fun";
 const RESO_DEV_URL = "http://localhost:3000";
 const RESO_MATCH_PATTERNS = [`${RESO_URL}/*`, `${RESO_DEV_URL}/*`];
 const RESO_URL_KEY = "resoUrl";

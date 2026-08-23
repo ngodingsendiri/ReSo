@@ -28,13 +28,13 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
   dipicu dari content script, query `chrome.tabs` didelegasikan ke background
   (`chrome.tabs` tidak tersedia di content script).
 - **Domain ReSo TIDAK di-hardcode** (publikasi ramah-fork): tiap deploy Vercel
-  punya domain sendiri (mis. `rekapsosmed.vercel.app`). Ekstensi mempelajari
+  punya domain sendiri (mis. `reso.sekretariat.fun`). Ekstensi mempelajari
   domain dari web app ReSo lewat **app push** — saat app terbuka & login, ia
   mendorong `{url, idToken, uid, email}` ke ekstensi (`RESO_CONNECT`), lalu
   API/health/handoff otomatis menarget domain itu. Domain juga bisa **di-pin
   manual** di **Options** (tombol ⚙ di popup → Halaman opsi) sebagai jangkar
   keamanan & fallback bila app belum mengirim. Tanpa keduanya, default
-  `https://rekapsosmed.vercel.app`.
+  `https://reso.sekretariat.fun`.
 - **App push (web → ekstensi)**: `src/lib/extension-bridge.ts` memanggil
   `chrome.runtime.sendMessage(EXTENSION_ID, { type: "RESO_CONNECT", … })` saat
   login & tiap halaman fokus. Butuh `extensionId` di `firebase-applet-config.json`

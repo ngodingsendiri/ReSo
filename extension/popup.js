@@ -7,7 +7,7 @@ const KEY = "rsx_enabled";
 const RESO_PENDING_KEY = "resoPending";
 const RESO_URL_KEY = "resoUrl";
 // Fallback bila user belum pin domain di Options (sama dengan RESO_URL di shared.js).
-const RESO_URL_FALLBACK = "https://rekapsosmed.vercel.app";
+const RESO_URL_FALLBACK = "https://reso.sekretariat.fun";
 const toggle = document.getElementById("modeToggle");
 const hint = document.getElementById("modeHint");
 const resoStatus = document.getElementById("resoStatus");

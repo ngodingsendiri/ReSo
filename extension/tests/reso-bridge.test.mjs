@@ -255,5 +255,5 @@ test("manifest.json: entry content_reso memuat semua RESO_MATCH_PATTERNS (satu-s
       `manifest harus memuat pola ${pattern} (sama dengan RESO_MATCH_PATTERNS)`
     );
   }
-  assert.ok(entry.matches.includes("https://rekapsosmed.vercel.app/*"), "domain produksi ReSo harus ada");
+  assert.ok(entry.matches.includes("https://reso.sekretariat.fun/*"), "domain produksi ReSo harus ada");
 });

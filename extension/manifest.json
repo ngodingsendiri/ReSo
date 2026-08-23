@@ -3,7 +3,7 @@
   "minimum_chrome_version": "102",
   "name": "ReSo Ekstention",
   "description": "Ambil nama komentator dari Facebook, TikTok & Instagram, lalu salin ke Excel. Satu extension untuk semua platform.",
-  "version": "1.0.51",
+  "version": "1.0.52",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -33,7 +33,7 @@
   ],
   "externally_connectable": {
     "matches": [
-      "https://rekapsosmed.vercel.app/*",
+      "https://reso.sekretariat.fun/*",
       "http://localhost:3000/*"
     ]
   },
@@ -59,7 +59,7 @@
     "*://*.facebook.com/*",
     "*://*.tiktok.com/*",
     "*://*.instagram.com/*",
-    "https://rekapsosmed.vercel.app/*"
+    "https://reso.sekretariat.fun/*"
   ],
   "content_scripts": [
     {
@@ -107,7 +107,7 @@
     },
     {
       "matches": [
-        "https://rekapsosmed.vercel.app/*",
+        "https://reso.sekretariat.fun/*",
         "http://localhost:3000/*"
       ],
       "js": [
