@@ -120,16 +120,16 @@
 
     if (reason === "stopped") {
       return c
-        ? `Dihentikan — ${c} ${word}.${extra} Klik Copy.`
+        ? `Dihentikan — ${c} ${word}.${extra} Klik Rekap + Kirim untuk mengirim.`
         : `Dihentikan — belum ada ${word}.${extra}`;
     }
     if (reason === "timeout") {
       return c
-        ? `Waktu habis — ${c} ${word} (mungkin belum semua).${extra} Klik Copy.`
+        ? `Waktu habis — ${c} ${word} (mungkin belum semua).${extra} Klik Rekap + Kirim untuk mengirim.`
         : `Waktu habis — belum ada ${word}.${extra}`;
     }
     if (reason === "idle" || reason === "complete") {
-      if (c) return `Selesai — ${c} ${word}.${extra} Klik Copy.`;
+      if (c) return `Selesai — ${c} ${word}.${extra} Klik Rekap + Kirim untuk mengirim.`;
       if (tip) return `Tidak ada ${word}.${tip}`;
       if (platform === "facebook")
         return "Tidak ada nama. Buka permalink post, buka list komentar sampai terlihat, tunggu 2–3 dtk, lalu Proses lagi.";
@@ -531,38 +531,6 @@
     await sendBg("RESET");
   }
 
-  async function copyNames() {
-    const vis = visible();
-    const text = vis.join("\n");
-    if (!text) {
-      setLocal({ message: "Belum ada username untuk disalin." });
-      return false;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      setLocal({
-        message: `Tersalin ${vis.length} username. Paste di Excel (Ctrl+V).`,
-      });
-      return true;
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.cssText = "position:fixed;left:-9999px;top:0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-        setLocal({ message: `Tersalin ${vis.length} username. Paste di Excel.` });
-        return true;
-      } catch {
-        setLocal({ message: "Gagal copy. Coba lagi dari panel atau popup." });
-        return false;
-      } finally {
-        ta.remove();
-      }
-    }
-  }
-
   // Helper bersama dari shared.js (classic via manifest content_scripts —
   // tanpa salinan inline; shared.js dimuat sebelum content script ini).
   const { svgIcon, igTargetLabel, resolveTheme, injectIconSprite } =
@@ -595,10 +563,8 @@
             <span>Balasan</span>
           </label>
           <div class="ing-actions">
-            <button type="button" class="ing-btn ing-ghost" data-ing="process" title="Rekap — ambil username" aria-label="Rekap">${svgIcon("play_arrow")}</button>
             <button type="button" class="ing-btn ing-primary" data-ing="process-send" title="Rekap + Kirim ke ReSo" aria-label="Rekap + Kirim ke ReSo">${svgIcon("send")}</button>
             <button type="button" class="ing-btn" data-ing="stop" hidden title="Hentikan" aria-label="Hentikan">${svgIcon("stop")}</button>
-            <button type="button" class="ing-btn ing-success" data-ing="copy" disabled title="Salin ke clipboard" aria-label="Salin username">${svgIcon("content_copy")}</button>
             <button type="button" class="ing-btn ing-ghost" data-ing="reset" title="Bersihkan hasil" aria-label="Bersihkan hasil">${svgIcon("restart_alt")}</button>
           </div>
         </div>
@@ -612,10 +578,8 @@
       const t = e.target.closest("[data-ing]");
       if (!t) return;
       const act = t.getAttribute("data-ing");
-      if (act === "process") startExtract();
       if (act === "process-send") rekapSend();
       if (act === "stop") stopExtract();
-      if (act === "copy") copyNames();
       if (act === "reset") doReset();
       if (act === "min") root.classList.add("ing-collapsed");
       if (act === "fab") root.classList.remove("ing-collapsed");
@@ -671,23 +635,14 @@
     const statusEl = ui.querySelector('[data-ing="status"]');
     const countEl = ui.querySelector('[data-ing="count"]');
     const replies = ui.querySelector('[data-ing="replies"]');
-    const processBtn = ui.querySelector('[data-ing="process"]');
     const sendBtn = ui.querySelector('[data-ing="process-send"]');
     const stopBtn = ui.querySelector('[data-ing="stop"]');
-    const copyBtn = ui.querySelector('[data-ing="copy"]');
     const fab = ui.querySelector('[data-ing="fab"]');
     const n = (names || []).length;
     if (statusEl) statusEl.textContent = message;
     if (countEl) countEl.textContent = n ? `${n} username` : `0 username`;
     if (replies) replies.checked = includeReplies;
     const running = status === "running";
-    if (processBtn) {
-      processBtn.disabled = running;
-      const ic = processBtn.querySelector(".rs-ic");
-      if (ic) ic.innerHTML = svgIcon(running ? "progress_activity" : "play_arrow");
-      processBtn.setAttribute("aria-label", running ? "Memproses…" : "Rekap");
-      processBtn.title = running ? "Memproses…" : "Rekap — ambil username";
-    }
     if (sendBtn) {
       sendBtn.disabled = running;
       const label = running ? "Memproses…" : "Rekap + Kirim ke ReSo";
@@ -695,10 +650,6 @@
       sendBtn.title = label;
     }
     if (stopBtn) stopBtn.hidden = !running;
-    if (copyBtn) {
-      copyBtn.disabled = n === 0;
-      copyBtn.setAttribute("aria-label", n ? `Salin username (${n})` : `Salin username`);
-    }
     if (fab) {
       fab.setAttribute("data-count", n > 0 ? String(n) : "");
       fab.classList.toggle("ing-running", running);
@@ -849,10 +800,6 @@
       sendResponse({ ok: true });
       return;
     }
-    if (msg.type === "COPY_FROM_PAGE") {
-      copyNames().then((ok) => sendResponse({ ok }));
-      return true;
-    }
   });
 
   // Refresh badge "siap" TIDAK lewat storage.session: area session tidak
@@ -889,7 +836,7 @@
           message:
             typeof st.message === "string"
               ? st.message
-              : `Hasil tersimpan — ${saved.length} username. Klik Copy.`,
+              : `Hasil tersimpan — ${saved.length} username. Klik Rekap + Kirim untuk mengirim.`,
           postHint: typeof st.postHint === "string" ? st.postHint : "",
         });
       }

@@ -45,10 +45,8 @@ const PLATFORMS = {
 // aksi baru tidak memecah test (parity template↔handler + kesetaraan lintas
 // platform tetap dijaga); menghapus aksi inti langsung ketahuan.
 const CORE_ACTIONS = [
-  "copy",
   "fab",
   "min",
-  "process",
   "process-send",
   "reset",
   "stop",
@@ -540,10 +538,8 @@ const RENDER_KEYS = [
   "status",
   "count",
   "replies",
-  "process",
   "process-send",
   "stop",
-  "copy",
   "fab",
 ];
 
@@ -583,12 +579,12 @@ for (const [platform, { file, attr }] of Object.entries(PLATFORMS)) {
     );
     assert.match(
       render,
-      /copyBtn\.disabled\s*=\s*n\s*===\s*0/,
-      "copy disabled tidak mengikuti jumlah nama"
+      /sendBtn\.disabled\s*=\s*running/,
+      "sendBtn disabled tidak mengikuti running"
     );
   });
 
-  test(`RENDER ${platform}: tombol stop tersembunyi saat tidak running; process swap ikon`, () => {
+  test(`RENDER ${platform}: tombol stop tersembunyi saat tidak running; sendBtn swap label`, () => {
     // Toleran terhadap ejaan `status !== "running"` (refactor sah setara).
     assert.match(
       render,
@@ -597,16 +593,18 @@ for (const [platform, { file, attr }] of Object.entries(PLATFORMS)) {
     );
     assert.match(
       render,
-      /processBtn\.disabled\s*=\s*(?:running|status\s*===\s*"running")/,
-      "process disabled tidak mengikuti running"
+      /sendBtn\.disabled\s*=\s*(?:running|status\s*===\s*"running")/,
+      "sendBtn disabled tidak mengikuti running"
     );
-    // Idle glyph play_arrow dikunci (juga dijaga test peta aksi→ikon); glyph
-    // running bebas (progress_activity saat ini) asal ikonnya berubah. Swap
-    // kini seragam: innerHTML diganti svgIcon(...) di ketiga platform.
     assert.match(
       render,
-      /ic\.innerHTML\s*=\s*svgIcon\(running\s*\?\s*"[a-z0-9_]+"\s*:\s*"play_arrow"\)/,
-      "ikon process tidak swap (idle=play_arrow) saat running"
+      /sendBtn\.setAttribute\("aria-label",\s*label\)/,
+      "sendBtn aria-label tidak dinamis"
+    );
+    assert.match(
+      render,
+      /sendBtn\.title\s*=\s*label/,
+      "sendBtn title tidak dinamis"
     );
   });
 
@@ -869,7 +867,7 @@ function makePanelRenderer(platform, opts = {}) {
   const ui = {
     setAttribute(k, v) { this["_" + k] = String(v); },
     querySelector(sel) {
-      const m = sel.match(/data-${attr}="([a-z]+)"/);
+      const m = sel.match(/data-${attr}="([a-z-]+)"/);
       return m && els[m[1]] ? els[m[1]] : null;
     },
   };
@@ -935,22 +933,22 @@ test("RENDER instagram (exec): FAB data-count + kelas running/done + title/aria 
   assert.equal(r4.els.fab._attrs["data-count"], "");
 });
 
-test("RENDER instagram (exec): tombol stop tersembunyi saat tidak running + swap ikon process", () => {
-  // idle → stop hidden, process aktif dengan play_arrow.
+test("RENDER instagram (exec): tombol stop tersembunyi saat tidak running + sendBtn label dinamis", () => {
+  // idle → stop hidden, sendBtn aktif dengan label default.
   const r1 = makePanelRenderer("instagram", { status: "idle" });
   r1.render();
   assert.equal(r1.els.stop.hidden, true);
-  assert.equal(r1.els.process.disabled, false);
-  assert.match(r1.els.process._ic.innerHTML, /data-ic="play_arrow"/);
-  assert.equal(r1.els.process._attrs["aria-label"], "Rekap");
+  assert.equal(r1.els["process-send"].disabled, false);
+  assert.equal(r1.els["process-send"]._attrs["aria-label"], "Rekap + Kirim ke ReSo");
+  assert.equal(r1.els["process-send"].title, "Rekap + Kirim ke ReSo");
 
-  // running → stop tampil, process disabled, ikon progress_activity.
+  // running → stop tampil, sendBtn disabled, label proses.
   const r2 = makePanelRenderer("instagram", { status: "running" });
   r2.render();
   assert.equal(r2.els.stop.hidden, false);
-  assert.equal(r2.els.process.disabled, true);
-  assert.match(r2.els.process._ic.innerHTML, /data-ic="progress_activity"/);
-  assert.equal(r2.els.process._attrs["aria-label"], "Memproses…");
+  assert.equal(r2.els["process-send"].disabled, true);
+  assert.equal(r2.els["process-send"]._attrs["aria-label"], "Memproses…");
+  assert.equal(r2.els["process-send"].title, "Memproses…");
 });
 
 test("RENDER (exec) parity count: jumlah nama identik 3 platform (kata nama/username boleh beda)", () => {
@@ -1012,11 +1010,11 @@ function svgBlocks(html) {
 /** Logo brand per platform — viewBox 24 (Simple Icons); selain itu 960. */
 const PLATFORM_LOGO = { facebook: "facebook", tiktok: "music_note", instagram: "instagram" };
 
-/** Set ikon panel/FAB per platform (logo + 8 ikon non-logo). */
+/** Set ikon panel/FAB per platform (logo + 6 ikon non-logo). */
 const PLATFORM_ICON_SET = {
-  facebook: ["facebook", "close", "forum", "play_arrow", "send", "stop", "content_copy", "restart_alt", "forum"],
-  tiktok: ["music_note", "close", "forum", "play_arrow", "send", "stop", "content_copy", "restart_alt", "forum"],
-  instagram: ["instagram", "close", "forum", "play_arrow", "send", "stop", "content_copy", "restart_alt", "forum"],
+  facebook: ["facebook", "close", "forum", "send", "stop", "restart_alt", "forum"],
+  tiktok: ["music_note", "close", "forum", "send", "stop", "restart_alt", "forum"],
+  instagram: ["instagram", "close", "forum", "send", "stop", "restart_alt", "forum"],
 };
 
 /** Asersi satu string ikon SVG (badge/swap): data-ic benar, path terisi,
@@ -1050,7 +1048,7 @@ test("SNAPSHOT visual ikon SVG: panel & FAB 3 platform — svg lengkap, nol glyp
     // 2. Semua posisi ikon adalah <svg> lengkap: data-ic, aria-hidden,
     //    ukuran, dan ref <use> ke sprite sheet (path di iconSprite).
     const svgs = svgBlocks(html);
-    assert.equal(svgs.length, 9, `${file}: jumlah svg ${svgs.length} !== 9`);
+    assert.equal(svgs.length, 7, `${file}: jumlah svg ${svgs.length} !== 7`);
     for (const { attrs, use } of svgs) {
       assert.ok(attrs["data-ic"], `${file}: svg tanpa data-ic`);
       assert.equal(
@@ -1065,7 +1063,7 @@ test("SNAPSHOT visual ikon SVG: panel & FAB 3 platform — svg lengkap, nol glyp
         `${file}: ikon ${attrs["data-ic"]} tanpa ref sprite yang benar`
       );
     }
-    // 3. Set ikon tepat (logo + 11 non-logo; forum 2× — label & FAB).
+    // 3. Set ikon tepat (logo + 6 non-logo; forum 2× — label & FAB).
     const ics = svgs.map((s) => s.attrs["data-ic"]).sort();
     assert.deepEqual(
       ics,
@@ -1138,7 +1136,7 @@ test("UKURAN DOM sprite vs baseline path inline: ref <use> lebih kecil per ikon 
   const info = spriteIconInfo();
   const svgIcon = globalThis.RS_SHARED.svgIcon;
   const spriteBytes = globalThis.RS_SHARED.iconSprite().length;
-  assert.ok(Object.keys(info).length >= 11, "sprite kurang dari 11 ikon (ukuran tak terukur)");
+  assert.ok(Object.keys(info).length >= 8, "sprite kurang dari 8 ikon (ukuran tak terukur)");
 
   // 1. PER IKON: representasi baru (ref <use>) SELALU lebih kecil dari yang
   //    lama (path inline) — tidak ada ikon yang bobot per-elemennya membesar.
@@ -1193,25 +1191,16 @@ test("UKURAN DOM sprite vs baseline path inline: ref <use> lebih kecil per ikon 
     );
   }
 
-  // 4. CHURN RE-RENDER: string ikon yang dihasilkan render() per state change
-  //    (swap ikon Proses) jauh lebih kecil dari bentuk lamanya.
-  const churnNames = ["progress_activity", "play_arrow"];
-  const churnNew = churnNames.reduce((a, n) => a + svgIcon(n).length, 0);
-  const churnOld = churnNames.reduce(
-    (a, n) => a + oldInlineIcon(n, info[n].vb, info[n].d).length,
-    0
-  );
-  assert.ok(
-    churnNew * 3 < churnOld,
-    `churn render ${churnNew}B x3 tidak < lama ${churnOld}B (string ikon per render membesar)`
-  );
+  // 4. CHURN RE-RENDER: string ikon yang dihasilkan render() tetap kecil.
+  //    (swap ikon Proses sudah dihapus — tombol process tidak ada.)
+  //    Minimum: panel refs (svgIcon) harus lebih kecil dari inline.
+  //    (diverifikasi di butir 3 per platform)
 });
 
-test("SNAPSHOT visual ikon SVG: sprite sheet — 11 symbol, path terisi, viewBox benar, semua dipakai ada", () => {
+test("SNAPSHOT visual ikon SVG: sprite sheet — 8 symbol, path terisi, viewBox benar, semua dipakai ada", () => {
   const sprite = globalThis.RS_SHARED.iconSprite();
-  // 1. Satu <svg id="rs-icon-sprite"> berisi 11 <symbol> (dari ICON_PATHS —
-  //    hanya ikon yang benar-benar dipakai panel minimal: logo, kontrol panel,
-  //    swap proses, dan tombol Rekap + Kirim; sisanya di-prune).
+  // 1. Satu <svg id="rs-icon-sprite"> berisi 8 <symbol> (dari ICON_PATHS —
+  //    hanya ikon yang benar-benar dipakai: logo, kontrol panel, kirim.
   assert.ok(
     sprite.startsWith('<svg id="rs-icon-sprite"'),
     "sprite bukan <svg id=rs-icon-sprite>"
@@ -1221,7 +1210,7 @@ test("SNAPSHOT visual ikon SVG: sprite sheet — 11 symbol, path terisi, viewBox
       /<symbol id="(rs-i-[a-z0-9_]+)" viewBox="([^"]+)">([\s\S]*?)<\/symbol>/g
     ),
   ];
-  assert.equal(syms.length, 11, `sprite symbol ${syms.length} !== 11`);
+  assert.equal(syms.length, 8, `sprite symbol ${syms.length} !== 8`);
   const byId = {};
   for (const [, id, vb, body] of syms) byId[id] = { vb, body };
   // 2. viewBox: brand 24 (Simple Icons: facebook/instagram), sisanya 960
@@ -1250,8 +1239,6 @@ test("SNAPSHOT visual ikon SVG: sprite sheet — 11 symbol, path terisi, viewBox
     [...read(f).matchAll(/data-ic="([a-z0-9_]+)"/g)].map((m) => m[1]);
   const needed = new Set([
     ...Object.values(PLATFORM_ICON_SET).flat(),
-    "progress_activity",
-    "forum",
     ...htmlIcons("popup.html"),
   ]);
   for (const n of needed) {
@@ -1264,23 +1251,6 @@ test("SNAPSHOT visual ikon SVG: sprite sheet — 11 symbol, path terisi, viewBox
       css,
       /#rs-icon-sprite\s*{[^}]*display:\s*none/,
       `${file} CSS tanpa #rs-icon-sprite{display:none} (sprite jadi kotak 300×150)`
-    );
-  }
-});
-
-test("SNAPSHOT visual ikon SVG: swap ikon Proses (render asli) — svg bukan teks", () => {
-  for (const platform of Object.keys(PLATFORMS)) {
-    // Swap ikon Proses: idle → play_arrow svg, running → progress_activity svg
-    // (badge Siap/Belum dihapus di panel minimal — hanya swap yang tersisa).
-    const rIdle = makePanelRenderer(platform, { status: "idle" });
-    rIdle.render();
-    assertSvgIconString(`${platform} swap idle`, rIdle.els.process._ic.innerHTML, "play_arrow");
-    const rRun = makePanelRenderer(platform, { status: "running" });
-    rRun.render();
-    assertSvgIconString(
-      `${platform} swap running`,
-      rRun.els.process._ic.innerHTML,
-      "progress_activity"
     );
   }
 });

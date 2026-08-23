@@ -43,12 +43,6 @@
         "default": "Ctrl+Shift+E"
       },
       "description": "ReSo \u00e2\u20ac\u201d Proses / ambil nama komentator di tab aktif"
-    },
-    "copy-names": {
-      "suggested_key": {
-        "default": "Alt+Shift+C"
-      },
-      "description": "ReSo \u00e2\u20ac\u201d Salin nama komentator ke clipboard"
     }
   },
   "host_permissions": [

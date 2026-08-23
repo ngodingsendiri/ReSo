@@ -124,16 +124,16 @@
 
     if (reason === "stopped") {
       return c
-        ? `Dihentikan — ${c} ${word}.${extra} Klik Copy.`
+        ? `Dihentikan — ${c} ${word}.${extra} Klik Rekap + Kirim untuk mengirim.`
         : `Dihentikan — belum ada ${word}.${extra}`;
     }
     if (reason === "timeout") {
       return c
-        ? `Waktu habis — ${c} ${word} (mungkin belum semua).${extra} Klik Copy.`
+        ? `Waktu habis — ${c} ${word} (mungkin belum semua).${extra} Klik Rekap + Kirim untuk mengirim.`
         : `Waktu habis — belum ada ${word}.${extra}`;
     }
     if (reason === "idle" || reason === "complete") {
-      if (c) return `Selesai — ${c} ${word}.${extra} Klik Copy.`;
+      if (c) return `Selesai — ${c} ${word}.${extra} Klik Rekap + Kirim untuk mengirim.`;
       if (tip) return `Tidak ada ${word}.${tip}`;
       if (platform === "facebook")
         return "Tidak ada nama. Buka permalink post, buka list komentar sampai terlihat, tunggu 2–3 dtk, lalu Proses lagi.";
@@ -537,38 +537,6 @@
     await sendBg("RESET");
   }
 
-  async function copyNames() {
-    const vis = visible();
-    const text = vis.join("\n");
-    if (!text) {
-      setLocal({ message: "Belum ada nama untuk disalin." });
-      return false;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      setLocal({
-        message: `Tersalin ${vis.length} nama. Paste di Excel (Ctrl+V).`,
-      });
-      return true;
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.cssText = "position:fixed;left:-9999px;top:0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-        setLocal({ message: `Tersalin ${vis.length} nama. Paste di Excel.` });
-        return true;
-      } catch {
-        setLocal({ message: "Gagal copy. Coba lagi dari panel atau popup." });
-        return false;
-      } finally {
-        ta.remove();
-      }
-    }
-  }
-
   // Helper bersama dari shared.js (classic via manifest content_scripts —
   // tanpa salinan inline; shared.js dimuat sebelum content script ini).
   const { svgIcon, resolveTheme, injectIconSprite } = globalThis.RS_SHARED;
@@ -600,10 +568,8 @@
             <span>Balasan</span>
           </label>
           <div class="tnk-actions">
-            <button type="button" class="tnk-btn tnk-ghost" data-tnk="process" title="Rekap — ambil nama" aria-label="Rekap">${svgIcon("play_arrow")}</button>
             <button type="button" class="tnk-btn tnk-primary" data-tnk="process-send" title="Rekap + Kirim ke ReSo" aria-label="Rekap + Kirim ke ReSo">${svgIcon("send")}</button>
             <button type="button" class="tnk-btn" data-tnk="stop" hidden title="Hentikan" aria-label="Hentikan">${svgIcon("stop")}</button>
-            <button type="button" class="tnk-btn tnk-success" data-tnk="copy" disabled title="Salin ke clipboard" aria-label="Salin nama">${svgIcon("content_copy")}</button>
             <button type="button" class="tnk-btn tnk-ghost" data-tnk="reset" title="Bersihkan hasil" aria-label="Bersihkan hasil">${svgIcon("restart_alt")}</button>
           </div>
         </div>
@@ -617,10 +583,8 @@
       const t = e.target.closest("[data-tnk]");
       if (!t) return;
       const act = t.getAttribute("data-tnk");
-      if (act === "process") startExtract();
       if (act === "process-send") rekapSend();
       if (act === "stop") stopExtract();
-      if (act === "copy") copyNames();
       if (act === "reset") doReset();
       if (act === "min") root.classList.add("tnk-collapsed");
       if (act === "fab") root.classList.remove("tnk-collapsed");
@@ -676,23 +640,14 @@
     const statusEl = ui.querySelector('[data-tnk="status"]');
     const countEl = ui.querySelector('[data-tnk="count"]');
     const replies = ui.querySelector('[data-tnk="replies"]');
-    const processBtn = ui.querySelector('[data-tnk="process"]');
     const sendBtn = ui.querySelector('[data-tnk="process-send"]');
     const stopBtn = ui.querySelector('[data-tnk="stop"]');
-    const copyBtn = ui.querySelector('[data-tnk="copy"]');
     const fab = ui.querySelector('[data-tnk="fab"]');
     const n = (names || []).length;
     if (statusEl) statusEl.textContent = message;
     if (countEl) countEl.textContent = n ? `${n} nama` : `0 nama`;
     if (replies) replies.checked = includeReplies;
     const running = status === "running";
-    if (processBtn) {
-      processBtn.disabled = running;
-      const ic = processBtn.querySelector(".rs-ic");
-      if (ic) ic.innerHTML = svgIcon(running ? "progress_activity" : "play_arrow");
-      processBtn.setAttribute("aria-label", running ? "Memproses…" : "Rekap");
-      processBtn.title = running ? "Memproses…" : "Rekap — ambil nama";
-    }
     if (sendBtn) {
       sendBtn.disabled = running;
       const label = running ? "Memproses…" : "Rekap + Kirim ke ReSo";
@@ -700,10 +655,6 @@
       sendBtn.title = label;
     }
     if (stopBtn) stopBtn.hidden = !running;
-    if (copyBtn) {
-      copyBtn.disabled = n === 0;
-      copyBtn.setAttribute("aria-label", n ? `Salin nama (${n})` : `Salin nama`);
-    }
     if (fab) {
       fab.setAttribute("data-count", n > 0 ? String(n) : "");
       fab.classList.toggle("tnk-running", running);
@@ -849,10 +800,6 @@
       sendResponse({ ok: true });
       return;
     }
-    if (msg.type === "COPY_FROM_PAGE") {
-      copyNames().then((ok) => sendResponse({ ok }));
-      return true;
-    }
   });
 
   // Refresh badge "siap" TIDAK lewat storage.session: area session tidak
@@ -889,7 +836,7 @@
           message:
             typeof st.message === "string"
               ? st.message
-              : `Hasil tersimpan — ${saved.length} nama. Klik Copy.`,
+              : `Hasil tersimpan — ${saved.length} nama. Klik Rekap + Kirim untuk mengirim.`,
           videoHint: typeof st.videoHint === "string" ? st.videoHint : "",
         });
       }

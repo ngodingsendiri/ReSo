@@ -2,6 +2,13 @@
 
 Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [1.0.57] — 23 Agustus 2026
+
+### Panel minimal: hapus tombol "Rekap ambil nama" & "Salin ke clipboard"
+- **Panel 3 aksi** (FB/TikTok/IG): tombol **Rekap + Kirim ke ReSo** (process-send), **Stop**, dan **Bersihkan** (reset) — tombol **"Rekap — ambil nama"** (process, extract tanpa kirim) dan **"Salin ke clipboard"** (copy) dihapus. `copyNames()`, handler `COPY_FROM_PAGE`, command keyboard `copy-names` (Alt+Shift+C) di background, dan pesan "Klik Copy" dibuang. Pesan selesai kini "Klik Rekap + Kirim untuk mengirim."
+- **Sprite sheet dipangkas** (11 → 8 symbol): `play_arrow`, `content_copy`, `progress_activity` dihapus dari `ICON_PATHS`.
+- Test disesuaikan: `CORE_ACTIONS`/`RENDER_KEYS` tanpa process/copy, `PLATFORM_ICON_SET` 7 ikon (logo + 6), harness `makePanelRenderer` memeriksa sendBtn (bukan swap ikon process), sprite sheet 8 symbol, `doneMessage` wording baru. Test: suite **455 → 454** (test swap ikon Proses dihapus — tombolnya sudah tidak ada).
+
 ## [1.0.56] — 23 Agustus 2026
 
 ### IG: auto-klik "Muat komentar lainnya" + ketahanan arsitektur 3 platform (audit)

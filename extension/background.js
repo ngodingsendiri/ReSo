@@ -180,7 +180,7 @@ async function restoreSavedIfIdle(state, platform) {
       status: "done",
       names: saved.names,
       count: saved.names.length,
-      message: `Hasil tersimpan (${new Date(saved.savedAt).toLocaleString("id-ID")}) — ${saved.names.length} ${word}. Klik Copy / Reset untuk hapus.`,
+      message: `Hasil tersimpan (${new Date(saved.savedAt).toLocaleString("id-ID")}) — ${saved.names.length} ${word}. Klik Rekap + Kirim untuk mengirim / Reset untuk hapus.`,
     };
   }
   const pref = data[PREFS_KEY]?.includeReplies?.[platform];
@@ -1626,12 +1626,6 @@ chrome.commands.onCommand.addListener(async (cmd) => {
       if (p === "facebook") await startFacebook(tab, { includeReplies });
       else if (p === "tiktok") await startTikTok(tab, { includeReplies });
       else await startInstagram(tab, { includeReplies });
-    } else if (cmd === "copy-names") {
-      try {
-        await chrome.tabs.sendMessage(tab.id, { type: "COPY_FROM_PAGE" });
-      } catch (e) {
-        console.debug("[ReSo] shortcut copy:", e?.message);
-      }
     }
   } catch (e) {
     console.debug("[ReSo] command:", e?.message);

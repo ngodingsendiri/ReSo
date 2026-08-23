@@ -311,10 +311,10 @@ runFamily(2, FILES_IG, IG_FIXTURES);
 const DONE_FN = compile(sharedDone[0]);
 
 test("BEHAVIOR: doneMessage wording contract is platform-aware", () => {
-  assert.equal(DONE_FN("complete", 5, "facebook"), "Selesai — 5 nama. Klik Copy.");
+  assert.equal(DONE_FN("complete", 5, "facebook"), "Selesai — 5 nama. Klik Rekap + Kirim untuk mengirim.");
   assert.equal(
     DONE_FN("complete", 5, "instagram"),
-    "Selesai — 5 username. Klik Copy."
+    "Selesai — 5 username. Klik Rekap + Kirim untuk mengirim."
   );
   assert.equal(
     DONE_FN("stopped", 0, "tiktok"),
