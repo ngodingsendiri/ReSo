@@ -24,6 +24,7 @@ import {
   mergePostedAt,
   isDateTooFarFuture,
   ADMIN_EMAILS,
+  dinasUid,
   type ExtPlatform,
 } from '../src/lib/engagement-api.js';
 import type { MatchableEmployee } from '../src/lib/matching.js';
@@ -32,7 +33,7 @@ const PROJECT = firebaseConfig.projectId as string;
 const API_KEY = firebaseConfig.apiKey as string;
 
 function getFsBase(uid: string): string {
-  return `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/dinas/${uid}`;
+  return `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/dinas/${dinasUid(uid)}`;
 }
 
 function json(res: unknown, status: number, data: unknown) {
@@ -119,7 +120,8 @@ async function verifyIdToken(idToken: string): Promise<{ uid: string; email: str
 
 async function isAdminUser(uid: string, email: string, idToken: string, fsBase: string): Promise<boolean> {
   if (ADMIN_EMAILS.includes(email)) return true;
-  const r = await fetch(`${fsBase}/admins/${encodeURIComponent(uid)}`, {
+  // Marker provision ditulis ke admins/{lowercase uid} (lihat api/provision.ts).
+  const r = await fetch(`${fsBase}/admins/${encodeURIComponent(dinasUid(uid))}`, {
     headers: { Authorization: `Bearer ${idToken}` },
   });
   if (r.ok) return true;

@@ -16,6 +16,22 @@ import {
   type EngagementPlatform,
 } from './matching.js';
 
+/**
+ * KONVENSI PATH DINAS — SATU-SATUNYA sumber kebenaran untuk segmen uid di
+ * subtree `dinas/<uid>/...`. UID Firebase Auth bisa berisi huruf campur
+ * (mis. `eeWzyza6xvcBKcmucxMidMBTmOw1`); subtree dinas SELALU ditulis dengan
+ * huruf kecil. JANGAN pernah baca/tulis `dinas/{uid}` tanpa lewat helper ini —
+ * beda case antara jalur tulis & baca = data terbelah jadi 2 subtree
+ * (bug `dinas/{raw}` vs `dinas/{lowercase}` yang pernah bikin rekap "hilang").
+ *
+ * Dipakai konsisten di: client (dinasCollection/dinasDoc), API Vercel
+ * (api/engagement.ts, api/provision.ts), dan firestore.rules
+ * (isAllowedDinas membandingkan `uid.lower()`).
+ */
+export function dinasUid(uid: string): string {
+  return String(uid || '').toLowerCase();
+}
+
 /** Platform dari sisi ekstensi (popup ReSoEx). */
 export type ExtPlatform = 'facebook' | 'instagram' | 'tiktok';
 

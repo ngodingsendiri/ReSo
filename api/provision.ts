@@ -8,6 +8,7 @@
  */
 
 import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
+import { dinasUid } from '../src/lib/engagement-api.js';
 
 const PROJECT = firebaseConfig.projectId as string;
 const API_KEY = firebaseConfig.apiKey as string;
@@ -69,7 +70,7 @@ export default async function handler(req: unknown, res: unknown) {
       return;
     }
 
-    const u = user.uid;
+    const u = dinasUid(user.uid);
     const markerUrl =
       `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/dinas/${u}/admins/${u}`;
     const markerBody = {

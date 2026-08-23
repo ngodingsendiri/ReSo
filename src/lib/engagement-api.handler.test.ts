@@ -73,6 +73,9 @@ async function runScenario(opts: {
       if (b.idToken === 'tok-nonadmin') {
         return respond(200, { users: [{ localId: 'u2', email: 'orang.lain@gmail.com', emailVerified: true }] });
       }
+      if (b.idToken === 'tok-mixedcase') {
+        return respond(200, { users: [{ localId: 'AbCdEfGh123', email: 'mixed.case@gmail.com', emailVerified: true }] });
+      }
       return respond(200, { users: [{ localId: 'u1', email: 'ngerjaindiri@gmail.com', emailVerified: true }] });
     }
     if (url.includes('/admins/')) return respond(404, { error: { message: 'NOT_FOUND' } });
@@ -268,6 +271,22 @@ function ok(msg: string) {
   const r = await runScenario({ token: '', body: {}, method: 'OPTIONS' });
   assert(r.status === 204, `preflight OK (${r.status})`);
   ok('OPTIONS preflight → 204 + CORS');
+}
+
+// 7. REGRESI: UID huruf campur → path dinas tetap huruf kecil (cegah data terbelah)
+{
+  const r = await runScenario({ token: 'tok-mixedcase', body: { platform: 'facebook', names: ['Andi Wijaya'], date: '2026-08-17' } });
+  assert(r.status === 200, `uid mixed-case diterima (${r.status})`);
+  for (const w of r.writes) {
+    const url = w.url;
+    // Harus dinas/abcdefgh123 (lowercase), bukan dinas/AbCdEfGh123 (raw)
+    assert(url.includes('/documents/dinas/abcdefgh123/'), `path dinas lowercase walau uid mixed-case, dapat ${url}`);
+  }
+  const reads = fetchLog.filter((f) => f.url.includes('firestore.googleapis.com') && f.method === 'GET');
+  for (const r2 of reads) {
+    assert(r2.url.includes('/documents/dinas/abcdefgh123/'), `read juga ke dinas lowercase, dapat ${r2.url}`);
+  }
+  ok('REGRESI: UID mixed-case → semua operasi ke dinas/{lowercase} (data tidak terbelah)');
 }
 
 console.log(`\napi/engagement handler: ${n} checks OK`);
