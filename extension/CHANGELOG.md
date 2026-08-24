@@ -38,6 +38,47 @@ Semua saran hasil audit mesin dieksekusi. Sorotan per item:
 Test: suite **463 → 471** (+8: paginator incomplete & regresi complete, findTotalCount ×2,
 chooseDomBudget, composeReplayParams ×2, pre-seed store).
 
+### Riset + mesin IG terpersonalisasi per struktur konten (gambar / korsel / reel)
+Riset memakai riset internal §3/§4.1 + verifikasi kode. Temuan kunci yang
+membedakan IG dari FB:
+
+- **Multi-gambar ≠ multi-permalink**: korsel IG adalah SATU kontainer media —
+  klik slide TIDAK mengubah shortcode/komentar (berkebalikan dengan FB yang
+  punya story id per foto). Konsekuensi mesin: target selalu ID KONTAINER;
+  ekstraksi media-id harus sadar-korsel agar tidak salah ambil id slide anak.
+- **Reel**: endpoint komentar identik (`/api/v1/media/<id>/comments/`), bedanya
+  permukaan UI (sheet samping + tombol "Lihat semua komentar") dan URL jamak
+  `/reels/<sc>/`.
+- **Share wrapper** `/share/[p/]<token>` redirect ke kanonik; shortcode tetap
+  terbaca setelah redirect.
+
+Implementasi terpersonalisasi:
+
+1. **`detectPostKind(url)`** (murni) — post/reel/tv/share; tag `[reel]` pada
+   baris Target panel & hint DONE.
+2. **`pickMediaIdNearShortcode(text, sc)`** (murni, sadar-korsel): id kandidat
+   wajib berada dalam OBJEK YANG SAMA dengan shortcode (uji keseimbangan bracket
+   antara posisi id ↔ shortcode) — id slide anak otomatis ditolak; fallback
+   bentuk escaped. `extractMediaIdFromPage(sc)` diprioritaskan ke script yang
+   menyebut shortcode halaman (anti data post lain).
+3. **Estimasi `comment_count`** (`commentCountNear` + `estimateCommentCount`):
+   angka hanya diambil dalam jendela ±800 char di sekitar mediaId; progres
+   heartbeat kini "… • ±M komentar di post".
+4. **S1-IG dialog eksklusif**: saat komentar modal terbuka, `main` di belakangnya
+   TIDAK lagi discrape (sumber over-count palsu dari postingan/suggestion latar).
+5. **Template cadangan terakhir-berhasil** (`fnk_ig_tpl_good_v1`, TTL 7 hari):
+   halaman kosong + has_more → coba SEKALI template alternatif sebelum menyerah;
+   keputusan via `shouldSwitchAltTemplate` (murni).
+6. **Pre-seed key simetris**: `shortcode || mediaId` dipakai di load & persist.
+
+Catatan teknis: extractor test IG naive (tanpa string-awareness) — komentar
+kode baru di fungsi yang diekstrak tidak boleh memuat karakter bracket tak
+seimbang; regex quantifier seimbang (`\d{5,}`) aman.
+
+Test: suite **478 → 486** (+8: detectPostKind, pickMediaId korsel/single/no-match,
+commentCountNear ×2, template cadangan ×2, scrape dialog-eksklusif; fixture
+dual-scope lama direvisi ke kontrak baru).
+
 ### Porting ke mesin IG: kejujuran hasil + akumulasi + efisiensi budget
 Menyesuaikan Instagram dengan kemenangan tuning FB (proporsional terhadap
 kerapuhan akun IG — BUDGET 150 tetap):

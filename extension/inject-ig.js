@@ -27,6 +27,8 @@
   /** Total API requests this run (budget guard — protect the user's IG account) */
   let requestBudget = 0;
   const BUDGET = 150;
+  /** Estimasi jumlah komentar post dari run terakhir (0 = tak diketahui). */
+  let lastRunTotalCount = 0;
   /** Extra cap for reply (inline child comment) requests — replies must never starve top-level pagination. */
   const REPLY_BUDGET = 70;
 
@@ -301,6 +303,39 @@
     }
   }
 
+  // ---------------- L2-AUDIT-IG: template cadangan terakhir-berhasil ----------------
+  const TPL_GOOD_KEY = "fnk_ig_tpl_good_v1";
+
+  function rememberGoodTemplate(url) {
+    try {
+      if (!url) return;
+      localStorage.setItem(
+        TPL_GOOD_KEY,
+        JSON.stringify({ url, at: Date.now() })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function getAltTemplate(current) {
+    try {
+      const raw = localStorage.getItem(TPL_GOOD_KEY);
+      if (!raw) return null;
+      const e = JSON.parse(raw);
+      if (!e || typeof e.url !== "string" || !e.url) return null;
+      if (!(e.at > 0 && Date.now() - e.at < 7 * 86400_000)) return null;
+      return e.url === current ? null : e.url;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Murni: kapan boleh mencoba template cadangan. */
+  function shouldSwitchAltTemplate(state) {
+    return !!state && state.batchSize === 0 && state.hasMore === true && !state.altTried;
+  }
+
   function extractMediaIdFromUrl(url) {
     const m = String(url || "").match(
       /instagram\.com\/api\/v1\/media\/(\d+)\//
@@ -308,18 +343,37 @@
     return m ? m[1] : null;
   }
 
-  /** Best-effort media_id from the page's embedded JSON (script tags). */
-  function extractMediaIdFromPage() {
+  /**
+   * Best-effort media_id dari JSON tertanam halaman — SADAR-KORSEL:
+   * 1) bentuk lama `"media_id":<digits>` (state composer) — biasanya induk;
+   * 2) rehydration modern: id kontainer terdekat dengan shortcode halaman
+   *    (`pickMediaIdNearShortcode`) — klik slide korsel TIDAK mengubah
+   *    shortcode/komentar, jadi induk selalu target yang benar.
+   * Script yang memuat shortcode halaman diprioritaskan (anti data post lain).
+   */
+  function extractMediaIdFromPage(shortcode) {
+    const sc = shortcode || extractShortcodeFromUrl(location.href) || "";
     const scripts = document.querySelectorAll("script");
-    for (let i = 0; i < Math.min(scripts.length, 40); i++) {
+    let fallback = null;
+    for (let i = 0; i < Math.min(scripts.length, 60); i++) {
       const t = scripts[i].textContent || "";
-      if (!t.includes("media_id")) continue;
-      const m =
-        t.match(/"media_id"\s*:\s*"?(\d{5,})/) ||
-        t.match(/media_id%22%3A%22(\d{5,})/);
-      if (m) return m[1];
+      // 1) Bentuk media_id eksplisit — prioritaskan script yang menyebut sc.
+      if (t.includes("media_id")) {
+        const m =
+          t.match(/"media_id"\s*:\s*"?(\d{5,})/) ||
+          t.match(/media_id%22%3A%22(\d{5,})/);
+        if (m) {
+          if (!sc || t.includes(sc)) return m[1];
+          fallback = fallback || m[1];
+        }
+      }
+      // 2) Rehydration sadar-shortcode/korsel.
+      if (sc && t.includes(`"${sc}"`)) {
+        const id = pickMediaIdNearShortcode(t, sc);
+        if (id) return id;
+      }
     }
-    return null;
+    return fallback;
   }
 
   function extractShortcodeFromUrl(url) {
@@ -327,6 +381,128 @@
       /instagram\.com\/(?:share\/)?(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i
     );
     return m ? m[1] : null;
+  }
+
+  // ---------------- Riset struktur konten IG (v1.0.58-IG) ----------------
+  // Tiga bentuk konten berbagi SATU endpoint komentar (/api/v1/media/<id>/
+  // comments/) yang selalu menyasar media INDUK:
+  //   • Gambar/video tunggal : /p/<sc>/            → id = media itu
+  //   • Multi-gambar/korsel  : /p/<sc>/ (sama!)    → id = KONTAINER korsel;
+  //     klik slide tidak mengubah shortcode/komentar (beda dengan FB)
+  //   • Reel                 : /reel|reels/<sc>/   → id = klipnya; komentar di
+  //     sheet samping, DOM & tombol "Lihat semua komentar" beda layout
+  //   • Share wrapper        : /share/[p/]<token> → redirect ke kanonik
+
+  /** Jenis postingan dari URL: 'post' | 'reel' | 'tv' | 'share' | null. */
+  function detectPostKind(url) {
+    const u = String(url || "");
+    const m = u.match(
+      /instagram\.com\/(?:share\/)?(p|reels?|tv)(?:\/|[?#])/i
+    );
+    if (!m)
+      return /instagram\.com\/share\//i.test(u) ? "share" : null;
+    const k = m[1].toLowerCase();
+    if (k === "reel" || k === "reels") return "reel";
+    if (k === "p") return "post";
+    return k; // 'tv'
+  }
+
+  /**
+   * Ambil ID MEDIA INDUK dari teks rehydration halaman, sadar-korsel:
+   * temukan posisi field shortcode halaman lalu ambil id digit PERTAMA
+   * SETELAHNYA yang berada dalam objek yang sama (objek kontainer selalu
+   * mendahului children korsel), atau TERAKHIR SEBELUMNYA dalam jendela kecil
+   * (bentuk xdt-api menaruh id sebelum shortcode). Null bila shortcode tak
+   * ditemukan di teks ini — JANGAN menebak dari teks tanpa konteks.
+   */
+  function pickMediaIdNearShortcode(text, shortcode) {
+    if (!text || !shortcode) return null;
+    const scIdx = text.indexOf('"' + shortcode + '"');
+    if (scIdx < 0) {
+      // Bentuk escaped (URL-encoded JSON di beberapa embed)
+      const esc = text.indexOf(shortcode);
+      if (esc < 0) return null;
+      const win = text.slice(esc, esc + 6000);
+      const m = win.match(/"id"\s*:\s*"?(\d\d\d\d\d+)/);
+      return m ? m[1] : null;
+    }
+    /**
+     * Validitas kandidat: antara posisi id dan posisi shortcode TIDAK boleh
+     * ada pembuka/penutup bracket yang tak seimbang — artinya keduanya berada
+     * dalam OBJEK YANG SAMA (media induk). Id slide anak korsel selalu
+     * terpisah oleh pembuka array objek anak → otomatis ditolak.
+     */
+    const sameObject = (from, to) => {
+      const seg =
+        from < to ? text.slice(from, to) : text.slice(to, from);
+      let bal = 0;
+      for (const ch of seg) {
+        if (ch === "{" || ch === "[") bal++;
+        else if (ch === "}" || ch === "]") bal--;
+        if (bal < 0) return false;
+      }
+      return bal === 0;
+    };
+    let best = null;
+    let bestDist = Infinity;
+    const scan = (seg, base) => {
+      const ids = [...seg.matchAll(/"id"\s*:\s*"?(\d{5,})/g)];
+      for (const it of ids) {
+        const pos = base + it.index;
+        if (!sameObject(pos, scIdx)) continue;
+        const d = Math.abs(pos - scIdx);
+        if (d < bestDist) {
+          bestDist = d;
+          best = it[1];
+        }
+      }
+    };
+    scan(text.slice(Math.max(0, scIdx - 2000), scIdx), Math.max(0, scIdx - 2000));
+    scan(text.slice(scIdx, scIdx + 6000), scIdx);
+    return best;
+  }
+
+  /**
+   * Estimasi jumlah komentar (untuk progres N/±M): cari `"comment_count":N`
+   * pada jendela ±800 karakter di sekitar kemunculan mediaId — angka di luar
+   * konteks media diabaikan agar tidak salah ambil (mis. like_count node lain).
+   * Kembalikan maksimum yang ditemukan (children bisa membawa angka subset).
+   */
+  function commentCountNear(text, mediaId) {
+    if (!text || !mediaId) return 0;
+    let best = 0;
+    const re = new RegExp(`"${mediaId}"`, "g");
+    let m;
+    while ((m = re.exec(text)) && best < 100000) {
+      const win = text.slice(
+        Math.max(0, m.index - 800),
+        m.index + String(mediaId).length + 800
+      );
+      const cRe = /"(?:comment_count|totalCount)"\s*:\s*(\d{1,6})/g;
+      let c;
+      while ((c = cRe.exec(win))) {
+        const n = Number(c[1]);
+        if (n > best) best = n;
+      }
+    }
+    return best;
+  }
+
+  /** Pindai <script> halaman sekali per run untuk estimasi komentar. */
+  function estimateCommentCount(mediaId) {
+    try {
+      const scripts = document.querySelectorAll("script");
+      let best = 0;
+      for (let i = 0; i < Math.min(scripts.length, 60); i++) {
+        const t = scripts[i].textContent || "";
+        if (!t.includes(String(mediaId))) continue;
+        const n = commentCountNear(t, mediaId);
+        if (n > best) best = n;
+      }
+      return best;
+    } catch {
+      return 0;
+    }
   }
 
   // ---- IG API payload ingest ----
@@ -860,9 +1036,15 @@
     let added = 0;
     const scopes = [];
     const dlg = document.querySelector('[role="dialog"]');
-    if (dlg) scopes.push(dlg);
-    const main = document.querySelector("main");
-    if (main) scopes.push(main);
+    if (dlg) {
+      // L4.1-AUDIT-IG: saat komentar terbuka sebagai MODAL (alur feed), halaman
+      // di belakangnya tetap berisi username postingan/suggestion lain —
+      // scraping `main` di situ = kontaminasi over-count. Dialog eksklusif.
+      scopes.push(dlg);
+    } else {
+      const main = document.querySelector("main");
+      if (main) scopes.push(main);
+    }
 
     const profileRe = /^\/[a-zA-Z0-9._]{1,30}\/?$/;
     const seen = new Set();
@@ -888,7 +1070,9 @@
     const heartbeat = (message) =>
       post("PROGRESS", {
         names: snapshot(),
-        message,
+        message:
+          message +
+          (lastRunTotalCount ? ` • ±${lastRunTotalCount} komentar di post` : ""),
         postHint: mediaId
           ? `media ${mediaId}`
           : extractShortcodeFromUrl(location.href) || "",
@@ -897,6 +1081,7 @@
     let idle = 0;
     let pages = 0;
     let reason = "idle";
+    let altTried = false;
     // Reply budget PER-RUN (bukan per halaman) — balasan tidak boleh memakan
     // seluruh jatah run atau meng-hammer IG.
     let replyRequests = 0;
@@ -970,6 +1155,7 @@
       }
 
       pages++;
+      if (page.batchSize > 0) rememberGoodTemplate(templateUrl);
       scrapeDomUsernames();
       heartbeat(`Mengumpulkan… ${nameMap.size} username (halaman ${pages})`);
 
@@ -1055,6 +1241,25 @@
         // Kosong setelah retry: bila IG masih bilang has_more → truncation
         // (jujur: incomplete), bila tidak → benar-benar selesai.
         reason = page.hasMore ? "incomplete" : "complete";
+        // L2-AUDIT-IG: template basi/versi klien lain → coba SEKALI template
+        // terakhir-yang-pernah-berhasil sebelum menyerah.
+        if (
+          shouldSwitchAltTemplate({
+            batchSize: page.batchSize,
+            hasMore: page.hasMore,
+            altTried,
+          }) &&
+          Date.now() - start < maxMs - 3000
+        ) {
+          const alt = getAltTemplate(templateUrl);
+          if (alt) {
+            altTried = true;
+            templateUrl = alt;
+            nextMaxId = null;
+            heartbeat("Beralih ke template cadangan…");
+            continue;
+          }
+        }
         break;
       }
       if (!page.hasMore) {
@@ -1106,12 +1311,29 @@
       options.mediaId ||
       extractMediaIdFromPage() ||
       extractMediaIdFromUrl(options.templateUrl);
+    running = true;
+    stopFlag = false;
+    nameMap.clear();
+    currentRunId = myRunId;
+    includeReplies = options.includeReplies === true;
+    // Riset v1.0.58-IG: kenali jenis konten utk hint panel & kunci pre-seed.
+    const postKind = detectPostKind(location.href) || "post";
+    const pageShortcode = extractShortcodeFromUrl(location.href) || "";
+    // Prioritas: explicit → post yang sedang dibuka (halaman, sadar-korsel:
+    // id KONTAINER korsel, bukan id slide anak) → media asal template.
+    // Halaman diutamakan agar replay tidak menyasar post lain.
+    activeMediaId =
+      options.mediaId ||
+      extractMediaIdFromPage(pageShortcode) ||
+      extractMediaIdFromUrl(options.templateUrl);
     lastNewAt = Date.now();
     requestBudget = 0;
+    lastRunTotalCount = 0;
 
-    // S3: pre-seed hasil run sebelumnya pada post yang sama (shortcode).
+    // S3: pre-seed hasil run sebelumnya pada post yang sama. Kunci SIMETRIS:
+    // shortcode bila ada, kalau tidak mediaId (dipakai di load & persist).
     let seededCount = 0;
-    const storeKey = extractShortcodeFromUrl(location.href) || "";
+    const storeKey = pageShortcode || activeMediaId || "";
     try {
       const prior = loadPriorNames(storeKey);
       if (prior?.length) {
@@ -1121,12 +1343,13 @@
       /* ignore */
     }
 
+    const kindTag = postKind === "reel" ? "[reel] " : "";
     post("PROGRESS", {
       names: snapshot(),
       message: seededCount
         ? `Melanjutkan ${seededCount} username dari run sebelumnya…`
         : "Memulai…",
-      postHint: extractShortcodeFromUrl(location.href) || "",
+      postHint: `${kindTag}${pageShortcode || activeMediaId || ""}`,
     });
 
     const stillMine = () => currentRunId === myRunId;
@@ -1154,7 +1377,7 @@
             post("PROGRESS", {
               names: snapshot(),
               message: "Menunggu API komentar… membuka komentar",
-              postHint: extractShortcodeFromUrl(location.href) || "",
+              postHint: kindTag + (extractShortcodeFromUrl(location.href) || ""),
             });
           }
         }
@@ -1165,7 +1388,7 @@
         post("PROGRESS", {
           names: snapshot(),
           message: "Menunggu traffic komentar… buka komentar (login wajib)",
-          postHint: extractShortcodeFromUrl(location.href) || "",
+          postHint: kindTag + (extractShortcodeFromUrl(location.href) || ""),
         });
         const start = Date.now();
         let idle = 0;
@@ -1182,7 +1405,7 @@
           post("PROGRESS", {
             names: snapshot(),
             message: `Mengumpulkan… ${nameMap.size} username (mode scroll)`,
-            postHint: extractShortcodeFromUrl(location.href) || "",
+            postHint: kindTag + (extractShortcodeFromUrl(location.href) || ""),
           });
           if (nameMap.size === before) idle++;
           else idle = 0;
@@ -1192,7 +1415,7 @@
         if (stillMine()) {
           const names = snapshot();
           try {
-            persistNames(storeKey || activeMediaId, names);
+            persistNames(storeKey, names);
           } catch {
             /* ignore */
           }
@@ -1203,13 +1426,15 @@
               : names.length
                 ? "complete"
                 : "no_template",
-            postHint: extractShortcodeFromUrl(location.href) || "",
+            postHint: kindTag + (extractShortcodeFromUrl(location.href) || ""),
           });
         }
         return;
       }
 
       engineTemplateUrl = templateUrl;
+      // Riset v1.0.58-IG: estimasi total komentar utk progres N/±M.
+      lastRunTotalCount = activeMediaId ? estimateCommentCount(activeMediaId) : 0;
       const reason = await paginateList(
         templateUrl,
         activeMediaId,
@@ -1219,16 +1444,16 @@
       if (stillMine()) {
         const names = snapshot();
         try {
-          persistNames(storeKey || activeMediaId, names);
+          persistNames(storeKey, names);
         } catch {
           /* ignore */
         }
         post("DONE", {
           names,
           stopReason: reason,
-          postHint: activeMediaId
+          postHint: kindTag + (activeMediaId
             ? `media ${activeMediaId}`
-            : extractShortcodeFromUrl(location.href) || "",
+            : extractShortcodeFromUrl(location.href) || ""),
         });
       }
     } catch (err) {

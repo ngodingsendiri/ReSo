@@ -475,6 +475,61 @@ test("buildUrl: nextMaxId → param max_id", () => {
   assert.equal(new URL(u).searchParams.get("max_id"), "CUR9");
 });
 
+// ===================== Riset v1.0.58-IG: struktur konten =====================
+const detectPostKind = new Function(
+  `${extract("detectPostKind")}\nreturn detectPostKind;`
+)();
+
+test("detectPostKind: post / reel(jamak) / tv / share / null", () => {
+  assert.equal(detectPostKind("https://www.instagram.com/p/CxAbCdEf/"), "post");
+  assert.equal(detectPostKind("https://www.instagram.com/reel/CxAbCdEf/"), "reel");
+  assert.equal(detectPostKind("https://www.instagram.com/reels/CxAbCdEf/"), "reel");
+  assert.equal(detectPostKind("https://www.instagram.com/tv/CxAbCdEf/"), "tv");
+  assert.equal(detectPostKind("https://www.instagram.com/share/p/CxAbCdEf/"), "post");
+  assert.equal(detectPostKind("https://www.instagram.com/share/xYz123"), "share");
+  assert.equal(detectPostKind("https://www.instagram.com/explore/"), null);
+  assert.equal(detectPostKind(""), null);
+});
+
+// ---- pickMediaIdNearShortcode (sadar-korsel: id KONTAINER, bukan slide anak) ----
+const pickMediaIdNearShortcode = new Function(
+  `${extract("pickMediaIdNearShortcode")}\nreturn pickMediaIdNearShortcode;`
+)();
+
+test("pickMediaIdNearShortcode: korsel — id kontainer (sebelum children) yang diambil", () => {
+  const text =
+    '{"xdt_api__v1__media__shortcode_web_info":{"result":{"media":{' +
+    '"id":"111222333444555666","shortcode":"CxA1",' +
+    '"carousel_media":[{"id":"999888777666555444"},{"id":"888777666555444333"}]' +
+    '}}}}';
+  assert.equal(pickMediaIdNearShortcode(text, "CxA1"), "111222333444555666");
+});
+
+test("pickMediaIdNearShortcode: single post — id setelah shortcode", () => {
+  const text = '{"media":{"shortcode":"CxAbCdEf","id":"999888777666555"}}';
+  assert.equal(pickMediaIdNearShortcode(text, "CxAbCdEf"), "999888777666555");
+});
+
+test("pickMediaIdNearShortcode: shortcode tak ada di teks → null (anti salah-post)", () => {
+  assert.equal(pickMediaIdNearShortcode('{"id":"111"}', "Other1"), null);
+  assert.equal(pickMediaIdNearShortcode("", "Any2"), null);
+});
+
+// ---- commentCountNear / estimate window ----
+const commentCountNear = new Function(
+  `${extract("commentCountNear")}\nreturn commentCountNear;`
+)();
+
+test("commentCountNear: angka dalam jendela media diambil maksimum; tanpa media → 0", () => {
+  const text =
+    '{"other":{"comment_count":7},' +
+    '"media":{"id":"111222333444555666","comment_count":4321,' +
+    '"children":{"child_comment_count":9}}}';
+  assert.equal(commentCountNear(text, "111222333444555666"), 4321);
+  assert.equal(commentCountNear('{"comment_count":50}', "000000"), 0);
+  assert.equal(commentCountNear(null, "111"), 0);
+});
+
 // ===================== R-IG: bump ukuran halaman [30..50] =====================
 test("buildUrl: count dikepang ke [30..50]; template tanpa count dibiarkan", () => {
   const bu = makeUrlBuilder(null);
@@ -542,6 +597,64 @@ test("pre-seed IG: persist → load cocok shortcode; TTL & key salah ditolak", (
   ns2.persistNames(null, ["a"]);
   assert.deepEqual(Object.keys(dirty), ["fnk_ig_names_v1"]);
 });
+
+// ===================== L2-AUDIT-IG: template cadangan terakhir-berhasil =====================
+function makeTplGood(store) {
+  const ls = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => {
+      store[k] = String(v);
+    },
+  };
+  return new Function(
+    "localStorage",
+    "Date",
+    [
+      'const TPL_GOOD_KEY = "fnk_ig_tpl_good_v1";',
+      extract("rememberGoodTemplate"),
+      extract("getAltTemplate"),
+      extract("shouldSwitchAltTemplate"),
+      "return { rememberGoodTemplate, getAltTemplate, shouldSwitchAltTemplate };",
+    ].join("\n")
+  )(ls, Date);
+}
+
+test("template cadangan IG: simpan/ambil, TTL, sama-dengan-current → null", () => {
+  const store = {};
+  const tg = makeTplGood(store);
+  const TPL_A = "https://www.instagram.com/api/v1/media/111/comments/?query_id=AAA";
+  const TPL_B = "https://www.instagram.com/api/v1/media/111/comments/?query_id=BBB";
+
+  tg.rememberGoodTemplate(TPL_A);
+  assert.equal(tg.getAltTemplate(TPL_B), TPL_A);
+  assert.equal(tg.getAltTemplate(TPL_A), null, "sama dgn current → null");
+
+  const stale = JSON.parse(store.fnk_ig_tpl_good_v1);
+  stale.at = Date.now() - 8 * 86400_000;
+  store.fnk_ig_tpl_good_v1 = JSON.stringify(stale);
+  assert.equal(tg.getAltTemplate(TPL_B), null);
+});
+
+test("shouldSwitchAltTemplate: hanya saat kosong + has_more + belum dicoba", () => {
+  const s = makeTplGood({}).shouldSwitchAltTemplate;
+  assert.equal(s({ batchSize: 0, hasMore: true, altTried: false }), true);
+  assert.equal(s({ batchSize: 0, hasMore: false, altTried: false }), false);
+  assert.equal(s({ batchSize: 0, hasMore: true, altTried: true }), false);
+  assert.equal(s({ batchSize: 12, hasMore: true, altTried: false }), false);
+  assert.equal(s(null), false);
+});
+
+// ===================== S1-IG: scope scrape — dialog eksklusif =====================
+test("scrapeDomUsernames IG: dialog ada → main DIABAIKAN (anti kontaminasi feed)", () => {
+  const doc = el("div", {}, [
+    el("main", {}, [el("a", { href: "/feed_lain_belakang/" })]),
+    el("div", { role: "dialog" }, [el("a", { href: "/komentator_ig/" })]),
+  ]);
+  const { added, names } = runScrape(doc);
+  assert.equal(added, 1);
+  assert.deepEqual(names, ["komentator_ig"]);
+});
+
 
 test("buildUrl: template null / URL tak valid → null", () => {
   const bu = makeUrlBuilder(null);
@@ -711,24 +824,24 @@ function runScrape(doc) {
   }
 }
 
-test("scrapeDom IG: main + dialog di-harvest, nav/header dilewati, dedupe lintas scope", () => {
+test("scrapeDom IG: dialog EKSKLUSIF (S1) — main diabaikan; nav/header dilewati; dedupe dalam scope", () => {
   const doc = el("div", {}, [
     el("nav", {}, [el("a", { href: "/suggested" }, [], "s")]), // nav → dilewati walau path profil
     el("header", {}, [el("a", { href: "/me" }, [], "m")]), // header → dilewati
     el("main", {}, [
+      // S1: saat dialog terbuka, isi main (postingan/suggestion di belakang
+      // modal) TIDAK BOLEH ikut — dulu inilah sumber over-count palsu.
       el("a", { href: "/alice" }, [], "alice"),
-      el("a", { href: "/bob/" }, [], "bob"), // slash akhir dibuang
-      el("a", { href: "/p/123456/" }, [], "post"), // path multi-segmen → bukan profil
-      el("a", { href: "https://instagram.com/ext" }, [], "ext"), // absolut → bukan /profil
+      el("a", { href: "/bob/" }, [], "bob"),
     ]),
     el("div", { role: "dialog" }, [
       el("a", { href: "/carol" }, [], "carol"),
-      el("a", { href: "/alice" }, [], "dupe"), // dedupe lintas scope (seen)
+      el("a", { href: "/carol" }, [], "dupe"), // dedupe dalam scope
     ]),
   ]);
   const { added, names } = runScrape(doc);
-  assert.equal(added, 3); // alice, bob, carol
-  assert.deepEqual([...names].sort(), ["alice", "bob", "carol"]);
+  assert.equal(added, 1); // hanya carol dari dialog
+  assert.deepEqual(names, ["carol"]);
 });
 
 test("scrapeDom IG: batas profilRe — titik/garis-bawah sah, panjang > 30 & segmen ganda ditolak", () => {
