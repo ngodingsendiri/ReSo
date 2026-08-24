@@ -413,12 +413,30 @@ export default function EngagementDashboard() {
   const [initialIgLinks, setInitialIgLinks] = useState<string[]>([]);
   const [initialFbLinks, setInitialFbLinks] = useState<string[]>([]);
   const [initialTiktokLinks, setInitialTiktokLinks] = useState<string[]>([]);
+  const prevSelectedDateRef = useRef(selectedDate);
 
   // Notifikasi pengisian otomatis dari ReSoEx — sekali per tanggal per sesi.
   const notifiedAutoFillRef = useRef<Set<string>>(new Set());
 
   // Load raw text and links for selected date if exists
   useEffect(() => {
+    const isDateChange = selectedDate !== prevSelectedDateRef.current;
+    prevSelectedDateRef.current = selectedDate;
+
+    const isDirty =
+      igRawInput !== initialIgRawInput ||
+      fbRawInput !== initialFbRawInput ||
+      tiktokRawInput !== initialTiktokRawInput ||
+      JSON.stringify(igLinks) !== JSON.stringify(initialIgLinks) ||
+      JSON.stringify(fbLinks) !== JSON.stringify(initialFbLinks) ||
+      JSON.stringify(tiktokLinks) !== JSON.stringify(initialTiktokLinks);
+
+    // If same date and dirty, skip overwriting to preserve unsaved changes
+    if (!isDateChange && isDirty) {
+      toast.info('Ada perubahan yang belum disimpan. Simpan terlebih dahulu atau pilih tanggal lain.');
+      return;
+    }
+
     const existing = dailyEngagementsMap[selectedDate];
     if (existing) {
       setIgRawInput(existing.igRawText || '');
@@ -1199,6 +1217,14 @@ export default function EngagementDashboard() {
       updateData.unmatchedNames = unmatchedNames;
 
       await setDoc(docRef, updateData, { merge: true });
+
+      // Update initial values to match saved state (mark as saved)
+      setInitialIgRawInput(currentIgRawInput);
+      setInitialFbRawInput(currentFbRawInput);
+      setInitialTiktokRawInput(currentTiktokRawInput);
+      setInitialIgLinks(igLinks);
+      setInitialFbLinks(fbLinks);
+      setInitialTiktokLinks(tiktokLinks);
 
       toast.success(`Data rekap tanggal ${selectedDate} berhasil disimpan`);
       closeInputModal();
