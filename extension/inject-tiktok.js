@@ -272,6 +272,46 @@
     return [...nameMap.values()];
   }
 
+  // ---------------- Riset struktur konten TikTok (v1.0.58-TT) ----------------
+  // Satu endpoint komentar untuk SEMUA jenis postingan (video, foto/korsel,
+  // embed): /api/comment/list/?aweme_id=<id> — yang membedakan hanya bentuk
+  // URL sumber dan permukaan DOM:
+  //   • Video  : /@user/video/<id>          (kanonik)
+  //   • Foto   : /@user/photo/<id>          (korsel foto; komentar sama)
+  //   • Embed  : tiktok.com/embed/v/<id>    (TANPA panel komentar DOM —
+  //     tryOpenComments tak berguna; langsung andalkan API)
+  //   • Share  : vm./vt./t./<code>          (redirect ke kanonik; id muncul
+  //     setelah redirect)
+  //   • Live   : /@user/live                (chat live, BUKAN endpoint komentar)
+
+  /** Jenis postingan TikTok dari URL. */
+  function detectTTKind(url) {
+    const u = String(url || "");
+    const m = u.match(/tiktok\.com\/@[^/]+\/(video|photo|live)(?:\/|[?#]|$)/i);
+    if (m) return m[1].toLowerCase();
+    if (/tiktok\.com\/embed\/(?:v|photo)\//i.test(u)) return "embed";
+    if (/^https?:\/\/(?:vm|vt)\.tiktok\.com\//i.test(u)) return "share";
+    return null;
+  }
+
+  /**
+   * Estimasi jumlah komentar: field `total` pada respons /api/comment/list/
+   * (angka absolut seluruh komentar video — termasuk balasan). Murni.
+   */
+  function findTotalCountTT(data) {
+    const candidates = [data?.total, data?.data?.total];
+    for (const c of candidates) {
+      const n = Number(c);
+      if (Number.isFinite(n) && n >= 0 && n <= 1_000_000) return n;
+    }
+    return 0;
+  }
+
+  function snapshot() {
+    return [...nameMap.values()];
+  }
+
+
   function extractAwemeId(url) {
     if (!url) url = location.href;
     const patterns = [
@@ -605,7 +645,7 @@
           post("PROGRESS", {
             names: snapshot(),
             message: `Rate limit (429) — jeda ${Math.round(waitMs / 1000)} dtk…`,
-            videoHint: activeAwemeId,
+            videoHint: kindTag + activeAwemeId,
           });
           if (!(await sleepWhile(waitMs))) throw err;
           continue;
@@ -723,6 +763,7 @@
     let emptyPages = 0;
     let pages = 0;
     let reason = "idle";
+    let totalEstimate = 0; // Riset v1.0.58-TT: maks field `total` antar halaman
     const REPLY_BUDGET = 70;
     let replyRequests = 0;
     let replyFailStreak = 0;
@@ -743,6 +784,8 @@
       try {
         const data = await fetchJsonWithBackoff(url, deadline);
         page = parsePage(data);
+        const e0 = findTotalCountTT(data);
+        if (e0 > totalEstimate) totalEstimate = e0;
       } catch (err) {
         const kind = err && err.kind;
         // Rate limit / sesi tidak aktif = hentikan run aman, jangan hammer
@@ -755,6 +798,8 @@
           try {
             const data = await fetchJsonWithBackoff(url, deadline);
             page = parsePage(data);
+            const e1 = findTotalCountTT(data);
+            if (e1 > totalEstimate) totalEstimate = e1;
           } catch (err2) {
             const k2 = err2 && err2.kind;
             if (k2 === "rate_limit") return "rate_limit";
@@ -779,7 +824,9 @@
       scrapeDomNicknames();
       post("PROGRESS", {
         names: snapshot(),
-        message: `Mengumpulkan… ${nameMap.size} nama (halaman ${pages})`,
+        message:
+          `Mengumpulkan… ${nameMap.size} nama (halaman ${pages})` +
+          (totalEstimate ? ` • ±${totalEstimate} komentar di video` : ""),
         videoHint: awemeId,
       });
 
@@ -889,6 +936,10 @@
     currentRunId = myRunId;
     includeReplies = options.includeReplies === true;
     activeAwemeId = options.awemeId || extractAwemeId(location.href);
+    // Riset v1.0.58-TT: jenis konten utk hint panel (foto/embed).
+    const postKind = detectTTKind(location.href) || "video";
+    const kindTag =
+      postKind === "photo" ? "[foto] " : postKind === "embed" ? "[embed] " : "";
     lastNewAt = Date.now();
     requestBudget = 0;
 
@@ -908,7 +959,7 @@
       message: seededCount
         ? `Melanjutkan ${seededCount} nama dari run sebelumnya…`
         : "Memulai…",
-      videoHint: activeAwemeId || "",
+      videoHint: kindTag + activeAwemeId || "",
     });
 
     const stillMine = () => currentRunId === myRunId;
@@ -948,7 +999,7 @@
             post("PROGRESS", {
               names: snapshot(),
               message: "Menunggu API komentar… membuka panel komentar",
-              videoHint: activeAwemeId,
+              videoHint: kindTag + activeAwemeId,
             });
           }
         }
@@ -959,7 +1010,7 @@
         post("PROGRESS", {
           names: snapshot(),
           message: "Menunggu traffic komentar… buka panel komentar",
-          videoHint: activeAwemeId,
+          videoHint: kindTag + activeAwemeId,
         });
         const start = Date.now();
         let idle = 0;
@@ -984,7 +1035,7 @@
           post("PROGRESS", {
             names: snapshot(),
             message: `Mengumpulkan… ${nameMap.size} nama (mode scroll)`,
-            videoHint: activeAwemeId,
+            videoHint: kindTag + activeAwemeId,
           });
           if (nameMap.size === before) idle++;
           else idle = 0;
@@ -1001,7 +1052,7 @@
               : names.length
                 ? "complete"
                 : "no_template",
-            videoHint: activeAwemeId,
+            videoHint: kindTag + activeAwemeId,
           });
         }
       };
@@ -1016,7 +1067,7 @@
             names: snapshot(),
             message:
               "Endpoint komentar dibangun dari halaman (mode synthetic)…",
-            videoHint: activeAwemeId,
+            videoHint: kindTag + activeAwemeId,
           });
           engineTemplateUrl = synth;
           const synthReason = await paginateList(
@@ -1038,7 +1089,7 @@
             post("DONE", {
               names,
               stopReason: synthReason,
-              videoHint: activeAwemeId,
+              videoHint: kindTag + activeAwemeId,
             });
           }
           return;
@@ -1063,7 +1114,7 @@
         post("DONE", {
           names,
           stopReason: reason,
-          videoHint: activeAwemeId,
+          videoHint: kindTag + activeAwemeId,
         });
       }
     } catch (err) {

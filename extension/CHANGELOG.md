@@ -38,6 +38,25 @@ Semua saran hasil audit mesin dieksekusi. Sorotan per item:
 Test: suite **463 → 471** (+8: paginator incomplete & regresi complete, findTotalCount ×2,
 chooseDomBudget, composeReplayParams ×2, pre-seed store).
 
+### Mesin TikTok terpersonalisasi per struktur konten (video / foto / embed / share / live)
+Riset kondisi TikTok: SATU endpoint komentar (`/api/comment/list/?aweme_id=`)
+melayani SEMUA jenis postingan — video, foto/korsel, bahkan embed; yang membedakan
+hanya bentuk URL sumber dan permukaan DOM. Personalisasi yang dibangun:
+
+- **`detectTTKind(url)`** (murni): video / photo / embed / share (vm./vt.) /
+  live / null. Tag `[foto]`/`[embed]` tampil di baris Target panel & DONE.
+- **`findTotalCountTT(data)`** (murni): field `total` respons komentar = jumlah
+  absolut seluruh komentar video; progres heartbeat kini "… • ±M komentar di
+  video" (maksimum antar halaman, cap 1 juta).
+- **Embed-aware**: halaman embed tidak punya panel komentar DOM — alur tetap
+  jalan penuh via lapis synthetic/replay tanpa tergantung UI.
+- Live: terdeteksi eksplisit (endpoint komentar tidak berlaku untuk chat live).
+- `extractAwemeId` sudah mencakup video/photo/embed/query item_id+aweme_id;
+  short link vm./vt. mengandalkan redirect kanonik (id muncul setelahnya).
+
+Test: suite **507 → 509** (+2: detectTTKind battery ×7 kasus,
+findTotalCountTT ×5 kasus).
+
 ### Porting ke mesin TikTok: L1 synthetic-from-page + kejujuran hasil + akumulasi
 TikTok kini setara FB/IG — tanpa template capture sekalipun, pagination penuh
 berjalan tanpa scroll manual:

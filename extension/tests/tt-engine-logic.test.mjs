@@ -864,3 +864,30 @@ test("pre-seed TT: persist → load cocok aweme; TTL & key salah ditolak; cap ba
   });
   assert.equal(makeTtNameStore(s2).loadPriorNames("6912345678901234567").length, 2000);
 });
+
+// ===================== Riset v1.0.58-TT: jenis konten + estimasi total =====================
+const detectTTKind = new Function(
+  `${extract("detectTTKind")}\nreturn detectTTKind;`
+)();
+
+test("detectTTKind: video / foto / embed / share / live / null", () => {
+  assert.equal(detectTTKind("https://www.tiktok.com/@user/video/6912345678901234567"), "video");
+  assert.equal(detectTTKind("https://www.tiktok.com/@user/photo/6912345678901234567?x=1"), "photo");
+  assert.equal(detectTTKind("https://www.tiktok.com/embed/v/6912345678901234567"), "embed");
+  assert.equal(detectTTKind("https://vm.tiktok.com/ZMabcdef/"), "share");
+  assert.equal(detectTTKind("https://www.tiktok.com/@user/live"), "live");
+  assert.equal(detectTTKind("https://www.tiktok.com/foryou"), null);
+  assert.equal(detectTTKind(null), null);
+});
+
+const findTotalCountTT = new Function(
+  `${extract("findTotalCountTT")}\nreturn findTotalCountTT;`
+)();
+
+test("findTotalCountTT: top-level & nested .data.total; invalid → 0", () => {
+  assert.equal(findTotalCountTT({ total: 4321, has_more: 1 }), 4321);
+  assert.equal(findTotalCountTT({ data: { total: "8123" } }), 8123);
+  assert.equal(findTotalCountTT({ total: -5 }), 0);
+  assert.equal(findTotalCountTT({}), 0);
+  assert.equal(findTotalCountTT(null), 0);
+});
