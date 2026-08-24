@@ -1992,26 +1992,25 @@ export default function EngagementDashboard() {
                           exit={{ opacity: 0, y: 12 }}
                           transition={{ ease: "easeOut", duration: 0.2 }}
                           onClick={(e) => e.stopPropagation()}
-                          className="bg-white w-full max-w-xl rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[88vh] sm:max-h-[82vh] shadow-2xl border border-slate-200"
+                          className="bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] shadow-xl border border-slate-200"
                         >
-                          <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
-                            <div>
-                              <h3 id="input-rekap-title" className="text-base sm:text-lg font-black text-slate-900 leading-tight">Input Rekapitulasi</h3>
-                              <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
-                                {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 shrink-0">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <h3 id="input-rekap-title" className="text-sm font-bold tracking-tight text-slate-900">Input Rekapitulasi</h3>
                                 {dailyEngagementsMap[selectedDate]?.autoFilledAt && (
                                   <Badge
                                     variant="outline"
                                     className={cn(
-                                      'ml-2 text-[9px] font-bold normal-case',
+                                      'text-[9px] font-bold',
                                       dailyEngagementsMap[selectedDate]?.verifiedAt
-                                        ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
-                                        : 'border-amber-300 text-amber-700 bg-amber-50'
+                                        ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
+                                        : 'border-amber-200 text-amber-700 bg-amber-50'
                                     )}
                                   >
                                     {dailyEngagementsMap[selectedDate]?.verifiedAt
-                                      ? 'Dari ReSoEx · Terverifikasi'
-                                      : 'Dari ReSoEx · Perlu review'}
+                                      ? 'ReSoEx · Terverifikasi'
+                                      : 'ReSoEx · Perlu review'}
                                   </Badge>
                                 )}
                                 {selectedUnmatched.length > 0 && (
@@ -2019,55 +2018,53 @@ export default function EngagementDashboard() {
                                     type="button"
                                     onClick={() => setIsUnmatchedReviewOpen(true)}
                                     aria-label={`${selectedUnmatched.length} nama belum terpetakan — buka panel pemetaan`}
-                                    className="ml-1.5 inline-flex align-baseline rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                                    className="inline-flex rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
                                   >
-                                    <Badge
-                                      variant="warning"
-                                      className="text-[9px] font-bold normal-case cursor-pointer hover:bg-amber-100"
-                                    >
+                                    <Badge variant="warning" className="text-[9px] font-bold cursor-pointer hover:bg-amber-100">
                                       {selectedUnmatched.length} belum terpetakan
                                     </Badge>
                                   </button>
                                 )}
+                              </div>
+                              <p className="mt-0.5 truncate text-[11px] font-medium text-slate-400">
+                                {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                                 {selectedPostedAt.length > 0 && (
-                                  <span className="block mt-1 text-[10px] font-semibold text-slate-500">
-                                    Waktu posting:{' '}
-                                    {selectedPostedAt.map((t) => t.slice(11)).join(' · ')}
-                                  </span>
+                                  <span className="ml-2 text-slate-300">•</span>
+                                )}
+                                {selectedPostedAt.length > 0 && (
+                                  <span className="ml-2">Posting {selectedPostedAt.map((t) => t.slice(11)).join(' · ')}</span>
                                 )}
                               </p>
                             </div>
-                            <Button variant="ghost" size="icon" onClick={closeInputModal} className="rounded-full bg-slate-100 hover:bg-slate-200 h-9 w-9">
-                              <X className="text-slate-600" size={18} />
+                            <Button variant="ghost" size="icon" onClick={closeInputModal} aria-label="Tutup" className="h-8 w-8 shrink-0 rounded-lg hover:bg-slate-100">
+                              <X className="text-slate-500" size={16} />
                             </Button>
                           </div>
-                          
-                          <div className="p-4 sm:p-5 space-y-3 sm:space-y-4 overflow-y-auto pb-safe">
+
+                          <div className="space-y-3 overflow-y-auto px-4 py-3 pb-safe">
                             {/* Meta fetch — token dikelola di Pengaturan */}
-                            <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                            <div className="rounded-lg border border-slate-200">
                               <button
                                 type="button"
                                 onClick={() => setIsMetaExpanded((v) => !v)}
-                                className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 hover:bg-slate-100/70 transition-colors"
+                                className="flex w-full items-center justify-between gap-2 px-3 py-2 transition-colors hover:bg-slate-50"
                               >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <RefreshCw size={15} className="text-slate-600 shrink-0" />
-                                  <h4 className="text-sm font-bold text-slate-800 truncate">Tarik via Meta API</h4>
-                                  <Badge variant="outline" className="text-[10px] font-semibold border-slate-200 text-slate-500 shrink-0 hidden sm:inline-flex">
-                                    15:00 WIB
-                                  </Badge>
-                                </div>
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <RefreshCw size={13} className="shrink-0 text-slate-500" />
+                                  <span className="truncate text-xs font-bold text-slate-700">Tarik via Meta API</span>
+                                  <span className="hidden text-[10px] font-semibold text-slate-400 sm:inline">15:00 WIB</span>
+                                </span>
                                 <ChevronDown
-                                  size={16}
-                                  className={cn('text-slate-400 shrink-0 transition-transform', isMetaExpanded && 'rotate-180')}
+                                  size={14}
+                                  className={cn('shrink-0 text-slate-400 transition-transform', isMetaExpanded && 'rotate-180')}
                                 />
                               </button>
                               {isMetaExpanded && (
-                                <div className="px-3.5 pb-3.5 space-y-2">
-                                  <Button 
+                                <div className="space-y-1.5 border-t border-slate-100 px-3 py-2.5">
+                                  <Button
                                     onClick={handleFetchRecentMeta}
                                     disabled={isFetchingMeta || !metaToken.trim()}
-                                    className="w-full h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg"
+                                    className="h-8 w-full rounded-lg bg-slate-900 text-[11px] font-bold text-white hover:bg-slate-800"
                                   >
                                     {isFetchingMeta
                                       ? 'Menarik data…'
@@ -2079,13 +2076,13 @@ export default function EngagementDashboard() {
                                     <button
                                       type="button"
                                       onClick={() => { closeInputModal(); setActiveTab('settings'); }}
-                                      className="text-[11px] font-semibold text-slate-600 underline underline-offset-2"
+                                      className="text-[10px] font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-700"
                                     >
                                       Atur token Meta di Pengaturan
                                     </button>
                                   ) : (
-                                    <p className="text-[11px] text-slate-500 leading-snug">
-                                      IG: komentar + link. FB: link post. Window 15:00 H−1 s/d 15:00 hari rekap (WIB).
+                                    <p className="text-[10px] leading-snug text-slate-400">
+                                      IG: komentar + link · FB: link post · Window 15:00 H−1 s/d 15:00 (WIB).
                                     </p>
                                   )}
                                 </div>
@@ -2093,16 +2090,19 @@ export default function EngagementDashboard() {
                             </div>
 
                             {/* Meta Links Section */}
-                            <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
-                              <div className="flex items-center justify-between px-4 pt-3">
-                                <div className="flex items-center gap-2">
-                                  <LinkIcon size={16} className="text-slate-400" />
-                                  <h4 className="text-sm font-bold text-slate-700">Link Postingan {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</h4>
+                            <div className="rounded-lg border border-slate-200">
+                              <div className="flex items-center justify-between px-3 pt-2.5">
+                                <div className="flex items-center gap-1.5">
+                                  <LinkIcon size={13} className="text-slate-400" />
+                                  <h4 className="text-xs font-bold text-slate-700">Link Postingan</h4>
+                                  <span className="text-[10px] font-semibold text-slate-400">
+                                    {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                  </span>
                                 </div>
                               </div>
-                              
+
                               {/* Tab platform */}
-                              <div className="flex items-center gap-1 px-3 pt-2.5">
+                              <div className="flex items-center gap-1 px-3 pt-2">
                                 {(['ig', 'fb', 'tiktok'] as const).map((p) => {
                                   const counts = { ig: igLinks.length, fb: fbLinks.length, tiktok: tiktokLinks.length }[p];
                                   const active = activeLinkTab === p;
@@ -2114,13 +2114,13 @@ export default function EngagementDashboard() {
                                       type="button"
                                       onClick={() => setActiveLinkTab(p)}
                                       className={cn(
-                                        'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors',
-                                        active ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-100 border border-transparent'
+                                        'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition-colors',
+                                        active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'
                                       )}
                                     >
-                                      <Icon size={13} className={p === 'ig' ? 'text-pink-500' : p === 'fb' ? 'text-blue-500' : 'text-slate-700'} />
+                                      <Icon size={11} className={active ? '' : p === 'ig' ? 'text-pink-500' : p === 'fb' ? 'text-blue-500' : 'text-slate-700'} />
                                       {label}
-                                      <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full', active ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600')}>
+                                      <span className={cn('px-1 text-[9px] font-bold', active ? 'text-white/70' : 'text-slate-400')}>
                                         {counts}
                                       </span>
                                     </button>
@@ -2128,12 +2128,12 @@ export default function EngagementDashboard() {
                                 })}
                               </div>
 
-                              <div className="p-3">
+                              <div className="p-3 pt-2">
                                 {/* Smart Link Input */}
                                 <div>
                                   <textarea
-                                    placeholder="Paste banyak link IG/FB sekaligus di sini (pisahkan dengan spasi atau enter)..."
-                                    className="w-full h-12 p-2 rounded-lg border border-slate-200 bg-white focus:ring-slate-900/5 transition-all text-xs resize-none"
+                                    placeholder="Paste link (pisahkan spasi/enter) — Enter untuk tambah…"
+                                    className="h-11 w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-[11px] transition-all focus:ring-slate-900/5"
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault();
@@ -2179,7 +2179,7 @@ export default function EngagementDashboard() {
                                       <Instagram size={14} className="text-pink-500" />
                                       {igLinks.length > 0 ? (
                                         igLinks.map((link, idx) => (
-                                          <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-pink-50 text-pink-700 text-xs font-medium border border-pink-100">
+                                          <div key={idx} className="inline-flex items-center gap-1 rounded-md bg-pink-50 px-2 py-0.5 text-[11px] font-medium text-pink-700">
                                             <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
                                               Post IG {idx + 1}
                                               <ExternalLink size={10} />
@@ -2208,7 +2208,7 @@ export default function EngagementDashboard() {
                                       <Facebook size={14} className="text-blue-500" />
                                       {fbLinks.length > 0 ? (
                                         fbLinks.map((link, idx) => (
-                                          <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100">
+                                          <div key={idx} className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                                             <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
                                               Post FB {idx + 1}
                                               <ExternalLink size={10} />
@@ -2237,7 +2237,7 @@ export default function EngagementDashboard() {
                                       <span className="font-bold text-slate-800 text-sm italic pr-1 leading-none">t</span>
                                       {tiktokLinks.length > 0 ? (
                                         tiktokLinks.map((link, idx) => (
-                                          <div key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 text-xs font-medium border border-slate-200">
+                                          <div key={idx} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-800">
                                             <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
                                               Post TikTok {idx + 1}
                                               <ExternalLink size={10} />
@@ -2265,41 +2265,41 @@ export default function EngagementDashboard() {
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
-                                  <Instagram size={12} className="text-pink-500" />
+                            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                              <div>
+                                <label className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                  <Instagram size={11} className="text-pink-500" />
                                   List IG
                                 </label>
                                 <textarea
                                   value={igRawInput}
                                   onChange={(e) => setIgRawInput(e.target.value)}
-                                  placeholder="Paste list nama atau username di sini..."
-                                  className="w-full h-28 md:h-40 p-2.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
+                                  placeholder="Paste username / nama…"
+                                  className="h-24 w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 md:h-32"
                                 />
                               </div>
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
-                                  <Facebook size={12} className="text-blue-500" />
+                              <div>
+                                <label className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                  <Facebook size={11} className="text-blue-500" />
                                   List FB
                                 </label>
                                 <textarea
                                   value={fbRawInput}
                                   onChange={(e) => setFbRawInput(e.target.value)}
-                                  placeholder="Paste list nama atau username di sini..."
-                                  className="w-full h-28 md:h-40 p-2.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
+                                  placeholder="Paste nama / profil…"
+                                  className="h-24 w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 md:h-32"
                                 />
                               </div>
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
-                                  <TiktokIcon size={15} className="text-slate-800" />
+                              <div>
+                                <label className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                  <TiktokIcon size={13} className="text-slate-800" />
                                   List TikTok
                                 </label>
                                 <textarea
                                   value={tiktokRawInput}
                                   onChange={(e) => setTiktokRawInput(e.target.value)}
-                                  placeholder="Paste list nama akun TikTok di sini..."
-                                  className="w-full h-28 md:h-40 p-2.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 resize-none"
+                                  placeholder="Paste nama akun TikTok…"
+                                  className="h-24 w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 md:h-32"
                                 />
                               </div>
                             </div>
@@ -2312,14 +2312,14 @@ export default function EngagementDashboard() {
                             />
                           </div>
 
-                          <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
-                            <Button variant="ghost" onClick={closeInputModal} className="font-bold text-xs rounded-lg h-9 px-4">
+                          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+                            <Button variant="ghost" onClick={closeInputModal} className="h-8 rounded-lg px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-700">
                               Batal
                             </Button>
-                            <Button 
-                              onClick={handleSaveEngagement} 
+                            <Button
+                              onClick={handleSaveEngagement}
                               disabled={isLoading}
-                              className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-lg h-9 px-5 border-none"
+                              className="h-8 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white hover:bg-slate-800"
                             >
                               {isLoading ? 'Menyimpan…' : 'Simpan Rekap'}
                             </Button>
@@ -2637,18 +2637,17 @@ const NavItem = React.memo(function NavItem({ active, onClick, icon, label }: { 
 });
 
 const MatchPreview = React.memo(function MatchPreview({ ig, fb, tiktok }: { ig: number; fb: number; tiktok: number }) {
+  const chip = (label: string, n: number, cls: string) => (
+    <span className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold', cls)}>
+      {label} {n}
+    </span>
+  );
   return (
-    <div className="flex flex-wrap gap-2 text-[11px] font-semibold items-center">
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-pink-50 text-pink-700 border border-pink-100">
-        IG {ig}
-      </span>
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">
-        FB {fb}
-      </span>
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
-        TT {tiktok}
-      </span>
-      <span className="text-slate-400 font-medium">pegawai terdeteksi</span>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-400">
+      {chip('IG', ig, 'bg-pink-50 text-pink-600')}
+      {chip('FB', fb, 'bg-blue-50 text-blue-600')}
+      {chip('TT', tiktok, 'bg-slate-100 text-slate-600')}
+      <span>pegawai terdeteksi</span>
     </div>
   );
 });
