@@ -73,7 +73,7 @@ const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employe
       <TableCell className="pl-6 py-3">
         <div className="flex items-center gap-3">
           <motion.div 
-            className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 font-mono font-bold text-[10px]"
+            className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 font-mono font-bold text-[10px]"
           >
             {index + 1}
           </motion.div>
@@ -112,7 +112,7 @@ const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employe
             variant="secondary" 
             size="icon" 
             onClick={() => onEdit(emp)} 
-            className="bg-white border border-slate-200 text-slate-400 hover:text-slate-900 h-8 w-8 rounded-lg transition-all "
+            className="bg-white border border-slate-200 text-slate-400 hover:text-slate-900 h-8 w-8 rounded-xl transition-all "
             title="Edit"
           >
             <UserCircle size={14} />
@@ -121,7 +121,7 @@ const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employe
             variant="ghost" 
             size="icon" 
             onClick={() => onDelete(emp.id)} 
-            className="h-8 w-8 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all"
+            className="h-8 w-8 rounded-xl hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all"
             title="Hapus"
           >
             <Trash2 size={14} />
@@ -814,13 +814,13 @@ export default function EmployeeManager() {
                       type="button" 
                       variant="ghost" 
                       onClick={resetForm} 
-                      className="w-full sm:w-auto rounded-lg px-6 font-semibold text-slate-500 hover:bg-slate-50 h-10 text-sm"
+                      className="w-full sm:w-auto rounded-xl px-6 font-semibold text-slate-500 hover:bg-slate-50 h-10 text-sm"
                     >
                       Batal
                     </Button>
                     <Button 
                       type="submit" 
-                      className="w-full sm:w-auto rounded-lg px-8 bg-slate-900 hover:bg-slate-800 text-white h-10 font-bold  transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-sm border-none"
+                      className="w-full sm:w-auto rounded-xl px-8 bg-slate-900 hover:bg-slate-800 text-white h-10 font-bold  transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-sm border-none"
                     >
                       <Save size={16} />
                       {editingId ? 'Simpan Perubahan' : 'Simpan Pegawai'}
@@ -954,7 +954,7 @@ export default function EmployeeManager() {
                     
                     <div className="flex flex-col gap-2 pt-2 border-t border-slate-50 mt-2">
                       <div className="flex">
-                        <span className={cn("text-[9px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider", getBidangColor(emp.bidang))}>
+                        <span className={cn("text-[9px] font-bold px-2.5 py-1 rounded-xl uppercase tracking-wider", getBidangColor(emp.bidang))}>
                           {emp.bidang || 'N/A'}
                         </span>
                       </div>
@@ -989,7 +989,7 @@ export default function EmployeeManager() {
                 <select
                   value={pageSize}
                   onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-                  className="h-8 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold text-slate-600 px-2 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                  className="h-8 rounded-xl border border-slate-200 bg-white text-[11px] font-semibold text-slate-600 px-2 focus:outline-none focus:ring-1 focus:ring-slate-300"
                   title="Jumlah per halaman"
                 >
                   {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} / hal</option>)}
@@ -999,7 +999,7 @@ export default function EmployeeManager() {
                   size="sm"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="h-8 rounded-lg text-[11px] font-bold border-slate-200 text-slate-600"
+                  className="h-8 rounded-xl text-[11px] font-bold border-slate-200 text-slate-600"
                 >
                   Sebelumnya
                 </Button>
@@ -1009,7 +1009,7 @@ export default function EmployeeManager() {
                   size="sm"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="h-8 rounded-lg text-[11px] font-bold border-slate-200 text-slate-600"
+                  className="h-8 rounded-xl text-[11px] font-bold border-slate-200 text-slate-600"
                 >
                   Berikutnya
                 </Button>

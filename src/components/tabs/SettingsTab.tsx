@@ -45,7 +45,7 @@ const SettingRow = ({
   <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 p-4 sm:p-5 bg-slate-50 rounded-xl border border-slate-200">
     <div className="flex items-start gap-3 min-w-0 flex-1">
       <div
-        className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center border ${iconClass}`}
+        className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center border ${iconClass}`}
       >
         {icon}
       </div>
@@ -142,7 +142,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     aria-label="Token Meta API"
                     type={showToken ? 'text' : 'password'}
                     autoComplete="off"
-                    className="w-full h-10 px-3 pr-28 rounded-lg border border-slate-200 bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    className="w-full h-10 px-3 pr-28 rounded-xl border border-slate-200 bg-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-900"
                   />
                   <span className="absolute right-9 top-1/2 -translate-y-1/2">
                     {metaToken.trim() ? (
@@ -171,7 +171,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     onClick={handleSaveMetaToken}
                     disabled={isSavingToken || !metaToken.trim()}
                     size="sm"
-                    className="flex-1 font-bold h-9 rounded-lg bg-slate-900 text-white"
+                    className="flex-1 font-bold h-9 rounded-xl bg-slate-900 text-white"
                   >
                     {isSavingToken ? 'Menyimpan…' : 'Simpan Token'}
                   </Button>
@@ -180,7 +180,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                       onClick={handleClearMetaToken}
                       variant="outline"
                       size="sm"
-                      className="font-bold h-9 rounded-lg border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50"
+                      className="font-bold h-9 rounded-xl border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50"
                       title="Hapus token"
                     >
                       <Trash2 size={13} />
@@ -249,7 +249,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               desc="Mencocokkan ulang seluruh raw text rekap ke master pegawai, lalu memperbarui kolom IG / FB / TT yang tercatat."
             >
               <div className="flex flex-col gap-2.5 w-full">
-                <div className="flex bg-white border border-slate-200 rounded-lg p-1 gap-1">
+                <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
                   {(['last_day', 'last_week'] as const).map((mode) => (
                     <button
                       key={mode}
@@ -278,7 +278,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     }}
                     disabled={isLoading}
                     size="sm"
-                    className={`font-bold h-9 rounded-lg shrink-0 transition-colors ${
+                    className={`font-bold h-9 rounded-xl shrink-0 transition-colors ${
                       recalcConfirm
                         ? 'bg-rose-600 text-white hover:bg-rose-700'
                         : 'bg-slate-900 text-white'

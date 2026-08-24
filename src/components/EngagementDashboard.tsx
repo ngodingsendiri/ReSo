@@ -1992,7 +1992,7 @@ export default function EngagementDashboard() {
                           exit={{ opacity: 0, y: 12 }}
                           transition={{ ease: "easeOut", duration: 0.2 }}
                           onClick={(e) => e.stopPropagation()}
-                          className="bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] shadow-xl border border-slate-200"
+                          className="bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] shadow-xl border border-slate-200"
                         >
                           <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 shrink-0">
                             <div className="min-w-0">
@@ -2348,7 +2348,7 @@ export default function EngagementDashboard() {
                           exit={{ opacity: 0, y: 12 }}
                           transition={{ ease: "easeOut", duration: 0.2 }}
                           onClick={(e) => e.stopPropagation()}
-                          className="bg-white w-full max-w-xl rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[88vh] sm:max-h-[82vh] shadow-2xl border border-slate-200"
+                          className="bg-white w-full max-w-xl rounded-t-2xl sm:rounded-xl overflow-hidden flex flex-col max-h-[88vh] sm:max-h-[82vh] shadow-2xl border border-slate-200"
                         >
                           <div className="p-5 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
                             <div>

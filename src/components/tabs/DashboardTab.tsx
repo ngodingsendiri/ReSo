@@ -59,7 +59,7 @@ const StatCard = React.memo(function StatCard({
       <div className="p-4 sm:p-5 flex flex-col h-full justify-between gap-3">
         <div className="flex justify-between items-start">
           <p className="text-[11px] font-semibold text-slate-500">{title}</p>
-          <div className={cn('p-2 rounded-lg border', colorMap[color])}>{icon}</div>
+          <div className={cn('p-2 rounded-xl border', colorMap[color])}>{icon}</div>
         </div>
         <div>
           <p className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{value}</p>
@@ -123,7 +123,7 @@ export const DashboardTab = ({
         <div className="p-4 sm:p-5 flex flex-col h-full justify-between gap-3">
           <div className="flex justify-between items-start">
             <p className="text-[11px] font-semibold text-slate-500">{title}</p>
-            <div className={cn('p-2 rounded-lg border', colorMap[color])}>{icon}</div>
+            <div className={cn('p-2 rounded-xl border', colorMap[color])}>{icon}</div>
           </div>
           <div>
             <p className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{value}</p>
@@ -212,7 +212,7 @@ export const DashboardTab = ({
                 </CardDescription>
               </div>
               {onGoDaily && (
-                <Button variant="ghost" size="sm" onClick={onGoDaily} className="text-xs font-bold text-slate-500 hover:text-slate-900 rounded-lg gap-1 shrink-0">
+                <Button variant="ghost" size="sm" onClick={onGoDaily} className="text-xs font-bold text-slate-500 hover:text-slate-900 rounded-xl gap-1 shrink-0">
                   Lihat semua
                   <ArrowRight size={13} />
                 </Button>
@@ -232,7 +232,7 @@ export const DashboardTab = ({
                         className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                          <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
                             <CalendarIcon size={14} />
                           </div>
                           <div className="min-w-0">
