@@ -1442,12 +1442,19 @@ async function postResoEngagement(platform, clean, date, postedAt, idToken) {
   };
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Audit-F2: fetch tanpa timeout bisa menggantung flush antrian bermenit-
+    // menit saat koneksi menggantung — AbortController 15 dtk per percobaan;
+    // abort diklasifikasikan retryable sehingga tetap masuk antrian.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15_000);
     try {
       const r = await fetch(`${await getResoUrl()}/api/engagement`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
+        signal: ctl.signal,
       });
+      clearTimeout(timer);
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
         // 401 = token basi (bisa me-mint ulang) → retryable supaya di-antri &
@@ -1488,6 +1495,7 @@ async function postResoEngagement(platform, clean, date, postedAt, idToken) {
         message,
       };
     } catch (e) {
+      clearTimeout(timer); // jangan bocorkan timer saat network/abort
       if (attempt < maxAttempts) {
         await sleepMs(resoRetryDelayMs());
         continue;

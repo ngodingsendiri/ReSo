@@ -447,7 +447,9 @@ function statusFromReason(reason, count) {
     return "error";
   if (reason === "complete" || reason === "idle")
     return count > 0 ? "done" : "error";
-  return count > 0 ? "done" : "error";
+  // Audit-F3: reason TAK DIKENAL tidak boleh berkesan "done" (anti hijau
+  // palsu) — konservatif: partial bila ada hasil, error bila kosong.
+  return count > 0 ? "partial" : "error";
 }
 
 // ===================== TikTok webRequest Capture =====================
@@ -807,7 +809,8 @@ async function handleMessage(msg, sender) {
     platform = detectPlatform(sender.tab.url);
   }
   if (!platform && msg.platform) {
-    platform = msg.platform === "tiktok" || msg.platform === "facebook"
+    // Audit-F1: ketiga platform sah (dulu instagram tak dikenali di fallback).
+    platform = ["tiktok", "facebook", "instagram"].includes(msg.platform)
       ? msg.platform
       : null;
   }

@@ -150,6 +150,27 @@ Test: suite **478 → 486** (+8: detectPostKind, pickMediaId korsel/single/no-ma
 commentCountNear ×2, template cadangan ×2, scrape dialog-eksklusif; fixture
 dual-scope lama direvisi ke kontrak baru).
 
+### Audit full-extension: background / shared / bridge — 3 fix + verifikasi menyeluruh
+Audit menyeluruh menutup file yang belum dibedah utuh (background 1.637 baris,
+RESO section shared.js, content-reso bridge):
+
+- **F1 (background)**: fallback `msg.platform` tidak mengenali `instagram`
+  (warisan pra-IG) → ketiga platform kini sah di jalur fallback router.
+- **F2 (shared)**: `postResoEngagement` memakai fetch **tanpa timeout** — koneksi
+  menggantung bisa memegang lock antrian bermenit-menit. Kini AbortController
+  **15 dtk** per percobaan; abort = retryable (tetap masuk antrian, data aman).
+- **F3 (background)**: `statusFromReason` default untuk reason TAK dikenal
+  sebelumnya `"done"` bila ada nama (hijau palsu untuk reason typo/baru) — kini
+  konservatif partial/error.
+- **content-reso.js**: diaudit — sudah kokoh (saluran unik per permintaan,
+  one-shot guard, cek origin, validasi bentuk, timeout 8 dtk). Tanpa perubahan.
+- **Terverifikasi utuh**: whitelist patch state + stamping tabId + anti-hijack
+  run lintas tab + stale-run rejection; single-writer lock antrian; capture guard
+  mid-run TikTok/IG; pre-flight cookie login tiga platform; RESO_CONNECT valdasi
+  origin pengirim === url klaim (dibatasi externally_connectable manifest).
+- Test baru: `background-audit.test.mjs` (+4: kontrak F1/F2/F3 + regresi peta
+  resmi statusFromReason). Suite **515 → 519**.
+
 ### Audit 4 lapis IG — tuning pasca-implementasi
 - **L1**: polling template dipersingkat 24x300ms -> 12x300ms (3,6 dtk) agar
   lapis synthetic mengambil alih lebih cepat.
