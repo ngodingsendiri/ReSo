@@ -411,6 +411,47 @@ Catatan jujur: untuk `photos/<photo_id>` (permalink foto tunggal bentuk lama), i
 
 **Amendemen v1.0.28 — temuan lapangan URL multi-foto (`set=pcb.`)**: user melampirkan URL DevTools riil saat klik gambar 1 di postingan gambar kolektif: `facebook.com/photo?fbid=1483436860484357&set=pcb.1483436933817683` (post induk: `kominfojember/posts/pfbid02oqm…`). Temuan: ① path `/photo` (tanpa `.php`) — sudah tertangkap via param `fbid`; ② prefix `set=pcb.` = *photo collection bundle* (postingan multi-foto), id setelah `pcb.` adalah **story id postingan** — blok FBURLS sebelumnya hanya mengenal prefix `a.` sehingga story id tidak diekstrak dan probe menyasar `fbid` (id foto) yang salah. Perbaikan: `set=pcb.<story>` diekstrak dengan prioritas **di atas** `fbid` (urutan param: story_fbid → pcb-story → fbid → v → a-story); `posts/<pfbid>` juga diuji. Parity 3 salinan tetap hijau; kasus URL riil masuk fixture test (22 → 24 kasus).
 
+### Amendemen v1.0.58 — tuning per struktur konten (gambar, reel, multi-gambar)
+Pemicu laporan lapangan lanjutan: "sering terekap 9–12 orang padahal komentator
+40–50+; kadang jumlah komentar FB ≠ jumlah terekap walau semua komentar dibuka".
+Riset ulang bentuk URL + perilaku pagination per jenis postingan menemukan dua
+lapisan masalah: **deteksi struktur** (URL/template) dan **ketahanan loop**.
+
+**A. Deteksi struktur (blok FBURLS, 3 salinan):**
+
+| Bentuk | Status | Aksi |
+|---|---|---|
+| `/photos/pcb.<story>/<foto>/` (multi-foto bentuk PATH, umum saat share korsel) | **MISS** | Ditambah `\/photos\/pcb\.(\d+)` — hanya story id jadi kandidat (feedback post; konsisten bentuk query `set=pcb.`), id foto sengaja bukan kandidat |
+| `/reels/<id>` (jamak, bentuk share reel modern) | **MISS** | `/reel/` → `/reels?/` |
+| `?multi_permalinks=<id>(,<id>…)` (plugin/embed page) | **MISS** | Param key baru; ambil token pertama bila daftar koma |
+| `/watch?v=`, `video.php?v=`, `/videos/`, `/reel/`, album `a.A.U.S`, pcb query | ✅ sudah | — |
+
+Urutan ekstraksi dipertahankan: `story_fbid/multi_permalinks → pcb(set/path) → fbid/v → a-story`
+→ untuk multi-foto, story id SELALU mendahului id foto sebagai kandidat probe.
+
+**B. Ketahanan loop pagination (inject-fb.js):**
+1. **Ukuran halaman replay terlalu kecil** — template capture membawa `first/count`
+   5–10; thread ratusan komentar = puluhan ronde = makin banyak pintu keluar guard.
+   `bumpPageSizes()` (baru) mengepang ukuran ke [25..50] di titik tunggu replay
+   (`graphqlReplay`, deep-copy). Berlaku untuk SEMUA struktur (teks/foto/reel/album).
+2. **Guard idle terlalu dini (4 halaman)** — re-ranking sortir membuat window hasil
+   tumpang-tindih; halaman berisi nama lama → idle naik → run berhenti ~1 halaman
+   (9–12 nama, persis laporan). Threshold 4 → 6, parity ketiga engine.
+3. **Budget balasan (25 target / 40 req)** — angka komentar FB ikut menghitung
+   balasan; pengulas lewat balasan hilang dari rekap. Naik ke 50 target / 100 req.
+4. **Varian probe `feedLocation: "PERMALINK"`** — sebagian permalink foto tunggal/
+   album menolak NEWSFEED dengan edges kosong walau feedback id benar. Urutan varian
+   per kandidat: UNFILTERED+NEWSFEED → asli → UNFILTERED+PERMALINK (probe memvalidasi).
+5. **Deep-DOM lebih murah hati** — ambang `< 8` → `< 25` nama (budget 45 dtk):
+   saat GraphQL hanya dapat sebagian, pass DOM (auto-expand + scroll) menyempurnakan.
+
+**C. Selisih FB count vs terekap yang TIDAK bisa dihilangkan (dokumentasi):**
+komentar disembunyikan filter spam/restriksi tidak pernah dikirim FB ke browser;
+nama unik vs hitungan komentar; balasan melebihi budget. Didokumentasikan di README.
+
+Fixture URL: 22 → 29 kasus (tambah pcb-path 2 bentuk, reels jamak, multi_permalinks 2 bentuk).
+
+
 ## 12. Redesign Flat Minimal — v1.0.29 (2026-08-11)
 
 Konteks user: "rombak tampilan — minimalis, clean, simple, flat; pakai icon/indikator

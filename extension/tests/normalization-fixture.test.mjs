@@ -325,6 +325,15 @@ test("BEHAVIOR: doneMessage wording contract is platform-aware", () => {
     "Dihentikan — belum ada username."
   );
   assert.match(DONE_FN("timeout", 3, "tiktok"), /Waktu habis — 3 nama \(mungkin belum semua\)/);
+  assert.match(
+    DONE_FN("incomplete", 12, "facebook"),
+    /Belum tuntas — 12 nama terkumpul.*Proses lagi untuk melengkapi/
+  );
+  assert.match(
+    DONE_FN("incomplete", 8, "instagram"),
+    /Belum tuntas — 8 username terkumpul/
+  );
+  assert.match(DONE_FN("incomplete", 0, "tiktok"), /pagination belum tuntas/);
   assert.match(DONE_FN("rate_limit", 7, "facebook"), /Rate limit Facebook \(429\) — 7 nama/);
   assert.match(DONE_FN("rate_limit", 4, "instagram"), /Rate limit Instagram \(429\) — 4 username/);
   assert.match(DONE_FN("rate_limit", 0, "tiktok"), /Rate limit TikTok \(429\)/);
@@ -520,6 +529,28 @@ const FB_URL_CASES = [
   ["https://www.facebook.com/photos/123456789012345", ["123456789012345"], true],
   ["https://www.facebook.com/videos/10151234567890123", ["10151234567890123"], true],
   ["https://www.facebook.com/reel/1076159001615150", ["1076159001615150"], true],
+  // Reels bentuk jamak (share/embed /reels/<id>) — setara /reel/<id>
+  ["https://www.facebook.com/reels/1076159001615150", ["1076159001615150"], true],
+  // Multi-foto bentuk PATH (klik foto ke-2 pada postingan kolektif):
+  // /photos/pcb.<story>/<foto> — yang dipakai HANYA story id (feedback post,
+  // konsisten dengan bentuk query set=pcb.); id foto tidak jadi kandidat.
+  [
+    "https://www.facebook.com/kominfojember/photos/pcb.1483436933817683/1483436860484357/",
+    ["1483436933817683"],
+    true,
+  ],
+  ["https://www.facebook.com/PageName/photos/pcb.111222333444555", ["111222333444555"], true],
+  // multi_permalinks (plugin/embed) — token pertama bila daftar koma
+  [
+    "https://www.facebook.com/permalink.php?id=14038332518&multi_permalinks=10153322400567519",
+    ["10153322400567519"],
+    true,
+  ],
+  [
+    "https://www.facebook.com/plugins/post.php?multi_permalinks=10153322400567519,10150000000000001",
+    ["10153322400567519"],
+    true,
+  ],
   ["https://www.facebook.com/watch?v=3762250110740268", ["3762250110740268"], true],
   ["https://www.facebook.com/watch/?v=1467518380953415", ["1467518380953415"], true],
   ["https://www.facebook.com/watch/live/?ref=watch_permalink&v=10151234567890123", ["10151234567890123"], true],

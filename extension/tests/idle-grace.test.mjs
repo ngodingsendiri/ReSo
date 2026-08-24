@@ -3,7 +3,7 @@
  * list TT, list IG) wajib memakai baris `lastNewAt` yang sama.
  *
  * A. PARITY STATIS — baris grace (`Date.now() - lastNewAt < 2500` →
- *    `idle = Math.max(0, idle - 1)`) dan threshold (`idle >= 4`) harus identik
+ *    `idle = Math.max(0, idle - 1)`) dan threshold (`idle >= 6`) harus identik
  *    (whitespace-normalized) di ketiga file dan tepat 1× per file — HANYA di
  *    loop pagination (loop DOM/scroll sengaja tanpa grace di ketiga platform,
  *    meski blok increment-nya sama). Baris grace harus tepat mengikuti blok
@@ -15,7 +15,12 @@
  *    membuktikan grace benar-benar mengubah perilaku: nama berhenti dengan
  *    lastNewAt baru → idle ditahan (berhenti lebih lambat daripada tanpa
  *    grace); lastNewAt basi → idle menumpuk 1/halaman dan berhenti setelah
- *    4 halaman kosong; nama mengalir lagi → idle di-reset.
+ *    6 halaman kosong; nama mengalir lagi → idle di-reset.
+ *
+ * Catatan v1.0.58: threshold 4 → 6 — window hasil FB kadang tumpang-tindih
+ * (re-ranking "Semua Komentar") sehingga halaman bisa berisi nama lama
+ * padahal thread belum tuntas; toleransi idle lebih longgar mencegah rekap
+ * parsial pada thread besar (keluhan: 9–12 terekap dari 40–50+ pengulas).
  *
  * Pure ESM — node --test, zero deps.
  */
@@ -30,10 +35,10 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), "utf8");
 
 const INJECTS = ["inject-fb.js", "inject-tiktok.js", "inject-ig.js"];
 
-// Baris nyata yang wajib ada (nilai persis, termasuk konstanta 2500/4).
+// Baris nyata yang wajib ada (nilai persis, termasuk konstanta 2500/6).
 const GRACE_RE = /if \(Date\.now\(\) - lastNewAt < 2500\) idle = Math\.max\(0, idle - 1\);/g;
 const INC_RE = /if \(nameMap\.size === before\) idle\+\+;\s*else idle = 0;/g;
-const THRESHOLD_RE = /idle >= 4/g;
+const THRESHOLD_RE = /idle >= 6/g;
 
 /** Strip komentar + whitespace (konvensi normalisasi ui-consistency). */
 const norm = (s) => s.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, "");
@@ -60,7 +65,7 @@ test("parity idle: baris grace + threshold identik 3 platform, 1× per file, tep
     assert.equal(
       thr.length,
       1,
-      `${f}: threshold 'idle >= 4' harus tepat 1× (hanya di loop pagination; loop DOM/scroll memakai 10/18 by design)`
+      `${f}: threshold 'idle >= 6' harus tepat 1× (hanya di loop pagination; loop DOM/scroll memakai 10/18 by design)`
     );
 
     const graceIdx = src.indexOf(grace[0]);
@@ -120,7 +125,7 @@ function makeStep(block) {
  * Simulasi loop pagination dengan clock terkontrol.
  * `namesFn(page)` → jumlah nama baru di halaman itu; nama baru meng-update
  * `lastNewAt` ke clock saat itu (persis `addName` engine). Berhenti saat
- * `idle >= 4` (persis guard loop). Return halaman berhenti (1-based) atau null.
+ * `idle >= 6` (persis guard loop). Return halaman berhenti (1-based) atau null.
  */
 function simulate({ pages, gapMs, namesFn, withGrace }) {
   const block = withGrace ? `${INC_RAW}\n${GRACE_RAW}` : INC_RAW;
@@ -137,7 +142,7 @@ function simulate({ pages, gapMs, namesFn, withGrace }) {
     size += added;
     if (added > 0) lastNewAt = clock;
     idle = step(fakeDate, before, { size }, lastNewAt, idle);
-    if (idle >= 4) return { stoppedByIdle: true, atPage: p };
+    if (idle >= 6) return { stoppedByIdle: true, atPage: p };
   }
   return { stoppedByIdle: false, atPage: null };
 }
@@ -150,40 +155,40 @@ test("perilaku idle: nama mengalir terus → tidak pernah berhenti oleh idle", (
 test("perilaku idle: grace menahan idle saat nama baru ≤2,5 dtk (berhenti lebih lambat daripada tanpa grace)", () => {
   // Nama mengalir 3 halaman (gap 1 dtk → lastNewAt segar), lalu berhenti.
   // Grace menahan idle 2 halaman pertama (now - lastNewAt < 2500) → berhenti
-  // di halaman 9; tanpa grace idle menumpuk dari halaman 4 → berhenti di 7.
+  // di halaman 11; tanpa grace idle menumpuk dari halaman 4 → berhenti di 9.
   const namesFn = (p) => (p <= 3 ? 1 : 0);
-  const withGrace = simulate({ pages: 12, gapMs: 1000, namesFn, withGrace: true });
-  const noGrace = simulate({ pages: 12, gapMs: 1000, namesFn, withGrace: false });
-  assert.equal(withGrace.atPage, 9, "grace menahan 2 halaman kosong pertama (lastNewAt segar)");
-  assert.equal(noGrace.atPage, 7, "tanpa grace idle menumpuk langsung dari halaman kosong pertama");
+  const withGrace = simulate({ pages: 14, gapMs: 1000, namesFn, withGrace: true });
+  const noGrace = simulate({ pages: 14, gapMs: 1000, namesFn, withGrace: false });
+  assert.equal(withGrace.atPage, 11, "grace menahan 2 halaman kosong pertama (lastNewAt segar)");
+  assert.equal(noGrace.atPage, 9, "tanpa grace idle menumpuk langsung dari halaman kosong pertama");
   assert.ok(
     withGrace.atPage > noGrace.atPage,
     `grace HARUS menunda berhenti: ${withGrace.atPage} > ${noGrace.atPage}`
   );
 });
 
-test("perilaku idle: lastNewAt basi → idle menumpuk 1/halaman, berhenti setelah 4 halaman kosong", () => {
+test("perilaku idle: lastNewAt basi → idle menumpuk 1/halaman, berhenti setelah 6 halaman kosong", () => {
   // Nama hanya di halaman 1, gap 3 dtk → saat halaman 2, now - lastNewAt ≥ 2500.
-  const r = simulate({ pages: 10, gapMs: 3000, namesFn: (p) => (p === 1 ? 1 : 0), withGrace: true });
+  const r = simulate({ pages: 12, gapMs: 3000, namesFn: (p) => (p === 1 ? 1 : 0), withGrace: true });
   assert.equal(r.stoppedByIdle, true);
-  assert.equal(r.atPage, 5, "4 halaman kosong berurutan (halaman 2–5) → idle 4 → berhenti");
+  assert.equal(r.atPage, 7, "6 halaman kosong berurutan (halaman 2–7) → idle 6 → berhenti");
 });
 
 test("perilaku idle: nama mengalir lagi setelah jeda → idle di-reset", () => {
   // Halaman 1–2 nama, 3–4 kosong (idle menumpuk), halaman 5 nama lagi → reset,
-  // lalu 6–9 kosong → idle 1,2,3,4 → berhenti di 9 (bukan 7).
+  // lalu 6–11 kosong → idle 1,2,3,4,5,6 → berhenti di 11 (bukan 7).
   const r = simulate({
-    pages: 12,
+    pages: 14,
     gapMs: 3000,
     namesFn: (p) => (p === 1 || p === 2 || p === 5 ? 1 : 0),
     withGrace: true,
   });
   assert.equal(r.stoppedByIdle, true);
-  assert.equal(r.atPage, 9, "idle harus 0 kembali setelah nama mengalir di halaman 5");
+  assert.equal(r.atPage, 11, "idle harus 0 kembali setelah nama mengalir di halaman 5");
 });
 
 test("perilaku idle: tanpa nama sama sekali → grace tidak pernah aktif (lastNewAt -Infinity)", () => {
   const r = simulate({ pages: 10, gapMs: 3000, namesFn: () => 0, withGrace: true });
   assert.equal(r.stoppedByIdle, true);
-  assert.equal(r.atPage, 4, "halaman kosong 1–4 → idle 1,2,3,4 → berhenti di 4");
+  assert.equal(r.atPage, 6, "halaman kosong 1–6 → idle 1..6 → berhenti di 6");
 });

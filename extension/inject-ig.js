@@ -1025,7 +1025,7 @@
         reason = "complete";
         break;
       }
-      if (idle >= 4) {
+      if (idle >= 6) {
         reason = "idle";
         break;
       }

@@ -164,11 +164,12 @@ test("PAGINATION_DOC_IDS: 3 kandidat dari scraper publik 2024–2026", () => {
 // ===================== Template sintetik =====================
 const DOC_IDS = ["25399415259725176", "5676025945801633", "4712008195539492"];
 
-function buildSynth(storedDocId) {
+function buildSynth(storedDocId, urlIds) {
+  const ids = urlIds || [REAL_ID];
   const fnSrc = [
     "const PAGINATION_DOC_IDS = " + JSON.stringify(DOC_IDS) + ";",
     extract("fbIdB64"),
-    `function feedbackIdsFromUrl() { return ["${REAL_ID}"]; }`,
+    `function feedbackIdsFromUrl() { return ${JSON.stringify(ids)}; }`,
     storedDocId
       ? `function bestStoredPaginationTemplate() { return { doc_id: "${storedDocId}" }; }`
       : `function bestStoredPaginationTemplate() { return null; }`,
@@ -202,6 +203,65 @@ test("Synthetic: doc_id tersimpan diprioritaskan di kandidat pertama", () => {
   assert.equal(synth[0].params.doc_id, "STORED_DOC_ID_123");
   // id dari URL tetap dipakai untuk semua kandidat (anti salah post)
   for (const t of synth) assert.equal(t.variables.feedbackID, REAL_B64);
+});
+
+test("Synthetic L1.2: interleave rank doc+id — doc fallback terjangkau di id utama", () => {
+  const I0 = "1483436860484357";
+  const I1 = "1483436860484358";
+  const I2 = "1483436860484359";
+  const synth = buildSynth(null, [I0, I1, I2]);
+  // Peringkat: d0i0(0) | d1i0,d0i1(1) — tie-break ke id utama | d2i0,d1i1,d0i2(2)
+  const got = synth.map((t) => t.params.doc_id[0] + ":" + t.variables.feedbackID).map((s) => {
+    const [docTag, fb] = s.split(":");
+    return `${docTag}:${atob(fb)}`;
+  });
+  const expectPairs = [
+    ["2", `feedback:${I0}`], // d0 × i0
+    ["5", `feedback:${I0}`], // d1 × i0 (doc fallback utk ID UTAMA)
+    ["2", `feedback:${I1}`], // d0 × i1
+    ["4", `feedback:${I0}`], // d2 × i0
+    ["5", `feedback:${I1}`], // d1 × i1
+  ];
+  assert.equal(got.length, 5);
+  got.forEach((g, i) => {
+    const [docTag] = g.split(":");
+    assert.equal(docTag, expectPairs[i][0], `slot ${i} doc`);
+    assert.equal(g.endsWith(expectPairs[i][1]), true, `slot ${i} id`);
+  });
+});
+
+// ===================== R2/L2.1-AUDIT: rotasi kandidat saat cursor tidak efektif =====================
+test("paginateGraphql: cursor tak efektif → rotasi ke kandidat cadangan lalu complete", async () => {
+  const D0 = DOC_IDS[0];
+  const D1 = DOC_IDS[1];
+  const mkCand = (docId) => ({
+    url: "https://www.facebook.com/api/graphql/",
+    params: { doc_id: docId },
+    variables: { feedbackID: REAL_B64, sortKey: "RANKED_THREADED" },
+    friendlyName: "CometUFICommentsProviderPaginationQuery",
+    capturedAt: 0,
+  });
+  const candidates = [mkCand(D0), mkCand(D1)];
+  // D0: rantai tanpa ujung (semua hasNext:true, cursor unik) — idle naik cepat.
+  // D1: langsung has_next_page:false → selesai jujur setelah rotasi.
+  const chain = { __first: null };
+  let cur = "__first";
+  for (let i = 1; i <= 5; i++) {
+    const next = `A${i}`;
+    chain[cur] = relayPayload({ topHasNext: true, topCursor: next, replyHasNext: false, replyCursor: null });
+    cur = next;
+  }
+  const done = relayPayload({ topHasNext: false, topCursor: null, replyHasNext: false, replyCursor: null });
+  const { run, posts } = await makePaginator(candidates, [], {
+    pagesByDoc: { [D0]: chain, [D1]: { __first: done } },
+  });
+  const res = await run(60_000);
+  assert.equal(res.mode, "graphql");
+  assert.equal(res.reason, "complete", "rotasi harus menyelamatkan run");
+  assert.ok(
+    posts.some((p) => /Beralih ke template pagination cadangan/.test(p.message || "")),
+    "post rotasi hilang"
+  );
 });
 
 // ===================== findPageInfo (top-level vs balasan tertanam) =====================
@@ -413,6 +473,93 @@ test("target-check: request tanpa feedback id selalu diproses", () => {
   assert.equal(check(undefined), true);
 });
 
+// ===================== forceFeedLocation (varian struktur foto/album) =====================
+const forceFeedLocation = new Function(
+  `${extract("forceFeedLocation")}\nreturn forceFeedLocation;`
+)();
+
+test("forceFeedLocation: NEWSFEED diganti PERMALINK (clone, asli utuh)", () => {
+  const t = {
+    variables: { feedLocation: "NEWSFEED", sortKey: "RANKED_UNFILTERED", count: 25 },
+  };
+  const out = forceFeedLocation(t, "PERMALINK");
+  assert.equal(out.variables.feedLocation, "PERMALINK");
+  assert.equal(out.variables.sortKey, "RANKED_UNFILTERED");
+  // Template asli tidak termutasi
+  assert.equal(t.variables.feedLocation, "NEWSFEED");
+});
+
+test("forceFeedLocation: sudah PERMALINK → identitas (tanpa clone)", () => {
+  const t = { variables: { feedLocation: "PERMALINK" } };
+  assert.equal(forceFeedLocation(t, "PERMALINK"), t);
+});
+
+test("forceFeedLocation: non-objek / tanpa variables aman", () => {
+  assert.equal(forceFeedLocation(null, "PERMALINK"), null);
+  const bare = {};
+  assert.deepEqual(forceFeedLocation(bare, "PERMALINK"), {});
+});
+
+// ===================== bumpPageSizes (ukuran halaman replay) =====================
+// Undercounting thread besar: template hasil capture sering membawa
+// first/count kecil (5–10) → ratusan komentar butuh puluhan ronde → rawan
+// berhenti oleh guard idle/budget/waktu dengan hasil parsial. bumpPageSizes
+// mengepang ukuran halaman ke [25..50] di titik tunggu replay.
+const bumpPageSizes = new Function(
+  `const PAGE_SIZE_MIN = 25;\nconst PAGE_SIZE_MAX = 50;\n${extract("bumpPageSizes")}\nreturn bumpPageSizes;`
+)();
+
+test("bumpPageSizes: first/count/limit kecil dinaikkan ke 25 (nested)", () => {
+  const input = {
+    first: 5,
+    feedbackID: "FB1",
+    input: { count: 8, cursor: null },
+    deep: { nested: { limit: 2 } },
+  };
+  const out = bumpPageSizes(input);
+  assert.equal(out.first, 25);
+  assert.equal(out.input.count, 25);
+  assert.equal(out.deep.nested.limit, 25);
+  assert.equal(out.feedbackID, "FB1");
+});
+
+test("bumpPageSizes: nilai dalam rentang & di atas cap dihormati/dikepang", () => {
+  const out = bumpPageSizes({ first: 30, count: 100, pageSize: 50 });
+  assert.equal(out.first, 30); // ≥ MIN: biarkan
+  assert.equal(out.count, 50); // > MAX: dikepang (jangan serak)
+  assert.equal(out.pageSize, 50); // batas atas pas
+});
+
+test("bumpPageSizes: kunci non-ukuran & tipe non-numerik tidak disentuh", () => {
+  const input = {
+    id: "123",
+    isPaginating: false,
+    first: "bukan angka",
+    limit: null,
+    scale: 1.5,
+    after: "CURSOR",
+  };
+  const out = JSON.parse(JSON.stringify(bumpPageSizes(input)));
+  assert.equal(out.id, "123");
+  assert.equal(out.isPaginating, false);
+  assert.equal(out.first, "bukan angka");
+  assert.equal(out.limit, null);
+  assert.equal(out.after, "CURSOR");
+});
+
+test("bumpPageSizes: template asli tidak termutasi (deep-copy)", () => {
+  const original = { first: 4, replies: { count: 6 } };
+  const snapshot = JSON.stringify(original);
+  bumpPageSizes(original);
+  assert.equal(JSON.stringify(original), snapshot);
+});
+
+test("bumpPageSizes: null / undefined / non-objek aman", () => {
+  assert.deepEqual(bumpPageSizes(null), {});
+  assert.deepEqual(bumpPageSizes(undefined), {});
+  assert.equal(bumpPageSizes("x"), "x");
+});
+
 // ===================== paginateGraphql end-to-end (findPageInfo fix) =====================
 // Dua halaman Relay dengan balasan tertanam: page_info koneksi BALASAN (decoy)
 // tidak boleh menang atas page_info top-level — pagination harus lanjut ke
@@ -424,6 +571,9 @@ async function makePaginator(candidates, pages, opts = {}) {
   // opts: { replyIds, replyPages, lastReplyKey, replyTpl } untuk fase balasan.
   const fnSrc = [
     extract("forceAllComments"),
+    extract("forceFeedLocation"),
+    extract("lockFeedbackId"),
+    "const probeStats = new Map();",
     extract("feedbackIdFromTemplateVars"),
     extract("normalizeFeedbackId"),
     extract("findPageInfo"),
@@ -462,7 +612,16 @@ async function makePaginator(candidates, pages, opts = {}) {
     "    return { ok: true, status: 200, page, replyIds: [], textSlice: '' };",
     "  }",
     "  topCursors.push(cursor);",
-    "  const raw = cursor === 'TOP1' ? PAGES[1] : PAGES[0];",
+    "  let raw;",
+    "  if (OPTS.pagesByDoc) {",
+    "    const doc = (tpl && tpl.params && tpl.params.doc_id) || '?';",
+    "    const chain = OPTS.pagesByDoc[doc];",
+    "    raw = chain ? (chain[cursor || '__first'] ?? null) : null;",
+    "  } else if (OPTS.pagesByCursor) {",
+    "    raw = OPTS.pagesByCursor[cursor || '__first'] ?? PAGES[0];",
+    "  } else {",
+    "    raw = cursor === 'TOP1' ? PAGES[1] : PAGES[0];",
+    "  }",
     "  const page = findPageInfo(JSON.parse(JSON.stringify(raw)));",
     "  return { ok: true, status: 200, page, replyIds: OPTS.replyIds || [], textSlice: '' };",
     "};",
@@ -620,6 +779,265 @@ test("paginateGraphql: antrean balasan diproses dengan cursor balasan masing-mas
       .map((c) => c.cursor);
     assert.deepEqual(cursors, [null, "RC1"]);
   }
+});
+
+// ===================== S2: incomplete (kejujuran hasil) =====================
+// Loop keluar via guard TANPA pernah melihat has_next_page:false → reason
+// harus "incomplete" (partial di panel/popup), bukan "complete" berkesan tuntas.
+test("paginateGraphql: cursor maju terus tanpa ujung eksplisit → incomplete", async () => {
+  // Rantai 9 halaman, semuanya has_next_page:true dengan cursor unik.
+  // Stub tidak meng-ingest nama → idle naik tiap halaman → guard idle (6)
+  // memutus run; karena sawExplicitEnd false → "incomplete".
+  const pagesByCursor = { __first: null };
+  let cur = "__first";
+  for (let i = 1; i <= 9; i++) {
+    const next = `T${i}`;
+    pagesByCursor[cur] = relayPayload({
+      topHasNext: true,
+      topCursor: next,
+      replyHasNext: false,
+      replyCursor: null,
+    });
+    cur = next;
+  }
+  const { run } = await makePaginator(PAG_CANDIDATES, [], { pagesByCursor });
+  const res = await run(60_000);
+  assert.equal(res.mode, "graphql");
+  assert.equal(res.reason, "incomplete", "harus jujur belum tuntas");
+  assert.ok(res.pages >= 6 && res.pages <= 8, `halaman wajar, dapat ${res.pages}`);
+});
+
+test("paginateGraphql: explicit has_next_page:false tetap complete (regresi)", async () => {
+  const pages = [
+    relayPayload({ topHasNext: true, topCursor: "TOP1", replyHasNext: false, replyCursor: null }),
+    relayPayload({ topHasNext: false, topCursor: null, replyHasNext: false, replyCursor: null }),
+  ];
+  const { run } = await makePaginator(PAG_CANDIDATES, pages);
+  const res = await run(30_000);
+  assert.equal(res.reason, "complete");
+});
+
+// ===================== S1: findTotalCount =====================
+const findTotalCountFn = new Function(
+  `${extract("findTotalCount")}\nreturn findTotalCount;`
+)();
+
+test("findTotalCount: ambil maksimum total_count nested + abaikan non-numerik/negatif/ekstrem", () => {
+  const payload = {
+    data: {
+      feedback: {
+        total_count: 4210,
+        comments: { total_count: 3800, edges: [] },
+        node: { totalCount: "bukan angka", other: -5 },
+      },
+      spam: { total_count: 999999 }, // > cap sanity 100 ribu diabaikan
+    },
+  };
+  assert.equal(findTotalCountFn(payload), 4210);
+});
+
+test("findTotalCount: tanpa field → 0", () => {
+  assert.equal(findTotalCountFn({ a: { b: {} } }), 0);
+  assert.equal(findTotalCountFn(null), 0);
+  assert.equal(findTotalCountFn([1, 2]), 0);
+});
+
+// ===================== S6a: chooseDomBudget =====================
+const chooseDomBudget = new Function(
+  `${extract("chooseDomBudget")}\nreturn chooseDomBudget;`
+)();
+
+test("chooseDomBudget: <25 nama → deep 45 dtk; ≥25 → ringkas 12 dtk; clamp sisa waktu", () => {
+  assert.equal(chooseDomBudget(10, 100_000), 45_000);
+  assert.equal(chooseDomBudget(24, 100_000), 45_000);
+  assert.equal(chooseDomBudget(25, 100_000), 12_000);
+  assert.equal(chooseDomBudget(300, 5_000), 5_000);
+  assert.equal(chooseDomBudget(10, 0), 0);
+  assert.equal(chooseDomBudget(10, -3), 0);
+});
+
+// ===================== R1/L3.2-L3.3: buffer prefilter + cap memori =====================
+const BUFFER_SHAPE_SRC =
+  String.raw`/"__typename"\s*:\s*"(?:Comment|XFBComment)"|"comment_parent"|"reply_parent_comment"|"commentsAfterCursor"|"(?:feedbackID|feedback_id)"|"author"\s*:\s*\{[\s\S]{0,600}?"name"\s*:/`;
+
+function makeBufferPush() {
+  const fnSrc = [
+    "const gqlBuffer = [];",
+    "const GQL_BUFFER_MAX = 3;",
+    "const MAX_BUFFER_TEXT = 100;",
+    "const BUFFER_SHAPE = " + BUFFER_SHAPE_SRC + ";",
+    extract("pushGqlBuffer"),
+    "return { push: pushGqlBuffer, buf: gqlBuffer };",
+  ].join("\n");
+  return new Function(fnSrc)();
+}
+
+test("pushGqlBuffer: payload non-komentar ditolak, bentuk komentar diterima", () => {
+  const b = makeBufferPush();
+  b.push(
+    '{"data":{"feed":[{"name":"John","story":1,"created_time":1700000000}]}}'
+  ); // feed generik (panjang ≥60, hanya "name") → ditolak
+  assert.equal(b.buf.length, 0);
+  const ok1 =
+    '{"data":{"comment":{"__typename":"Comment","author":{"name":"A"}}}}';
+  b.push(ok1);
+  assert.equal(b.buf.length, 1);
+  const pad =
+    '{"vars":{"feedbackID":"feedback:123"},"pad":"' + "x".repeat(40) + '"}';
+  b.push(pad);
+  assert.equal(b.buf.length, 2);
+});
+
+test("pushGqlBuffer: teks dipotong ke MAX_BUFFER_TEXT & ring shift melebihi max", () => {
+  const b = makeBufferPush();
+  const long =
+    '{"x":"' + "a".repeat(500) + '","__typename":"Comment","author":{"name":"B"}}';
+  b.push(long);
+  assert.ok(b.buf[0].length <= 100, `dipotong, dapat ${b.buf[0].length}`);
+  for (let i = 0; i < 5; i++) {
+    b.push(
+      '{"__typename":"Comment","n":' + i + ',"pad":"' + "p".repeat(50) + '"}'
+    );
+  }
+  assert.equal(b.buf.length, 3, "ring GQL_BUFFER_MAX=3");
+});
+
+// ===================== O-AUDIT: preservasi vonis GraphQL =====================
+test("VERDICT_PRESERVED: runExtract melindungi vonis jujur dari penimpaan fase DOM", () => {
+  // Kontrak sumber: fase DOM tidak boleh menimpa incomplete/timeout/
+  // rate_limit/no_login/stopped dengan "complete" optimistik.
+  const guard = /VERDICT_PRESERVED\.has\(finalReason\)/;
+  assert.ok(guard.test(src), "runExtract wajib memakai guard VERDICT_PRESERVED");
+  for (const reason of [
+    '"incomplete"',
+    '"timeout"',
+    '"rate_limit"',
+    '"no_login"',
+    '"stopped"',
+  ]) {
+    assert.ok(
+      src.includes(`const VERDICT_PRESERVED = new Set([`) &&
+        src.includes(reason),
+      `vonis ${reason} harus tercantum dalam VERDICT_PRESERVED`
+    );
+  }
+});
+
+// ===================== S6b: composeReplayParams =====================
+const composeReplayParams = new Function(
+  [
+    "const PAGE_SIZE_MIN = 25;",
+    "const PAGE_SIZE_MAX = 50;",
+    extract("bumpPageSizes"),
+    extract("setCursorOnVariables"),
+    extract("composeReplayParams"),
+    "return composeReplayParams;",
+  ].join("\n")
+)();
+
+test("composeReplayParams: bump ukuran + cursor + token + default Relay", () => {
+  const tpl = {
+    params: { doc_id: "D1", __user: "0" },
+    variables: { first: 5, after: "OLD", feedbackID: "FB" },
+    friendlyName: "CometUFICommentsProviderPaginationQuery",
+  };
+  const p = composeReplayParams(tpl, "CUR1", {
+    dtsg: "DT",
+    lsd: "LS",
+    uid: "77",
+  });
+  assert.equal(p.doc_id, "D1");
+  assert.equal(p.fb_dtsg, "DT");
+  assert.equal(p.lsd, "LS");
+  assert.equal(p.__user, "77"); // ada di params asli → di-refresh
+  assert.equal(p.fb_api_req_friendly_name, tpl.friendlyName);
+  assert.equal(p.fb_api_caller_class, "RelayModern");
+  assert.equal(p.server_timestamps, "true");
+  const vars = JSON.parse(p.variables);
+  assert.equal(vars.first, 25); // bumpPageSizes
+  assert.equal(vars.after, "CUR1"); // cursor
+  assert.equal(vars.feedbackID, "FB");
+  // av HANYA di-refresh bila params asli memang memilikinya (bukan ditambah)
+  assert.ok(!("av" in p));
+});
+
+test("composeReplayParams: tanpa uid/__user di params → kunci identitas tidak ditambah", () => {
+  const tpl = {
+    params: { doc_id: "D" },
+    variables: { count: 40 },
+    friendlyName: "Q",
+  };
+  const p = composeReplayParams(tpl, null, {});
+  assert.ok(!("__user" in p));
+  assert.ok(!("av" in p));
+  const vars = JSON.parse(p.variables);
+  assert.equal(vars.count, 40); // dalam rentang: biarkan
+  // fallback kunci cursor = commentsAfterCursor (setCursorOnVariables)
+  assert.equal(vars.commentsAfterCursor, null);
+});
+
+// ===================== S3: pre-seed nama run sebelumnya =====================
+function makeNameStore(store) {
+  const ls = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => {
+      store[k] = String(v);
+    },
+    removeItem: (k) => {
+      delete store[k];
+    },
+  };
+  return new Function(
+    "localStorage",
+    "Date",
+    "btoa",
+    "atob",
+    [
+      'const NAMES_STORE_KEY = "fnk_fb_names_v1";',
+      extract("fbIdB64"),
+      extract("fbIdsMatch"),
+      extract("loadPriorNames"),
+      extract("persistNames"),
+      "return { loadPriorNames, persistNames };",
+    ].join("\n")
+  )(ls, Date, b64, atob);
+}
+
+test("pre-seed: persist → load cocok fbid raw/base64; TTL & fbid salah ditolak", () => {
+  const store = {};
+  const ns = makeNameStore(store);
+
+  ns.persistNames("1483436860484357", ["Andi", "Budi"]);
+  // URL membawa id yang sama (raw) → seed kembali
+  assert.deepEqual(ns.loadPriorNames(["1483436860484357"]), ["Andi", "Budi"]);
+  // Bentuk base64 Relay dari id sama juga cocok
+  assert.deepEqual(ns.loadPriorNames([b64("feedback:1483436860484357")]), [
+    "Andi",
+    "Budi",
+  ]);
+  // Post berbeda → tidak di-seed
+  assert.equal(ns.loadPriorNames(["111122223333444"]), null);
+
+  // TTL kedaluwarsa (8 hari)
+  const stale = JSON.parse(store.fnk_fb_names_v1);
+  stale.at = Date.now() - 8 * 86400_000;
+  store.fnk_fb_names_v1 = JSON.stringify(stale);
+  assert.equal(ns.loadPriorNames(["1483436860484357"]), null);
+
+  // Nama non-string disaring saat load
+  const dirty = {};
+  const ns2 = makeNameStore(dirty);
+  dirty.fnk_fb_names_v1 = JSON.stringify({
+    fbid: "1483436860484357",
+    names: ["Ok", 12, null],
+    at: Date.now(),
+  });
+  assert.deepEqual(ns2.loadPriorNames(["1483436860484357"]), ["Ok"]);
+
+  // persist tanpa nama/fbid → no-op (tidak menambah kunci baru)
+  ns2.persistNames("", []);
+  ns2.persistNames("fb", []);
+  assert.deepEqual(Object.keys(dirty), ["fnk_fb_names_v1"]);
 });
 
 // ===================== isProfileHref — profil anggota grup =====================
@@ -1212,6 +1630,8 @@ function makeGqlBuffer() {
   const fnSrc = [
     "const gqlBuffer = [];",
     "const GQL_BUFFER_MAX = 50;",
+    "const MAX_BUFFER_TEXT = 512_000;",
+    "const BUFFER_SHAPE = " + BUFFER_SHAPE_SRC + ";",
     "const nameMap = new Map();",
     "let lastNewAt = 0;",
     "let includeReplies = true;",
@@ -1599,13 +2019,21 @@ test("template cycle FB: sesi 1 capture → persist → sesi 2 reuse doc_id ters
     const best = h2.bestStoredPaginationTemplate();
     assert.ok(best, "bestStoredPaginationTemplate membaca template sesi 1");
     assert.equal(best.doc_id, "STORE_DOC_77");
+    const FALLBACK_FIRST = PAGINATION_DOC_IDS_LITERAL.match(/"(\d{10,})"/)?.[1];
+    assert.ok(FALLBACK_FIRST, "fallback pertama terbaca dari literal");
 
     const synth = h2.buildSyntheticPaginationTemplates();
-    assert.equal(synth.length, 3, "2 id URL + doc_id fallback → 3 kandidat");
+    // L1.2 interleave: 2 id URL — 4 doc (stored terdedup) — cap 5 kandidat.
+    assert.equal(synth.length, 5, "cap 5 kandidat");
     assert.equal(synth[0].params.doc_id, "STORE_DOC_77", "doc_id tersimpan di kandidat pertama");
     // extractFbFeedbackIds(REAL_URL) = [story, fbid] — id URL pertama di-probe duluan
     assert.equal(synth[0].variables.feedbackID, fbIdB64(STORY_ID));
-    assert.equal(synth[1].variables.feedbackID, fbIdB64(REAL_ID), "id URL kedua juga di-probe");
+    // L1.2 interleave: setelah stored×story (rank 0), rank 1 = doc fallback
+    // PERTAMA × id utama (tie-break ii) — lalu stored × id kedua.
+    assert.equal(synth[1].params.doc_id, FALLBACK_FIRST);
+    assert.equal(synth[1].variables.feedbackID, fbIdB64(STORY_ID));
+    assert.equal(synth[2].params.doc_id, "STORE_DOC_77");
+    assert.equal(synth[2].variables.feedbackID, fbIdB64(REAL_ID));
     for (const t of synth) {
       assert.equal(t.variables.sortKey, "RANKED_UNFILTERED");
       assert.equal(t.variables.topLevelViewOption, "RANKED_UNFILTERED");
@@ -1820,6 +2248,8 @@ test("template cycle FB: reuse lintas sesi — seed lama, capture baru menang di
 
 test("template cycle FB: dedupe doc_id tersimpan vs PAGINATION_DOC_IDS fallback", () => {
   const fallback0 = PAGINATION_DOC_IDS_LITERAL.match(/"(\d{10,})"/)[1];
+  const fallback1 = PAGINATION_DOC_IDS_LITERAL.match(/"(\d{10,})"/g)[1]?.match(/"(\d{10,})"/)?.[1];
+  assert.ok(fallback1, "fallback kedua terbaca");
   withNetStubs(REAL_URL, (store) => {
     store.set(
       "fnk_fb_gql_tpl_v1",
@@ -1835,14 +2265,14 @@ test("template cycle FB: dedupe doc_id tersimpan vs PAGINATION_DOC_IDS fallback"
     );
     const h = makeFbTemplateCycle();
     const synth = h.buildSyntheticPaginationTemplates();
-    assert.equal(synth.length, 3, "2 id URL + doc_id berikutnya → 3 kandidat");
-    // Dua kandidat pertama = id URL berbeda, SAMA doc_id tersimpan (by design)
+    // L1.2 interleave: 2 id URL × 4 doc (stored terdedup) = 8 pasangan, cap 5.
+    assert.equal(synth.length, 5, "cap 5 kandidat");
+    // Kandidat pertama: stored doc × id utama (story dari set=pcb.)
     assert.equal(synth[0].params.doc_id, fallback0);
-    assert.equal(synth[1].params.doc_id, fallback0);
-    // Dedupe nyata: fallback0 (stored) TIDAK di-push ulang ke daftar docIds —
-    // kandidat ketiga memakai fallback BERIKUTNYA, bukan duplikat stored
-    assert.notEqual(synth[2].params.doc_id, fallback0, "fallback tidak diduplikasi");
+    // Dedupe nyata: stored TIDAK muncul lagi setelah slot pertama, dan doc
+    // fallback BERIKUTNYA menjangkau ID UTAMA lebih dulu (tie-break ii).
+    assert.notEqual(synth[1].params.doc_id, fallback0, "fallback tidak diduplikasi");
     const distinct = new Set(synth.map((t) => t.params.doc_id));
-    assert.equal(distinct.size, 2, "tepat 2 doc_id berbeda: stored + fallback berikutnya");
+    assert.equal(distinct.size, 3, "stored + 2 fallback doc_id");
   });
 });

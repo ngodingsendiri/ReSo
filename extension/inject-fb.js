@@ -17,9 +17,25 @@
 
   /** @type {Map<string, string>} */
   const nameMap = new Map();
+  // S7: flag diagnosa lapangan (set localStorage "rsx_debug"="1").
+  const DEBUG = (() => {
+    try {
+      return localStorage.getItem("rsx_debug") === "1";
+    } catch {
+      return false;
+    }
+  })();
   /** @type {string[]} */
   const gqlBuffer = [];
   const GQL_BUFFER_MAX = 50;
+  // L3.3-AUDIT: payload respons FB bisa multi-MB; simpan hanya awalan untuk
+  // drain ulang (live-harvest tetap memproses teks PENUH saat respons datang,
+  // jadi pemotongan ini hanya menghemat memori, bukan akurasi).
+  const MAX_BUFFER_TEXT = 512_000;
+  // L3.2-AUDIT: prefilter komentar-bentuk (bukan sekadar "name") — payload
+  // feed/notify tidak lagi memenuhi ring buffer.
+  const BUFFER_SHAPE =
+    /"__typename"\s*:\s*"(?:Comment|XFBComment)"|"comment_parent"|"reply_parent_comment"|"commentsAfterCursor"|"(?:feedbackID|feedback_id)"|"author"\s*:\s*\{[\s\S]{0,600}?"name"\s*:/;
 
   /**
    * Captured GraphQL request templates for comment pagination.
@@ -45,6 +61,10 @@
   /** Total GraphQL requests this run (budget guard — protect the user's account) */
   let requestBudget = 0;
   const REQUEST_BUDGET = 350;
+  /** S1: estimasi jumlah komentar post dari run terakhir (0 = tak diketahui). */
+  let lastRunTotalCount = 0;
+  /** L1.1-AUDIT: doc_id → jumlah gagal probe (diagnosa doc_id mati via rsx_debug). */
+  const probeStats = new Map();
   /** @type {Element | null} */
   let postRoot = null;
   let engineMode = "idle"; // graphql | hybrid | dom
@@ -365,9 +385,10 @@
       /\/permalink\.php\?story_fbid=([^&#]+)/,
       /\/story\.php\?story_fbid=([^&#]+)/,
       /\/photos\/a\.\d+\.(\d+)/, // photos/a.<uid>.<fbid> (album foto)
+      /\/photos\/pcb\.(\d+)/, // photos/pcb.<story>[/<photo>] - multi-foto bentuk PATH (story = feedback post)
       /\/photos\/(\d+)/, // foto tunggal (id foto — probe memvalidasi)
       /\/videos\/(\d+)/,
-      /\/reel\/(\d+)/,
+      /\/reels?\/(\d+)/,
       /\/video\.php\?v=(\d+)/,
     ];
     for (const re of direct) {
@@ -385,9 +406,10 @@
     //      dan a.<album>.<user>.<story> (komponen terakhir = story id)
     try {
       const u = new URL(href);
-      for (const key of ["story_fbid"]) {
+      for (const key of ["story_fbid", "multi_permalinks"]) {
         const val = u.searchParams.get(key);
-        if (val) add(val);
+        // multi_permalinks bisa berisi daftar dipisah koma - ambil token pertama
+        if (val) add(val.split(",")[0].trim());
       }
       const set = u.searchParams.get("set") || "";
       const parts = String(set).split(".");
@@ -624,6 +646,39 @@
     return candidates[0].page;
   }
 
+  /**
+   * Estimasi jumlah komentar postingan dari respons GraphQL (field
+   * total_count pada node feedback/comments). Diambil NILAI MAKSIMUM yang
+   * ditemukan (node berbeda bisa membawa subset), cap 100 ribu sanity.
+   * Dipakai untuk progres "N/±M" dan konteks keterisian hasil di DONE.
+   */
+  function findTotalCount(obj) {
+    let best = 0;
+    const walk = (v, depth) => {
+      if (depth > 30 || v == null || typeof v !== "object") return;
+      if (Array.isArray(v)) {
+        for (const x of v) walk(x, depth + 1);
+        return;
+      }
+      for (const k of Object.keys(v)) {
+        const val = v[k];
+        if (
+          (k === "total_count" || k === "totalCount") &&
+          typeof val === "number" &&
+          Number.isFinite(val) &&
+          val > best &&
+          val <= 100000
+        ) {
+          best = val;
+        } else if (val && typeof val === "object") {
+          walk(val, depth + 1);
+        }
+      }
+    };
+    walk(obj, 0);
+    return best;
+  }
+
   function findFeedbackIds(obj, out = new Set(), depth = 0) {
     if (depth > 40 || !obj || typeof obj !== "object") return out;
     if (Array.isArray(obj)) {
@@ -737,8 +792,11 @@
 
   function pushGqlBuffer(text) {
     if (!text || text.length < 60) return;
-    if (!/"name"\s*:/.test(text) && !/author|Comment/.test(text)) return;
-    gqlBuffer.push(text);
+    // L3.2-AUDIT: bentuk komentar diperlukan — payload "name" generik
+    // (feed, notifikasi, composer) tidak masuk buffer.
+    if (!BUFFER_SHAPE.test(text)) return;
+    // L3.3-AUDIT: cap memori per entri (lihat MAX_BUFFER_TEXT).
+    gqlBuffer.push(text.length > MAX_BUFFER_TEXT ? text.slice(0, MAX_BUFFER_TEXT) : text);
     if (gqlBuffer.length > GQL_BUFFER_MAX) gqlBuffer.shift();
   }
 
@@ -884,6 +942,38 @@
     return n;
   }
 
+  // ---------------- S3: pre-seed hasil run sebelumnya ----------------
+  // Re-run setelah partial tidak lagi mulai dari nol: nama run sebelumnya
+  // di-post yang sama di-load kembali (scoped ke feedback id, TTL 7 hari).
+  const NAMES_STORE_KEY = "fnk_fb_names_v1";
+
+  function loadPriorNames(urlIds) {
+    try {
+      const raw = localStorage.getItem(NAMES_STORE_KEY);
+      if (!raw) return null;
+      const entry = JSON.parse(raw);
+      if (!entry || !Array.isArray(entry.names) || !entry.fbid) return null;
+      if (!(entry.at > 0 && Date.now() - entry.at < 7 * 86400_000)) return null;
+      const ids = Array.isArray(urlIds) ? urlIds : [];
+      if (!ids.some((id) => fbIdsMatch(id, entry.fbid))) return null;
+      return entry.names.filter((n) => typeof n === "string" && n);
+    } catch {
+      return null;
+    }
+  }
+
+  function persistNames(fbid, names) {
+    try {
+      if (!fbid || !Array.isArray(names) || !names.length) return;
+      localStorage.setItem(
+        NAMES_STORE_KEY,
+        JSON.stringify({ fbid, names: names.slice(0, 2000), at: Date.now() })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
   // Always-on hooks
   if (!window.__FNK_NET__) {
     window.__FNK_NET__ = true;
@@ -971,6 +1061,17 @@
   // form, dan innerHTML hanya sebagai fallback terakhir (di-cache 5 menit).
   const TOKEN_CACHE_TTL = 5 * 60 * 1000;
   const tokenCache = { dtsg: null, lsd: null, at: 0 };
+  /** S4: token basi di tengah run — buang cache agar replay berikutnya
+   *  mengambil DTSG/LSD segar (dipanggil setelah graphql_error beruntun). */
+  function bustTokenCache() {
+    try {
+      tokenCache.dtsg = null;
+      tokenCache.lsd = null;
+      tokenCache.at = 0;
+    } catch {
+      /* ignore */
+    }
+  }
 
   /**
    * Cari token di dalam <script> tag saja (bukan documentElement.innerHTML):
@@ -1156,24 +1257,70 @@
     return v;
   }
 
-  async function graphqlReplay(template, cursor) {
-    requestBudget += 1;
+  // ---------------- ukuran halaman replay ----------------
+  /**
+   * Naikkan ukuran halaman pada variabel replay (`first`/`count`/`limit`/…)
+   * ke minimal PAGE_SIZE_MIN agar thread besar (ratusan komentar) selesai
+   * dalam lebih sedikit ronde — mengurangi paparan window duplikat, pemakaian
+   * budget request, dan risiko berhenti prematur oleh guard idle. Nilai di luar
+   * rentang dikepang ke [PAGE_SIZE_MIN..PAGE_SIZE_MAX]. Deep-copy: template
+   * tersimpan TIDAK termutasi.
+   */
+  const PAGE_SIZE_MIN = 25;
+  const PAGE_SIZE_MAX = 50;
+  function bumpPageSizes(variables) {
+    const KEYS = ["first", "count", "limit", "pageSize", "page_size"];
+    let v;
+    try {
+      v = JSON.parse(JSON.stringify(variables ?? {}));
+    } catch {
+      return {};
+    }
+    if (!v || typeof v !== "object") return v;
+    const walk = (obj, depth) => {
+      if (depth > 4 || !obj || typeof obj !== "object") return;
+      for (const k of Object.keys(obj)) {
+        const val = obj[k];
+        if (
+          KEYS.includes(k) &&
+          typeof val === "number" &&
+          Number.isFinite(val) &&
+          val >= 0
+        ) {
+          // Ke pang [MIN..MAX]: 5 -> 25 (ronde lebih sedikit), 100 -> 50
+          // (jangan serak permintaan raksasa), 30 -> 30 (biarkan).
+          const n = Math.round(val);
+          if (n < PAGE_SIZE_MIN) obj[k] = PAGE_SIZE_MIN;
+          else if (n > PAGE_SIZE_MAX) obj[k] = PAGE_SIZE_MAX;
+        } else if (val && typeof val === "object") {
+          walk(val, depth + 1);
+        }
+      }
+    };
+    walk(v, 0);
+    return v;
+  }
+
+  /**
+   * S6 (murni, teruji): susun parameter body replay — ukuran halaman
+   * dinaikkan (bumpPageSizes), cursor di-set pada kunci yang dikenal,
+   * token anti-forgery & identitas di-refresh, default Relay diisi.
+   * Dipisahkan dari fetch agar logika request bisa diuji tanpa jaringan.
+   */
+  function composeReplayParams(template, cursor, tokens) {
     const params = { ...template.params };
     let variables = template.variables
-      ? setCursorOnVariables(template.variables, cursor)
+      ? setCursorOnVariables(bumpPageSizes(template.variables), cursor)
       : { after: cursor };
-
-    // Refresh anti-forgery tokens
-    const dtsg = getDtsg();
+    const dtsg = tokens?.dtsg;
     if (dtsg) params.fb_dtsg = dtsg;
-    const lsd = getLsd();
+    const lsd = tokens?.lsd;
     if (lsd) params.lsd = lsd;
-    const uid = getUserId();
+    const uid = tokens?.uid;
     if (uid) {
       if ("__user" in params) params.__user = uid;
       if ("av" in params) params.av = uid;
     }
-
     params.variables =
       typeof variables === "string" ? variables : JSON.stringify(variables);
     if (!params.fb_api_req_friendly_name && template.friendlyName) {
@@ -1183,6 +1330,17 @@
       params.fb_api_caller_class = "RelayModern";
     }
     if (!params.server_timestamps) params.server_timestamps = "true";
+    return params;
+  }
+
+  async function graphqlReplay(template, cursor) {
+    requestBudget += 1;
+    // Refresh anti-forgery tokens
+    const params = composeReplayParams(template, cursor, {
+      dtsg: getDtsg(),
+      lsd: getLsd(),
+      uid: getUserId(),
+    });
 
     const body = new URLSearchParams();
     Object.keys(params).forEach((k) => {
@@ -1260,6 +1418,9 @@
     }
 
     const page = json ? findPageInfo(json) : null;
+    // S1: estimasi jumlah komentar post (progres N/±M + deteksi hasil jauh
+    // di bawah ekspektasi).
+    const totalCount = json ? findTotalCount(json) : 0;
     // also harvest reply expansion ids for later
     const replyIds = [];
     if (includeReplies && json) {
@@ -1289,6 +1450,7 @@
       ok: res.ok,
       status: res.status,
       page,
+      totalCount,
       replyIds: [...new Set(replyIds)].slice(0, 40),
       textSlice: text.slice(0, 200),
     };
@@ -1452,16 +1614,21 @@
       friendlyName: "CometUFICommentsProviderPaginationQuery",
       capturedAt: Date.now(),
     };
-    // Urutan kandidat: doc_id tersimpan × tiap id URL (probe memvalidasi id
-    // mana yang benar), lalu doc_id fallback × id pertama.
+    // Urutan kandidat (L1.2-AUDIT): INTERLEAVE peringkat doc+id — pasangan
+    // dengan total peringkat terkecil diprobe lebih dulu (doc terbaik × tiap
+    // id, lalu doc cadangan × id utama…). Urutan lama membiarkan doc pertama
+    // menghabiskan seluruh slot sehingga doc fallback pada id utama tak pernah
+    // terjangkau di URL multi-id (album/korsel).
     const cands = [];
-    for (const id of ids.slice(0, 3)) {
-      cands.push({ docId: docIds[0], id });
-    }
-    for (const docId of docIds.slice(1)) {
-      cands.push({ docId, id: ids[0] });
-    }
-    return cands.slice(0, 3).map(({ docId, id }) => {
+    docIds.forEach((docId, di) => {
+      ids.slice(0, 3).forEach((id, ii) => {
+        cands.push({ docId, id, rank: di + ii, di, ii });
+      });
+    });
+    // Tie-break: peringkat sama → utamakan ID UTAMA (ii terkecil) agar doc
+    // fallback selalu menjangkau id story utama lebih dulu.
+    cands.sort((a, b) => a.rank - b.rank || a.ii - b.ii || a.di - b.di);
+    return cands.slice(0, 5).map(({ docId, id }) => {
       // Feedback id Relay wajib base64 "feedback:<id>" — id mentah ditolak
       // (dikonfirmasi 3 scraper independen 2024–2026).
       const feedbackID = fbIdB64(id);
@@ -1514,6 +1681,35 @@
     }
   }
 
+  /**
+   * Varian feedLocation — sebagian struktur permalink (foto tunggal & album/
+   * multi-foto) menolak `feedLocation: "NEWSFEED"` dengan edges kosong walau
+   * feedback id-nya benar; halaman permalink itu sendiri dilaporkan FB sebagai
+   * lokasi "PERMALINK". Diprobe sebagai fallback TERAKHIR per kandidat
+   * (probe memvalidasi; varian gagal hanya membuang satu request).
+   */
+  function forceFeedLocation(t, loc) {
+    if (!t || !t.variables || typeof t.variables !== "object") return t;
+    if (t.variables.feedLocation === loc) return t;
+    try {
+      const variables = JSON.parse(JSON.stringify(t.variables));
+      variables.feedLocation = loc;
+      return { ...t, variables };
+    } catch {
+      return t;
+    }
+  }
+
+  /** Kunci anti kontaminasi: aktifkan feedback id dari variabel template. */
+  function lockFeedbackId(t) {
+    if (t && t.variables) {
+      activeFeedbackId =
+        normalizeFeedbackId(feedbackIdFromTemplateVars(t.variables)) || null;
+    } else {
+      activeFeedbackId = null;
+    }
+  }
+
   async function paginateGraphql(maxMs) {
     const candidates = orderedCandidates();
     if (!candidates.length) return { mode: "none", reason: "no_template" };
@@ -1525,18 +1721,31 @@
     // sortir yang tampil di halaman — lalu jatuh ke varian asli (mode user)
     // bila FB menolak varian paksa.
     let template = null;
+    let selectedCand = null;
     let lastProbeErr = null;
+    // S4: dua kegagalan probe beruntun berbau token basi — bust cache DTSG/LSD
+    // agar varian berikutnya mengambil token segar.
+    let probeErrStreak = 0;
     for (const cand of candidates.slice(0, 3)) {
       if (stopFlag) return { mode: "graphql", reason: "stopped" };
-      const variants = [forceAllComments(cand), cand].filter(
-        (v, i, arr) => v && arr.indexOf(v) === i
-      );
+      // Urutan varian per kandidat (masing-masing divalidasi probe):
+      // 1) "Semua Komentar" + feedLocation asli (umumnya NEWSFEED)
+      // 2) template apa adanya (mode user)
+      // 3) "Semua Komentar" + feedLocation PERMALINK — fallback khusus
+      //    struktur foto tunggal/album/multi-foto yang menolak NEWSFEED.
+      const allCommentsVariant = forceAllComments(cand);
+      const variants = [
+        allCommentsVariant,
+        cand,
+        forceFeedLocation(allCommentsVariant, "PERMALINK"),
+      ].filter((v, i, arr) => v && arr.indexOf(v) === i);
       for (const variant of variants) {
         if (stopFlag) return { mode: "graphql", reason: "stopped" };
         try {
           const probe = await graphqlReplayWithBackoff(variant, null, deadline);
           if (probe.page && probe.page.hasNext !== undefined) {
             template = variant;
+            selectedCand = cand;
             break;
           }
         } catch (err) {
@@ -1555,6 +1764,18 @@
               reason: "no_login",
               error: String(err.message || err),
             };
+          }
+          // S4: graphql_error/http beruntun → curigai token basi.
+          if (err && (err.kind === "graphql_error" || err.kind === "http")) {
+            probeErrStreak++;
+            // L1.1-AUDIT: catat gagal probe per doc_id (diagnosa doc mati).
+            const docKey =
+              String((cand && cand.params && cand.params.doc_id) || "?");
+            probeStats.set(docKey, (probeStats.get(docKey) || 0) + 1);
+            if (probeErrStreak >= 2) {
+              bustTokenCache();
+              probeErrStreak = 0;
+            }
           }
           /* coba varian berikutnya */
         }
@@ -1580,11 +1801,13 @@
     // isTargetCommentResponse menolak SEMUA respons ber-feedbackID dan nama
     // dari request FB asli terbuang (replay engine tetap jalan, harvest
     // always-on hilang).
-    if (template.variables) {
-      activeFeedbackId =
-        normalizeFeedbackId(feedbackIdFromTemplateVars(template.variables)) ||
-        null;
-    }
+    lockFeedbackId(template);
+
+    // L2.1-AUDIT: kandidat cadangan untuk rotasi saat cursor tidak efektif
+    // (shift() dari daftar = tidak akan dipilih dua kali).
+    const spareCandidates = candidates.filter((t) => t !== selectedCand);
+    let rotations = 0;
+    const ROTATE_MAX = 2;
 
     engineMode = "graphql";
     post("PROGRESS", {
@@ -1601,9 +1824,15 @@
     let pages = 0;
     let idle = 0;
     let reason = "complete";
+    let totalEstimate = 0; // S1: estimasi jumlah komentar (maks antar halaman)
     const replyQueue = [];
 
     let emptyPages = 0;
+    let gqlErrStreak = 0;
+    // S2 (kejujuran hasil): apakah FB pernah menyatakan has_next_page:false?
+    // Bila tidak dan loop keluar via guard, run dilaporkan "incomplete"
+    // (partial) — bukan "complete" yang berkesan tuntas.
+    let sawExplicitEnd = false;
     while (running && !stopFlag && Date.now() - start < maxMs) {
       if (requestBudget >= REQUEST_BUDGET) {
         reason = "timeout";
@@ -1613,6 +1842,7 @@
       let result;
       try {
         result = await graphqlReplayWithBackoff(template, cursor, deadline);
+        gqlErrStreak = 0;
       } catch (err) {
         const kind = err && err.kind;
         if (kind === "rate_limit")
@@ -1628,6 +1858,17 @@
             error: String(err.message || err),
           };
         if (kind === "stopped") return { mode: "graphql", reason: "stopped" };
+        // S4: satu graphql_error transien (mis. DTSG dirotasi FB saat run)
+        // → bust cache token lalu coba cursor yang sama SEKALI sebelum menyerah.
+        if (kind === "graphql_error" && gqlErrStreak === 0) {
+          gqlErrStreak++;
+          bustTokenCache();
+          if (!(await sleepWhile(800))) {
+            reason = "stopped";
+            break;
+          }
+          continue;
+        }
         return {
           mode: "graphql",
           reason: nameMap.size ? "timeout" : "error",
@@ -1642,10 +1883,21 @@
         break;
       }
       if (result.replyIds?.length) replyQueue.push(...result.replyIds);
+      // S1: simpan estimasi terbesar yang pernah dilihat FB.
+      if (result.totalCount > totalEstimate) totalEstimate = result.totalCount;
 
+      // Catatan: hindari nested template literal di sini — extractor test
+      // brace-aware tidak menangani backtick bersarang.
+      const estSuffix = totalEstimate ? "/±" + totalEstimate : "";
       post("PROGRESS", {
         names: snapshot(),
-        message: `GraphQL halaman ${pages}… ${nameMap.size} nama`,
+        message:
+          "GraphQL halaman " +
+          pages +
+          "… " +
+          nameMap.size +
+          estSuffix +
+          " nama",
         postHint: template.friendlyName,
       });
 
@@ -1662,7 +1914,7 @@
           await sleepWhile(700 + Math.random() * 500);
           continue;
         }
-        reason = "idle";
+        reason = "incomplete";
         break;
       }
       emptyPages = 0;
@@ -1671,20 +1923,73 @@
       const endCursor = result.page.endCursor;
 
       if (hasNext === false) {
+        sawExplicitEnd = true;
         reason = "complete";
         break;
       }
       if (hasNext === true && !endCursor) {
         // FB bilang masih ada, tapi tanpa cursor — tidak bisa lanjut
-        reason = "idle";
+        reason = "incomplete";
         break;
       }
-      if (idle >= 4) {
-        reason = "idle";
+      // Guard idle: halaman tanpa nama baru BERULANG. 6x (bukan 4x) - window
+      // hasil FB kadang tumpang-tindih (re-ranking "Semua Komentar") sehingga
+      // halaman berisi nama lama padahal thread belum tuntas; beri toleransi
+      // lebih sebelum menyerah di thread besar.
+      if (idle >= 3 && rotations < ROTATE_MAX && spareCandidates.length) {
+        // L2.1-AUDIT: 3 halaman tanpa nama baru = cursor/template kemungkinan
+        // tidak efektif — rotasi ke kandidat cadangan (probe cepat), jangan
+        // tunggu guard idle memutus seluruh fase GraphQL.
+        const nextCand = spareCandidates.shift();
+        let switched = false;
+        try {
+          const v = forceAllComments(nextCand);
+          const p2 = await graphqlReplayWithBackoff(v, null, deadline);
+          if (p2.page && p2.page.hasNext !== undefined) {
+            template = v;
+            lockFeedbackId(template);
+            cursor = null;
+            idle = 0;
+            emptyPages = 0;
+            rotations++;
+            switched = true;
+            post("PROGRESS", {
+              names: snapshot(),
+              message: "Beralih ke template pagination cadangan…",
+              postHint: "rotate",
+            });
+          }
+        } catch (err) {
+          const kind = err && err.kind;
+          if (kind === "rate_limit")
+            return {
+              mode: "graphql",
+              reason: "rate_limit",
+              error: String(err.message || err),
+            };
+          if (kind === "no_login")
+            return {
+              mode: "graphql",
+              reason: "no_login",
+              error: String(err.message || err),
+            };
+          const docKey = String(
+            (nextCand && nextCand.params && nextCand.params.doc_id) || "?"
+          );
+          probeStats.set(docKey, (probeStats.get(docKey) || 0) + 1);
+          /* kandidat cadangan berikutnya */
+        }
+        if (switched) continue;
+      }
+      if (idle >= 6) {
+        reason = "incomplete";
         break;
       }
       if (endCursor === cursor) {
-        reason = "complete";
+        // Cursor berulang: pagination tak bisa maju. Bila FB belum pernah
+        // menyatakan habis, ini truncation terselubung — laporkan jujur
+        // sebagai incomplete, bukan "complete" berkesan tuntas.
+        reason = sawExplicitEnd ? "complete" : "incomplete";
         break;
       }
       cursor = endCursor;
@@ -1694,8 +1999,9 @@
       }
     }
 
-    if (stopFlag) reason = "stopped";
-    else if (Date.now() - start >= maxMs) reason = "timeout";
+      if (stopFlag) reason = "stopped";
+      else if (Date.now() - start >= maxMs) reason = "timeout";
+      lastRunTotalCount = totalEstimate;
 
     // Optional replies via reply template
     if (
@@ -1711,8 +2017,14 @@
         message: `Mengambil balasan… antrean ${replyQueue.length}`,
         postHint: "replies",
       });
-      const unique = [...new Set(replyQueue)].slice(0, 25);
-      const REPLY_BUDGET = 40;
+      // Tanpa slice target: REPLY_BUDGET (per-request) sudah menjadi batas
+      // tunggal — memotong daftar target hanya membuat pengulas-via-balasan
+      // hilang di thread ramai padahal budget global masih longgar.
+      const unique = [...new Set(replyQueue)];
+      // Budget balasan naik (40 -> 100): jumlah komentar FB di UI ikut
+      // menghitung balasan - dengan cap 25 target/40 request, pengulas lewat
+      // balasan sering tidak terrekap pada thread ramai.
+      const REPLY_BUDGET = 100;
       let replyRequests = 0;
       let replyFailStreak = 0;
       for (const fbId of unique) {
@@ -1857,9 +2169,11 @@
     const scope = root || postRoot || document;
     const before = nameMap.size;
 
+    // L4.1-AUDIT: EN + ID + ES/PT/FR (connector "de/da/di" untuk bentuk
+    // "Comentario de X", "Resposta da X", dsb.)
     const labelPatterns = [
-      /^(?:Comment|Reply|Komentar|Balasan)(?:\s+by|\s+oleh|\s+dari|\s+from)?\s+(.+)$/i,
-      /^(.+?)\s+(?:commented|berkomentar|replied|membalas)\b/i,
+      /^(?:Comment|Reply|Komentar|Balasan|Comentario|Respuesta|Resposta|R\u00e9ponse)\s+(?:by|oleh|dari|from|de|da|di)?\s*(?:la\s+|o\s+|a\s+)?(.+)$/i,
+      /^(.+?)\s+(?:commented|berkomentar|replied|membalas|coment\u00f3|comentou|r\u00e9pondu|a comment\u00e9|membalas)\b/i,
     ];
     qsa("[aria-label]", scope).forEach((el) => {
       const label = el.getAttribute("aria-label") || "";
@@ -1928,8 +2242,9 @@
   }
 
   function findExpandButtons(root) {
+    // EN + ID + ES/PT/FR — FB melayani locale lain sesuai akun/region.
     const soft =
-      /view more comments|see more comments|lihat komentar|previous comments|komentar sebelumnya|view more replies|lihat balasan|more comments|more replies|lihat selengkapnya|show more|tampilkan/i;
+      /view more comments|see more comments|lihat komentar|previous comments|komentar sebelumnya|view more replies|lihat balasan|more comments|more replies|lihat selengkapnya|show more|tampilkan|ver m\u00e1s comentarios|m\u00e1s respuestas|ver mais coment\u00e1rios|ver mais respostas|afficher plus de commentaires|plus de r\u00e9ponses/i;
     const out = [];
     qsa('[role="button"], div[tabindex="0"], span[dir="auto"], a[role="link"]', root || document).forEach((el) => {
       if (!isVisible(el)) return;
@@ -1944,9 +2259,9 @@
   async function tryOpenComments(scope) {
     // Already open? (post article + nested comment articles)
     if (scope && scope.querySelectorAll('[role="article"]').length > 1) return true;
-    const COMMENT_COUNT = /^\d[\d.,\s]*(?:k|rb)?\s*(?:komentar|comments?)\b/i;
+    const COMMENT_COUNT = /^\d[\d.,\s]*(?:k|rb)?\s*(?:komentar|comments?|comentarios|coment\u00e1rios)\b/i;
     const VIEW_COMMENTS =
-      /view.*(?:comment|komentar)|lihat.*komentar|lihat\s+semua\s+komentar/i;
+      /view.*(?:comment|komentar)|lihat.*komentar|lihat\s+semua\s+komentar|ver.*(comment|komentari)|voir.*commentaire/i;
     const els = qsa(
       '[role="button"], a[role="link"], [role="tab"], [aria-label], span[dir="auto"]',
       scope || document
@@ -2005,10 +2320,13 @@
     //    (Opsi aktif bisa juga "Terbaru"/"Newest" — tetap buka menunya supaya
     //    bisa pindah ke "Semua Komentar".) Fallback aria-label "sort/urutkan
     //    komentar" bila label teks berubah.
-    const SORT_LABEL = /paling relevan|most relevant|^relevan$|^recent$|^terbaru$|^newest$/i;
+    // L4.2-AUDIT: + ES/PT/FR.
+    const SORT_LABEL =
+      /paling relevan|most relevant|^relevan$|^recent$|^terbaru$|^newest$|m\u00e1s relevantes|mais relevantes|mais recentes|pertinence|^r\u00e9cent/i;
     const SORT_ARIA_FALLBACK =
-      /(?:sort|urutkan|urutan)\b[^]{0,40}(?:comment|komentar)|(?:comment|komentar)[^]{0,40}\b(?:sort|urutkan|urutan)/i;
-    const ALL_COMMENTS = /semua\s+komentar|all\s+comments/i;
+      /(?:sort|urutkan|urutan|ordenar|trier)\b[^]{0,40}(?:comment|komentar|comentari)|(?:comment|komentar|coment\u00e1rio)[^]{0,40}\b(?:sort|urutkan|urutan|ordenar|trier)/i;
+    const ALL_COMMENTS =
+      /semua\s+komentar|all\s+comments|todos\s+los\s+comentarios|todos\s+os\s+coment\u00e1rios|tous\s+les\s+commentaires/i;
 
     const isSortTrigger = (el) => {
       if (!isVisible(el)) return false;
@@ -2136,8 +2454,30 @@
   }
 
   // ---------------- main run ----------------
-  async function runExtract(options = {}) {
-    const myRunId = options.runId || String(Date.now());
+  /**
+   * S6 (murni, teruji): keputusan budget pass DOM. Thread dengan < 25 nama
+   * layak usaha lebih keras (45 dtk — kemungkinan GraphQL hanya dapat
+   * sebagian); selebihnya cukup pass rapat 12 dtk. Selalu dibatasi sisa waktu.
+   */
+  function chooseDomBudget(size, remainingMs) {
+    const rem = Math.max(0, Number(remainingMs) || 0);
+    return size < 25 ? Math.min(45_000, rem) : Math.min(12_000, rem);
+  }
+
+  /**
+   * O-AUDIT (murni, teruji): vonis GraphQL yang tidak boleh ditimpa fase DOM.
+   * incomplete/timeout/rate_limit/no_login/stopped = informasi keterisian yang
+   * lebih jujur daripada "complete" optimistik milik expandDomLoop.
+   */
+  const VERDICT_PRESERVED = new Set([
+    "incomplete",
+    "timeout",
+    "rate_limit",
+    "no_login",
+    "stopped",
+  ]);
+
+  async function runExtract(options = {}) {    const myRunId = options.runId || String(Date.now());
 
     if (running) {
       stopFlag = true;
@@ -2150,6 +2490,9 @@
     running = true;
     stopFlag = false;
     nameMap.clear();
+    // Reset diagnosa per-run.
+    probeStats.clear();
+    lastRunTotalCount = 0;
     currentRunId = myRunId;
     includeReplies = options.includeReplies !== false;
     engineMode = "hybrid";
@@ -2164,13 +2507,26 @@
     }
     lastNewAt = Date.now();
     activeFeedbackId = null;
+    // S3: pre-seed hasil run sebelumnya pada post yang sama — "Proses lagi"
+    // menjadi AKUMULATIF, bukan mulai dari nol (re-run setelah partial).
+    let seededCount = 0;
+    try {
+      const prior = loadPriorNames(feedbackIdsFromUrl());
+      if (prior?.length) {
+        for (const n of prior) if (addName(n)) seededCount++;
+      }
+    } catch {
+      /* ignore */
+    }
     // Simpan posisi scroll agar di akhir run halaman kembali ke postingan
     // yang sama (bukan melayang ke postingan di atas/bawahnya).
     const savedScrollY = window.scrollY;
 
     post("PROGRESS", {
-      names: [],
-      message: "Memulai mesin GraphQL (pagination aktif)… buka komentar bila perlu",
+      names: snapshot(),
+      message: seededCount
+        ? `Melanjutkan ${seededCount} nama dari run sebelumnya…`
+        : "Memulai mesin GraphQL (pagination aktif)… buka komentar bila perlu",
       postHint: `templates:${gqlTemplates.size} buffer:${gqlBuffer.length}`,
     });
 
@@ -2256,13 +2612,13 @@
         }
       }
 
-      // 4) Secondary: always brief DOM harvest; longer if GraphQL yielded little
+      // 4) Secondary: always brief DOM harvest; deeper when GraphQL yielded
+      // few names — thread dengan puluhan/ratusan pengulas butuh pass DOM
+      // lebih panjang bila GraphQL hanya memperoleh sebagian (mis. probe
+      // gagal → mode capture/DOM murni).
       if (!stopFlag) {
         const remaining = Math.max(0, maxMs - (Date.now() - startedAt));
-        const needDeep = nameMap.size < 8;
-        const domBudget = needDeep
-          ? Math.min(60_000, remaining)
-          : Math.min(12_000, remaining);
+        const domBudget = chooseDomBudget(nameMap.size, remaining);
         if (domBudget >= 1500) {
           engineMode =
             gqlTemplates.size > 0 && nameMap.size > 0
@@ -2276,7 +2632,15 @@
             postHint: "dom",
           });
           const domReason = await expandDomLoop(domBudget);
-          if (nameMap.size > 0) finalReason = domReason;
+          // O-AUDIT: vonis GraphQL yang jujur (belum tuntas / dibatasi /
+          // diblokir) TIDAK BOLEH ditimpa oleh hasil optimistik fase DOM
+          // ("complete" = pass DOM selesai, bukan thread habis).
+          if (
+            nameMap.size > 0 &&
+            !VERDICT_PRESERVED.has(finalReason)
+          ) {
+            finalReason = domReason;
+          }
         }
       }
 
@@ -2291,14 +2655,43 @@
       if (currentRunId === myRunId) {
         const names = snapshot();
         let tip = "";
+        // S1: bila estimasi FB jauh di atas hasil (≥2x), beri konteks —
+        // total_count menghitung komentar (incl. balasan); nama unik kita
+        // memang lebih kecil secara alami, jadi ini info, bukan alarm.
+        if (
+          lastRunTotalCount &&
+          names.length &&
+          names.length * 2 < lastRunTotalCount
+        ) {
+          tip = ` Post ±${lastRunTotalCount} komentar menurut Facebook (${names.length} nama unik terkumpul).`;
+        }
         if (finalReason === "rate_limit") {
-          tip =
-            " Rate limit (429) — berhenti agar akun aman. Tunggu beberapa saat, lalu Proses lagi.";
+          tip += " Rate limit (429) — berhenti agar akun aman. Tunggu beberapa saat, lalu Proses lagi.";
         } else if (finalReason === "no_login") {
-          tip = " Sesi Facebook tidak aktif — login di facebook.com lalu Proses lagi.";
+          tip += " Sesi Facebook tidak aktif — login di facebook.com lalu Proses lagi.";
         } else if (!names.length) {
           tip =
             " Tip: buka permalink post, buka list komentar sampai terlihat, tunggu 2–3 dtk, lalu Proses lagi (biar GraphQL ter-capture).";
+        }
+        // S3: simpan hasil untuk pre-seed run berikutnya pada post yang sama.
+        try {
+          persistNames(
+            activeFeedbackId || feedbackIdFromUrl(),
+            names
+          );
+        } catch {
+          /* ignore */
+        }
+        // S7: diagnosa lapangan — set localStorage "rsx_debug"="1" utk aktif.
+        if (DEBUG) {
+          console.info("[ReSo FB] done", {
+            mode: engineMode,
+            reason: finalReason,
+            captured: names.length,
+            totalEstimate: lastRunTotalCount,
+            templates: gqlTemplates.size,
+            probeFails: [...probeStats.entries()],
+          });
         }
         post("DONE", {
           names,

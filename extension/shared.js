@@ -84,9 +84,10 @@ function extractFbFeedbackIds(url) {
     /\/permalink\.php\?story_fbid=([^&#]+)/,
     /\/story\.php\?story_fbid=([^&#]+)/,
     /\/photos\/a\.\d+\.(\d+)/, // photos/a.<uid>.<fbid> (album foto)
+    /\/photos\/pcb\.(\d+)/, // photos/pcb.<story>[/<photo>] - multi-foto bentuk PATH (story = feedback post)
     /\/photos\/(\d+)/, // foto tunggal (id foto — probe memvalidasi)
     /\/videos\/(\d+)/,
-    /\/reel\/(\d+)/,
+    /\/reels?\/(\d+)/,
     /\/video\.php\?v=(\d+)/,
   ];
   for (const re of direct) {
@@ -102,9 +103,10 @@ function extractFbFeedbackIds(url) {
     //      dan a.<album>.<user>.<story> (komponen terakhir = story id)
     try {
       const u = new URL(href);
-      for (const key of ["story_fbid"]) {
+      for (const key of ["story_fbid", "multi_permalinks"]) {
         const val = u.searchParams.get(key);
-        if (val) add(val);
+        // multi_permalinks bisa berisi daftar dipisah koma - ambil token pertama
+        if (val) add(val.split(",")[0].trim());
       }
       const set = u.searchParams.get("set") || "";
       const parts = String(set).split(".");
@@ -444,6 +446,13 @@ function doneMessage(reason, count, platform, options) {
     return c
       ? `Waktu habis — ${c} ${word} (mungkin belum semua).${extra} Klik Rekap + Kirim untuk mengirim.`
       : `Waktu habis — belum ada ${word}.${extra}`;
+  }
+  if (reason === "incomplete") {
+    // Pagination berhenti sebelum FB menyatakan has_next_page:false —
+    // jangan beri kesan "selesai"; operator perlu tahu hasil bisa kurang.
+    return c
+      ? `Belum tuntas — ${c} ${word} terkumpul, thread belum terlihat habis. Proses lagi untuk melengkapi.`
+      : `Belum ada ${word} — pagination belum tuntas.${extra}`;
   }
   if (reason === "idle" || reason === "complete") {
     if (c) return `Selesai — ${c} ${word}.${extra} Klik Rekap + Kirim untuk mengirim.`;

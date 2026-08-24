@@ -776,7 +776,7 @@
         break;
       }
       emptyPages = 0;
-      if (idle >= 4) {
+      if (idle >= 6) {
         reason = "idle";
         break;
       }

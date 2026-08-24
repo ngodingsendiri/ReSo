@@ -2,6 +2,131 @@
 
 Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), versi mengikuti [Semantic Versioning](https://semver.org/).
 
+## [Belum dirilis]
+
+### Eksekusi kritik mesin FB: kejujuran hasil + ketahanan (S1–S7)
+Semua saran hasil audit mesin dieksekusi. Sorotan per item:
+
+- **S1 — sadar `total_count`**: `findTotalCount` (baru) mengestimasi jumlah komentar post
+  dari respons replay (maksimum antar node, cap 100 ribu). Progres kini "GraphQL halaman N…
+  X/±M nama"; saat hasil < ½ estimasi, DONE membawa konteks "Post ±M komentar menurut
+  Facebook (X nama unik terkumpul)" — info, bukan alarm.
+- **S2 — stopReason `incomplete` (anti ilusi sukses)**: bila loop keluar via guard
+  (idle/cursor-stuck/empty-pages) TANPA pernah melihat `has_next_page:false`, run dilaporkan
+  `incomplete` → **partial** di panel/popup dengan pesan "Belum tuntas — X nama… Proses lagi",
+  bukan hijau "Selesai". Menyentuh: DONEMSG ×4 salinan (shared + 3 content), `mapDone` ×3,
+  `statusFromReason` background, matriks CONSISTENCY §2.2. Fixture wording +3 asersi; test
+  paginator baru membuktikan cursor-maju-terus tanpa ujung → incomplete, dan explicit-end
+  tetap complete (regresi).
+- **S4 — bust token DTSG/LSD**: 2 kegagalan probe beruntun atau 1 graphql_error mid-run
+  → cache token dibuang lalu retry cursor sama sekali sebelum menyerah.
+- **S5 — antrean balasan tanpa slice target** (`slice(0,50)` dihapus): REPLY_BUDGET 100
+  menjadi batas tunggal; pengulas-via-balasan lebih banyak tertangkap di thread ramai.
+- **S6 — fungsi murni teruji**: `chooseDomBudget` (tier DOM) & `composeReplayParams`
+  (bump ukuran + cursor + token + default Relay) difaktorkan dari `runExtract`/
+  `graphqlReplay` + unit test masing-masing (termasuk kontrak: `av` hanya di-refresh bila
+  memang ada di params asli).
+- **S3 — pre-seed akumulatif**: hasil run disimpan per feedback id post
+  (`fnk_fb_names_v1`, TTL 7 hari); run berikutnya pada post yang sama dimulai dari nama
+  lama ("Melanjutkan N nama…") sehingga re-run setelah partial bersifat menambah, bukan
+  mengulang. Unit test persist/load/TTL/mismatch/non-string.
+- **S7 — lapangan**: locale tombol expand diperluas (ES/PT/FR selain EN/ID), flag debug
+  `localStorage.rsx_debug="1"` mencetak diagnosa run (mode/reason/captured/estimate).
+- Catatan teknis: hindari nested template literal di `paginateGraphql` — extractor test
+  brace-aware belum menangani backtick bersarang.
+
+Test: suite **463 → 471** (+8: paginator incomplete & regresi complete, findTotalCount ×2,
+chooseDomBudget, composeReplayParams ×2, pre-seed store).
+
+### Audit arsitektur 4 lapis: eksekusi rekomendasi (R1–R5)
+Audit per lapisan menemukan + memperbaiki satu bug orkestrasi kritikal, lalu
+mengeksekusi lima rekomendasi:
+
+- **O-AUDIT (kritikal)**: fase DOM menimpa vonis GraphQL — `expandDomLoop` selalu
+  mengembalikan "complete" bila ada nama, sehingga `incomplete`/`timeout`/`rate_limit`
+  dari replay ditimpa jadi "Selesai". Guard `VERDICT_PRESERVED` (5 vonis) dipasang +
+  test kontrak sumber.
+- **R2/L2.1 — rotasi kandidat**: 3 halaman beruntun tanpa nama baru = cursor/template
+  tidak efektif → rotasi cepat ke kandidat cadangan (probe validasi, maks 2 rotasi,
+  lock feedback-id ikut diperbarui via `lockFeedbackId`), alih-alih menunggu guard idle
+  memutus seluruh fase. Test e2e: rantai tanpa ujung → rotasi → complete.
+- **R3/L1.2 — interleave kandidat sintetik**: pasangan doc×id diurutkan peringkat
+  gabungan dengan tie-break id utama; slot probe terbatas kini tetap menjangkau doc
+  fallback pada story id (dulu: doc pertama menghabiskan slot). Cap kandidat 3 → 5.
+  Test multi-id album + cycle sesi disesuaikan kontrak baru.
+- **R1/L3.2-L3.3 — buffer hemat memori**: prefilter `BUFFER_SHAPE` (bentuk komentar:
+  typename Comment / comment_parent / cursor key / feedbackID / author→name ≤600 char)
+  menggantikan pencocokan `"name"` longgar; cap 512 KB per entri buffer (live-harvest
+  tetap memproses teks penuh — pemotongan hanya untuk drain ulang). Unit test ×2 +
+  harness drain disesuaikan.
+- **R4/L1.1 — telemetri doc_id mati**: `probeStats` mencatat gagal probe per doc_id;
+  ikut dicetak pada dump `rsx_debug`.
+- **R5/L4.1-L4.2 — locale ES/PT/FR**: labelPattern scrape ("Comentario de…", dsb.),
+  regex sortir & "Semua Komentar" lintas bahasa diperluas.
+
+Test: suite **471 → 476** (+5: interleave multi-id, rotasi e2e, buffer ×2, guard
+verdict; fixture cycle/dispatcher disesuaikan kontrak).
+
+### Tuning struktur FB: gambar tunggal / album / reel / multi-foto (riset + penyesuaian)
+Riset ulang bentuk URL & perilaku pagination per jenis postingan (detail lengkap:
+`RESEARCH.md` §11 amendemen v1.0.58). Tiga bentuk URL struktur baru ditutup di blok
+FBURLS (3 salinan, parity tetap hijau):
+
+- **Multi-foto bentuk PATH** `/photos/pcb.<story>/<foto>/` — sangat umum saat share
+  korsel; sebelumnya MISS total → synthetic probe menyasar id salah. Kini story id
+  diekstrak (id foto sengaja bukan kandidat, konsisten bentuk query `set=pcb.`).
+- **Reel jamak** `/reels/<id>` — bentuk share reel modern; `/reel/` diperluas ke `/reels?/`.
+- **`?multi_permalinks=<id>(,<id>…)`** — plugin/embed page; token pertama yang dipakai.
+
+Perbaikan engine yang menyesuaikan struktur:
+
+- **Varian probe `feedLocation: "PERMALINK"`** (`forceFeedLocation`, baru) — sebagian
+  permalink foto tunggal/album menolak NEWSFEED dengan edges kosong walau feedback id
+  benar. Urutan varian per kandidat: UNFILTERED+NEWSFEED → template asli →
+  UNFILTERED+PERMALINK (probe memvalidasi; varian gagal = 1 request terbuang, aman).
+- Test: fixture FBURLS **24 → 29 kasus** (+3 unit `forceFeedLocation`); suite
+  **460 → 463**.
+
+### Tuning engine: rekap thread besar tidak lagi berhenti di 9–12 nama
+Laporan lapangan: postingan dengan 40–50+ pengulas kerap terekap 9–12 nama saja,
+dan jumlah komentar FB ≠ jumlah nama terekap bahkan setelah semua komentar dibuka.
+Empat akar masalah ditemukan & ditangani:
+
+- **`bumpPageSizes` (baru, inject-fb.js)** — template pagination hasil capture sering
+  membawa `first`/`count` kecil (5–10) → ratusan komentar butuh puluhan ronde request;
+  tiap ronde tambahan = peluang ekstra berhenti oleh guard idle/budget/waktu dengan hasil
+  parsial. Ukuran halaman kini dikepang ke **[25..50]** di titik tunggu replay GraphQL
+  (`graphqlReplay`, deep-copy — template tersimpan tidak termutasi). Thread 300 komentar:
+  ±12 ronde vs ±60 ronde sebelumnya. Unit test baru ×5 di `fb-engine-logic.test.mjs`.
+- **Guard idle lebih sabar (4 → 6 halaman)** — window hasil FB kadang tumpang-tindih
+  (re-ranking sortir "Semua Komentar") sehingga halaman bisa berisi nama lama padahal
+  thread belum tuntas; guard memotong run terlalu dini → rekap ~1 halaman (≈9–12 nama,
+  cocok dengan laporan). Naikkan threshold **identik di ketiga engine** (FB/TT/IG —
+  aturan parity), test `idle-grace` disesuaikan (threshold, simulasi & ekspektasi halaman).
+- **Budget balasan naik (25 target / 40 req → 50 target / 100 req)** — angka "X komentar"
+  di FB ikut menghitung balasan; cap lama membuat pengulas lewat balasan sering tidak
+  masuk rekap pada thread ramai.
+- **DOM pass lebih dalam** — ambang deep-DOM `< 8` → `< 25` nama (budget 45 dtk): bila
+  GraphQL hanya memperoleh sebagian, pass DOM yang mengklik "Lihat komentar lainnya" +
+  scroll tetap menyempurnakan — terasa saat operator sudah membuka semua komentar manual.
+- **Catatan selisih wajib diketahui** (di-dokumentasikan di README): angka komentar FB =
+  top-level + balasan + komentar tersembunyi/spam yang **tidak pernah** dikirim API/HTML
+  ke browser mana pun + duplikasi nama orang berbeda terdedupe by-design — selisih kecil
+  normal; selisih besar (9 vs 40+) adalah bug pagination di atas dan kini tertangani.
+- Test: suite **455 → 460** (+5 bumpPageSizes); parity idle & paginateGraphql end-to-end
+  tetap hijau.
+
+### Audit UI/UX ekstensi: metadata, popup, panel 3 platform
+- **Metadata manifest**: deskripsi diperbarui (tidak lagi menyebut "salin ke Excel" yang sudah dihapus sejak v1.0.57 → alur kini kirim otomatis ke ReSo); mojibake `\u00e2\u20ac\u201d` pada `commands.description` diperbaiki menjadi em-dash sah (tampil benar di `chrome://extensions/shortcuts`).
+- **Anti-drift versi**: manifest sumber tersinkron ke `package.json` (1.0.57; sebelumnya tertinggal di 1.0.52) + test baru "versi manifest.json = package.json" di `manifest-schema.test.mjs` — mencegah load-unpacked dari folder sumber menampilkan versi salah.
+- **Popup**: domain default kini di-import dari satu sumber (`shared-module.js`) bukan literal duplikat; status koneksi yang gagal probe tidak lagi hilang diam-diam ("Status ReSo tidak tersedia…"); toggle punya indikator `:focus-visible`; tombol **Putuskan** memakai konfirmasi dua-klik ("Yakin putuskan?" 3 dtk) seperti idiom double-confirm aplikasi web.
+- **Panel FB/TikTok/IG (identik ×3, aturan anti-drift §3)**:
+  - **Guard Esc** — Esc menutup panel hanya bila fokus TIDAK ada di `input`/`textarea`/`select`/`contenteditable` halaman (mengetik komentar tidak lagi ikut menutup panel).
+  - **Cooldown komunikatif** — tombol Kirim `disabled` selama cooldown dan status menghitung mundur sisa detik tiap 1 dtk (ticker kosmetik; timer utama tetap dijadwalkan pertama sehingga kontrak stub-timer test `scheduledTimers[0].ms ≈ durasi penuh` tidak berubah). Reset/run baru melepas kunci lebih awal.
+  - **Link "Buka rekap di ReSo →"** — muncul setelah kirim sukses, href = domain terpelajari (`getResoUrl()`), tersembunyi saat run baru/reset; style `.fnk-link/.tnk-link/.ing-link` di ketiga CSS.
+- **Harness test disesuaikan**: `makePanelRenderer` mendefinisikan closure baru `cooldownActive` & `openResoUrl`. Test: suite **454 → 455** (+1 guard versi).
+- **Dokumen**: `CONSISTENCY.md` §1.3 ditulis ulang untuk panel minimal 3 aksi (+ link open-reso) dan §2.6 menambah kontrak guard Esc + cooldown; README dapat tabel justifikasi permission (least-privilege) dan catatan rilis versi.
+
 ## [1.0.57] — 23 Agustus 2026
 
 ### Panel minimal: hapus tombol "Rekap ambil nama" & "Salin ke clipboard"
