@@ -891,3 +891,153 @@ test("findTotalCountTT: top-level & nested .data.total; invalid → 0", () => {
   assert.equal(findTotalCountTT({}), 0);
   assert.equal(findTotalCountTT(null), 0);
 });
+
+// ===================== S4-AUDIT-TT: paginateList e2e (stub fetch/backoff) =====================
+// Menutup test gap: cabang kejujuran (incomplete), explicit end, clamp count
+// yang benar-benar terkirim, sentinel synthetic_failed, dan regresi heartbeat
+// 429 (bug kindTag out-of-scope). Fungsi ASLI diekstrak; jaringan di-stub.
+
+async function makeTtPaginator(OPTS = {}) {
+  const TPL =
+    "https://www.tiktok.com/api/comment/list/?aweme_id=111&count=" +
+    (OPTS.templateCount ?? 99);
+  const fnSrc = [
+    "const window = { postMessage: (d) => posts.push(d) };",
+    "const document = { querySelector: () => null, querySelectorAll: () => [] };",
+    'const SOURCE = "tt-nama-komentar-inject";', // dipakai post()
+    "let running = true;",
+    "let stopFlag = false;",
+    "const nameMap = new Map();",
+    "let lastNewAt = 0;", // basi → grace nonaktif → idle naik deterministik
+    "let includeReplies = false;",
+    "let requestBudget = 0;",
+    "let currentRunId = 'R1';",
+    "const posts = [];",
+    "const calls = [];",
+    extract("normalizeNickname"),
+    extract("addName"),
+    extract("snapshot"),
+    extract("post"),
+    extract("parseTikTokComments"),
+    extract("ingestCommentArrays"),
+    extract("parsePage"),
+    extract("findTotalCountTT"),
+    extract("buildUrl"),
+    "const scrapeDomNicknames = () => 0;",
+    "const tryOpenComments = async () => false;",
+    "const sleepWhile = async () => true;",
+    // Stub jaringan: halaman dipetakan dari angka cursor; opsi lontaran error.
+    "const fetchJsonWithBackoff = async (url) => {",
+    "  const u = new URL(url);",
+    "  const cur = Number(u.searchParams.get('cursor') || 0);",
+    "  calls.push({",
+    "    cursor: cur,",
+    "    count: u.searchParams.get('count'),",
+    "    reply: u.pathname.includes('/reply'),",
+    "  });",
+    "  if (OPTS.throwPlainAtCursor === cur) throw new Error('x');",
+    "  if (OPTS.rateLimitAtCursor === cur) {",
+    "    const e = new Error('Rate limit TikTok (HTTP 429)');",
+    "    e.kind = 'rate_limit';",
+    "    throw e;",
+    "  }",
+    "  const raw = (OPTS.pages && OPTS.pages[cur]) || { comments: [], has_more: true };",
+    "  return JSON.parse(JSON.stringify(raw));",
+    "};",
+    // Ekstraktor file ini tidak mempertahankan modifier `async` — kembalikan
+    // secara eksplisit (paginateList memakai `await`).
+    extract("paginateList").replace(/^function /, "async function "),
+    "return { run: (maxMs, opts) => paginateList(TPL, '111', maxMs, opts), posts, calls };",
+  ].join("\n");
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const fn = new AsyncFunction("OPTS", "TPL", fnSrc);
+  console.log("DBGTAIL:", JSON.stringify(fnSrc.slice(-220)));
+  const res = await fn(OPTS, TPL);
+  console.log("DBGRES:", typeof res, res && Object.keys(res));
+  return res;
+}
+
+const ttPage = ({ nick, hasMore, cursor, total }) =>
+  JSON.stringify({
+    comments: [{ user: { nickname: nick } }],
+    has_more: hasMore,
+    cursor,
+    total,
+  });
+
+test("paginateList TT e2e: explicit end → complete; count ter-clamp 50; estimasi ±total tampil", async () => {
+  const h = await makeTtPaginator({
+    templateCount: 99,
+    pages: {
+      0: JSON.parse(
+        ttPage({ nick: "n0", hasMore: true, cursor: 30, total: 400 })
+      ),
+      30: JSON.parse(
+        ttPage({ nick: "n30", hasMore: false, cursor: 60, total: 400 })
+      ),
+    },
+  });
+  console.log("DBGKEYS:", JSON.stringify(h && Object.keys(h)));
+  const reason = await h.run(150_000);
+  // Clamp [30..50]: template membawa count=99 → terkirim 50
+  for (const c of h.calls) assert.equal(c.count, "50");
+  assert.ok(
+    h.posts.some((p) => /±400 komentar di video/.test(p.message || "")),
+    "estimasi ±total harus muncul di progres"
+  );
+});
+
+test("paginateList TT e2e: idle tanpa nama baru → incomplete (bukan done palsu)", async () => {
+  const pages = {};
+  let cur = 0;
+  for (let i = 0; i < 9; i++) {
+    pages[cur] = JSON.parse(
+      ttPage({ nick: "sama", hasMore: true, cursor: cur + 30, total: 1000 })
+    );
+    cur += 30;
+  }
+  const h = await makeTtPaginator({ pages });
+  const reason = await h.run(150_000);
+  assert.equal(reason, "incomplete");
+});
+
+test("paginateList TT e2e: halaman kosong berulang → incomplete", async () => {
+  const pages = {
+    0: JSON.parse(ttPage({ nick: "", hasMore: true, cursor: 30, total: 500 })),
+    30: JSON.parse(ttPage({ nick: "", hasMore: true, cursor: 60, total: 500 })),
+    60: JSON.parse(ttPage({ nick: "", hasMore: true, cursor: 90, total: 500 })),
+  };
+  const h = await makeTtPaginator({ pages });
+  const reason = await h.run(150_000);
+  assert.equal(reason, "incomplete");
+});
+
+test("paginateList TT e2e: gagal pertama mode synthetic → sentinel synthetic_failed", async () => {
+  const h = await makeTtPaginator({ throwPlainAtCursor: 0 });
+  const reason = await h.run(150_000, { synthetic: true });
+  assert.equal(reason, "synthetic_failed");
+});
+
+test("paginateList TT e2e: rate_limit diteruskan (regresi kindTag via kontrak sumber)", async () => {
+  const h = await makeTtPaginator({ rateLimitAtCursor: 0 });
+  const reason = await h.run(150_000);
+  assert.equal(reason, "rate_limit");
+});
+
+// Kontrak sumber: heartbeat 429 TIDAK boleh memakai kindTag (scope runExtract).
+test("kontrak sumber: fetchJsonWithBackoff bebas kindTag (anti-regresi scope)", () => {
+  const i = src.indexOf("async function fetchJsonWithBackoff");
+  assert.ok(i >= 0);
+  const open = src.indexOf("{", i);
+  let depth = 0;
+  let k = open;
+  for (; k < src.length; k++) {
+    if (src[k] === "{") depth++;
+    else if (src[k] === "}") {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  const body = src.slice(i, k + 1);
+  assert.ok(!body.includes("kindTag"), "heartbeat 429 wajib pakai activeAwemeId");
+});

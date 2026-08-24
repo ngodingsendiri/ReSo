@@ -38,6 +38,35 @@ Semua saran hasil audit mesin dieksekusi. Sorotan per item:
 Test: suite **463 → 471** (+8: paginator incomplete & regresi complete, findTotalCount ×2,
 chooseDomBudget, composeReplayParams ×2, pre-seed store).
 
+### Audit + penyempurnaan TikTok: reason `live`, fairness balasan, scope scrape, e2e paginateList
+Eksekusi penuh saran audit TT:
+
+- **S1 — early-exit siaran live**: halaman `/@user/live` kini berhenti instan dengan
+  stopReason **`live`** + pesan dedikasi ("Siaran LIVE tidak memiliki kolom komentar
+  permanen…") — menghemat ~60 dtk loop sia-sia per klik. Kontrak disebarkan:
+  DONEMSG ×4, mapDone ×3, statusFromReason background, matriks CONSISTENCY §2.2.
+- **S2 — embed fast-path**: halaman embed tanpa panel komentar DOM melewati
+  tryOpenComments/polling/scrape; bila synthetic gagal → ERROR dengan panduan
+  "buka halaman video/foto biasa" (mode scroll mustahil di embed).
+- **S3 — scope scrape ke kontainer**: `scrapeDomNicknames` membatasi ke
+  `[data-e2e=comment-list|comment-container|CommentList]` bila ada (fallback
+  document) — menutup over-count dari konten di luar panel.
+- **S5 — fairness balasan**: `perParentReplyCap` = min(8, max(2, ceil(70/parent)))
+  — parent terakhir di thread panjang tidak lagi kelaparan budget.
+- **Bug kritikal (temuan audit)**: heartbeat backoff-429 memakai `kindTag` yang
+  hanya ada di runExtract → ReferenceError memutus loop backoff saat rate limit.
+  Kembali ke `activeAwemeId` level modul + kontrak sumber anti-regresi.
+- **Semantik empty-page diselaraskan IG**: kosong berulang + has_more=true =
+  `incomplete`; tanpa has_more = `complete` (sinyal server menang atas nameMap).
+- **Test gap ditutup (S4)**: harness e2e `makeTtPaginator` (AsyncFunction + stub
+  fetch/backoff) mencabut 5 skenario — explicit end→complete (+clamp count=50
+  terkirim nyata + estimasi ±total), idle→incomplete, empty→incomplete,
+  synthetic sentinel, rate_limit passthrough. Pelajaran: extractor TT tak
+  mempertahankan `async`, TPL wajib disuntik sebagai parameter, dan panggilan
+  harness wajib di-await.
+
+Test: suite **509 → 515** (+6 net: e2e ×5 + live kontrak; beberapa test direvisi).
+
 ### Mesin TikTok terpersonalisasi per struktur konten (video / foto / embed / share / live)
 Riset kondisi TikTok: SATU endpoint komentar (`/api/comment/list/?aweme_id=`)
 melayani SEMUA jenis postingan — video, foto/korsel, bahkan embed; yang membedakan

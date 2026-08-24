@@ -272,8 +272,7 @@
     return [...nameMap.values()];
   }
 
-  // ---------------- Riset struktur konten TikTok (v1.0.58-TT) ----------------
-  // Satu endpoint komentar untuk SEMUA jenis postingan (video, foto/korsel,
+  // ---------------- Riset struktur konten TikTok (v1.0.58-TT) ----------------  // Satu endpoint komentar untuk SEMUA jenis postingan (video, foto/korsel,
   // embed): /api/comment/list/?aweme_id=<id> — yang membedakan hanya bentuk
   // URL sumber dan permukaan DOM:
   //   • Video  : /@user/video/<id>          (kanonik)
@@ -674,8 +673,15 @@
   }
 
   function scrapeDomNicknames() {
-    // Fallback: visible comment author names in DOM
+    // S3-AUDIT: batasi scope ke kontainer komentar bila ada — selector
+    // `class*="Comment"` longgar bisa menghisap username dari konten di luar
+    // panel (feed/next-up) → over-count. Fallback document bila tak ketemu.
     let added = 0;
+    const scopeEl =
+      document.querySelector(
+        '[data-e2e="comment-list"], [data-e2e="comment-container"], [class*="CommentList"]'
+      ) || null;
+    const root = scopeEl || document;
     const sels = [
       '[data-e2e="comment-username-1"]',
       '[data-e2e="comment-username-2"]',
@@ -683,7 +689,7 @@
       'div[class*="Comment"] a[href*="/@"]',
     ];
     for (const sel of sels) {
-      document.querySelectorAll(sel).forEach((el) => {
+      root.querySelectorAll(sel).forEach((el) => {
         const t = (el.innerText || el.textContent || "").trim();
         // Prefer title/aria if text is @handle — still take visible label
         const aria = el.getAttribute("aria-label") || "";
@@ -830,14 +836,22 @@
         videoHint: awemeId,
       });
 
-      // Optional replies for this page's parents — budget terpisah 40 request/run
+      // Optional replies for this page's parents — budget terpisah 70 req/run.
+      // S5-AUDIT: fairness per-parent — budget dibagi merata utk parent di
+      // halaman ini (min 2, maks 8 halaman/parent) agar parent terakhir di
+      // thread panjang tidak kelaparan.
       if (includeReplies && page.replyTargets?.length) {
+        const parentsOnPage = page.replyTargets.length;
+        const perParentCap = Math.min(
+          8,
+          Math.max(2, Math.ceil(REPLY_BUDGET / Math.max(1, parentsOnPage)))
+        );
         for (const t of page.replyTargets) {
           if (stopFlag) break;
           if (replyRequests >= REPLY_BUDGET) break;
           let rCursor = 0;
           let rGuard = 0;
-          while (rGuard < 8 && !stopFlag) {
+          while (rGuard < perParentCap && !stopFlag) {
             rGuard++;
             if (replyRequests >= REPLY_BUDGET || requestBudget >= 350) break;
             const rUrl = buildUrl(templateUrl, {
@@ -889,7 +903,9 @@
           await sleepWhile(2500);
           continue;
         }
-        reason = nameMap.size ? "incomplete" : "error";
+        // Sinyal server menang: has_more=true + kosong terus = truncation
+        // (incomplete); tanpa has_more = memang selesai. Parity IG.
+        reason = page.hasMore ? "incomplete" : "complete";
         break;
       }
       emptyPages = 0;
@@ -938,6 +954,7 @@
     activeAwemeId = options.awemeId || extractAwemeId(location.href);
     // Riset v1.0.58-TT: jenis konten utk hint panel (foto/embed).
     const postKind = detectTTKind(location.href) || "video";
+    const isEmbed = postKind === "embed";
     const kindTag =
       postKind === "photo" ? "[foto] " : postKind === "embed" ? "[embed] " : "";
     lastNewAt = Date.now();
@@ -976,9 +993,26 @@
         return;
       }
 
-      for (let i = 0; i < 3; i++) {
-        if (await tryOpenComments()) break;
-        if (!(await sleepWhile(700))) break;
+      // S1-AUDIT-TT: siaran live tidak punya kolom komentar permalink —
+      // berhenti instan dengan pesan spesifik (hindari ~60 dtk loop sia-sia).
+      if (postKind === "live") {
+        if (stillMine()) {
+          post("DONE", {
+            names: snapshot(),
+            stopReason: "live",
+            videoHint: kindTag + activeAwemeId,
+          });
+        }
+        return;
+      }
+
+      // S2-AUDIT-TT: halaman embed tidak punya panel komentar DOM —
+      // lewati seluruh upaya buka-panel/scrape UI; andalkan API murni.
+      if (!isEmbed) {
+        for (let i = 0; i < 3; i++) {
+          if (await tryOpenComments()) break;
+          if (!(await sleepWhile(700))) break;
+        }
       }
       scrapeDomNicknames();
       await sleepWhile(500);
@@ -987,7 +1021,8 @@
 
       // Poll for template after opening comments (background may capture mid-flight)
       // T1-AUDIT: 16×250ms = 4 dtk — lapis synthetic mengambil alih setelahnya.
-      if (!templateUrl) {
+      // S2: embed tidak memicu traffic komentar UI → polling sia-sia.
+      if (!templateUrl && !isEmbed) {
         post("NEED_TEMPLATE", { awemeId: activeAwemeId });
         for (let i = 0; i < 16 && !stopFlag; i++) {
           if (!(await sleepWhile(250))) break;
@@ -1078,9 +1113,18 @@
           );
           scrapeDomNicknames();
           if (stillMine()) {
-            // Gagal total di mode synthetic → serahkan ke mode scroll (nama
-            // yang sudah terkumpul tetap di map, tidak dibuang).
+            // Gagal total di mode synthetic:
+            //  • embed → scroll mustahil (tak ada panel DOM) → panduan eksplisit
+            //  • lainnya → serahkan ke mode scroll (nama terkumpul tetap ada)
             if (synthReason === "error" && nameMap.size === 0) {
+              if (isEmbed) {
+                post("ERROR", {
+                  message:
+                    "Embed TikTok tidak menampilkan panel komentar — buka halaman video/foto biasa, lalu Proses lagi.",
+                  stopReason: "error",
+                });
+                return;
+              }
               await runPureDomMode();
               return;
             }
@@ -1097,6 +1141,17 @@
       }
 
       if (!templateUrl) {
+        // S2-AUDIT-TT: embed tanpa template → scroll mustahil; panduan langsung.
+        if (isEmbed) {
+          if (stillMine()) {
+            post("ERROR", {
+              message:
+                "Embed TikTok tidak menampilkan panel komentar — buka halaman video/foto biasa, lalu Proses lagi.",
+              stopReason: "error",
+            });
+          }
+          return;
+        }
         await runPureDomMode();
         return;
       }

@@ -72,11 +72,13 @@ FAB     : forum + data-count badge
 - Copy/merge wajib menghormati filter aktif (`vis.length`, bukan `names.length`).
 
 ### 2.2 stopReason & status akhir — matriks tunggal
-- Kumpulan reason: `complete, idle, incomplete, stopped, timeout, rate_limit, blocked, checkpoint,
+- Kumpulan reason: `complete, idle, incomplete, live, stopped, timeout, rate_limit, blocked, checkpoint,
   no_template, no_video, no_login, no_media, error`.
   **`incomplete` (v1.0.58, FB + IG + TT)** = loop berhenti via guard/idle/cursor-stuck TANPA pernah
   melihat ujung thread (`has_next_page:false` / `has_more:false`) — hasil mungkin belum lengkap;
   WAJIB partial/error, tidak boleh dianggap done (anti "9–12 nama tapi hijau").
+  **`live` (v1.0.58-TT)** = halaman siaran live tidak punya endpoint komentar permalink → error
+  instan dengan pesan spesifik (hindari ~60 dtk loop sia-sia).
 - Pemetaan status (harus sama di `statusFromReason` background, `mapDone` panel, dan CSS):
   - `stopped` → stopped  · `timeout` → partial
   - `incomplete` → partial bila ada hasil, error bila kosong

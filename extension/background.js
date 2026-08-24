@@ -432,6 +432,8 @@ function statusFromReason(reason, count) {
   if (reason === "timeout") return "partial";
   // Pagination berhenti sebelum ujung thread terlihat — jangan pernah "done".
   if (reason === "incomplete") return count > 0 ? "partial" : "error";
+  // Siaran live tidak punya kolom komentar permalink.
+  if (reason === "live") return "error";
   if (reason === "rate_limit") return count > 0 ? "partial" : "error";
   if (reason === "blocked") return count > 0 ? "partial" : "error";
   if (reason === "checkpoint") return count > 0 ? "partial" : "error";

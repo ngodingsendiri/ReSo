@@ -509,6 +509,10 @@ function doneMessage(reason, count, platform, options) {
   if (reason === "no_media") {
     return "Buka halaman post/reel Instagram dulu (URL /p/... atau /reel/...).";
   }
+  if (reason === "live") {
+    // S1-AUDIT-TT: siaran live tidak punya kolom komentar permalink.
+    return "Siaran LIVE TikTok tidak memiliki kolom komentar permanen — buka salah satu video/foto, lalu Proses lagi.";
+  }
   return c ? `${c} ${word}` : "Siap.";
 }
 // END-RESO-DONEMSG
