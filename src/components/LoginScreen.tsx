@@ -60,7 +60,7 @@ export default function LoginScreen({ externalError }: LoginScreenProps) {
         <img src={appLogo} alt="ReSo" className="w-16 h-16 object-contain mx-auto mb-5" />
         <h1 className="text-2xl font-bold text-center text-slate-900 mb-1">ReSo</h1>
         <p className="text-center text-slate-500 text-sm mb-6 leading-relaxed">
-          Rekap Engagement Sosmed Diskominfo.
+          Rekap Engagement Sosmed.
           <br />
           Masuk dengan akun Google.
         </p>

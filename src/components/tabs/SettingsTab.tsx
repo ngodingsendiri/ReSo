@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { RefreshCw, KeyRound, Download, ExternalLink, Database, Loader2, Trash2, CheckCircle2, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { RefreshCw, KeyRound, Download, ExternalLink, Database, Loader2, Trash2, CheckCircle2, Eye, EyeOff, AlertTriangle, Link as LinkIcon } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner';
 import { useAuth } from '../FirebaseProvider';
 import { APP_VERSION } from '../../lib/version';
 import { useAppLogo } from '../../hooks/useAppLogo';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 interface SettingsTabProps {
   recalculateConfig: { mode: 'last_day' | 'last_week' };
@@ -71,11 +72,50 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   isSavingToken,
   recalcResult,
 }) => {
-  const { provisionError, retryProvision } = useAuth();
+  const { provisionError, retryProvision, user, db } = useAuth();
   const [provisioning, setProvisioning] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [recalcConfirm, setRecalcConfirm] = useState(false);
   const appLogo = useAppLogo();
+  const [socialLinks, setSocialLinks] = useState({ ig: '', fb: '', tiktok: '' });
+  const [isSavingSocial, setIsSavingSocial] = useState(false);
+
+  useEffect(() => {
+    if (!user || !db) return;
+    const load = async () => {
+      try {
+        const docRef = doc(db, 'settings', 'social_links');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data() as { ig?: string; fb?: string; tiktok?: string };
+          setSocialLinks({
+            ig: data.ig || '',
+            fb: data.fb || '',
+            tiktok: data.tiktok || ''
+          });
+        }
+      } catch {
+        // ignore
+      }
+    };
+    load();
+  }, [user, db]);
+
+  const handleSaveSocialLinks = async () => {
+    if (!user || !db) return;
+    setIsSavingSocial(true);
+    try {
+      await setDoc(doc(db, 'settings', 'social_links'), {
+        ...socialLinks,
+        updatedAt: serverTimestamp()
+      });
+      toast.success('Link sosial media disimpan');
+    } catch {
+      toast.error('Gagal menyimpan link');
+    } finally {
+      setIsSavingSocial(false);
+    }
+  };
 
   const handleRetryProvision = async () => {
     setProvisioning(true);
@@ -305,6 +345,59 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </SettingRow>
           </div>
 
+          {/* ── Sosial Media ── */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sosial Media</span>
+              <div className="flex-1 h-px bg-slate-100" />
+            </div>
+
+            <SettingRow
+              icon={<LinkIcon size={18} />}
+              iconClass="bg-indigo-50 text-indigo-600 border-indigo-100"
+              title="Link Sosial Media Instansi"
+              desc="Masukkan URL profil sosial media instansi/lembaga (opsional)."
+            >
+              <div className="flex flex-col gap-2 w-full">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Instagram</label>
+                  <input
+                    value={socialLinks.ig || ''}
+                    onChange={(e) => setSocialLinks(prev => ({ ...prev, ig: e.target.value }))}
+                    placeholder="https://instagram.com/..."
+                    className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Facebook</label>
+                  <input
+                    value={socialLinks.fb || ''}
+                    onChange={(e) => setSocialLinks(prev => ({ ...prev, fb: e.target.value }))}
+                    placeholder="https://facebook.com/..."
+                    className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">TikTok</label>
+                  <input
+                    value={socialLinks.tiktok || ''}
+                    onChange={(e) => setSocialLinks(prev => ({ ...prev, tiktok: e.target.value }))}
+                    placeholder="https://tiktok.com/@..."
+                    className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
+                </div>
+                <Button
+                  onClick={handleSaveSocialLinks}
+                  disabled={isSavingSocial}
+                  size="sm"
+                  className="w-full font-bold h-9 rounded-xl bg-slate-900 text-white"
+                >
+                  {isSavingSocial ? 'Menyimpan…' : 'Simpan Link'}
+                </Button>
+              </div>
+            </SettingRow>
+          </div>
+
           {/* ── Tentang ── */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
@@ -317,7 +410,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <div className="min-w-0 flex-1">
                 <h3 className="font-bold text-sm text-slate-900">ReSo — Rekap Engagement Sosmed</h3>
                 <p className="text-xs text-slate-500 leading-snug mt-0.5">
-                  Aplikasi internal Diskominfo untuk merekap engagement pegawai ke media sosial.
+                  Aplikasi rekap engagement pegawai ke media sosial.
                 </p>
               </div>
               <div className="shrink-0 text-right">
