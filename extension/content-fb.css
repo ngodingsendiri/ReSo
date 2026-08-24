@@ -281,6 +281,23 @@
   gap: 6px;
 }
 
+/* Link "Buka rekap di ReSo" — tampil hanya setelah kirim sukses */
+#fnk-root .fnk-link {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rs-accent);
+  text-decoration: none;
+  border-radius: 6px;
+}
+
+#fnk-root .fnk-link:hover {
+  text-decoration: underline;
+}
+
 #fnk-root .fnk-btn {
   border: 1px solid var(--rs-line);
   background: var(--rs-card);

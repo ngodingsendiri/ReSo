@@ -28,17 +28,19 @@ Yang **boleh berbeda** (identitas brand platform):
 - `--rs-accent-2` + `--rs-on-accent-2` (warna "sukses/siap" per platform)
 
 ### 1.3 Struktur panel — urutan wajib identik
+> v1.0.57: panel **minimal 3 aksi** — tools (search/sort), list preview, dan badge API
+> dihapus dari template. v1.0.58 menambah link `open-reso` setelah `actions`.
 ```
-header  : logo-ic (ikon platform) · title · tombol min (close)
-body    : status → hint → count → badge API → check "Balasan" →
-          tools (search · sort) → list (preview) → actions
-actions : send (Rekap + Kirim ke ReSo) · stop · reset (restart_alt)  [grid 3 kolom]
+header  : logo-ic (ikon platform) → title → tombol min (close)
+body    : status → count → check "Balasan" → actions → link open-reso (hidden default)
+actions : send (Rekap + Kirim ke ReSo) → stop → reset (restart_alt)  [grid 3 kolom]
 FAB     : forum + data-count badge
 ```
 - Ikon tombol aksi **tidak boleh beda urutan/lambang** antar platform.
-- Count: angka besar + kata kecil ("0 nama" / "0 username"); saat filter aktif tampilkan
-  "X dari N <kata>".
-- Badge API: ikon `check_circle` + "Siap" / `error` + "Belum", kelas `-ok`/`-warn`.
+- Count: angka besar + kata kecil ("0 nama" / "0 username").
+- Link `open-reso` ("Buka rekap di ReSo →"): hanya tampil setelah **kirim sukses**;
+  href = domain terpelajari (`getResoUrl()`); disembunyikan lagi saat run baru mulai
+  atau reset (`openResoUrl: ""`).
 
 ### 1.4 Warna status — identik lintas platform
 | Status | Count | Catatan |
@@ -70,10 +72,14 @@ FAB     : forum + data-count badge
 - Copy/merge wajib menghormati filter aktif (`vis.length`, bukan `names.length`).
 
 ### 2.2 stopReason & status akhir — matriks tunggal
-- Kumpulan reason: `complete, idle, stopped, timeout, rate_limit, blocked, checkpoint,
+- Kumpulan reason: `complete, idle, incomplete, stopped, timeout, rate_limit, blocked, checkpoint,
   no_template, no_video, no_login, no_media, error`.
+  **`incomplete` (v1.0.58, FB)** = loop berhenti via guard/idle/cursor-stuck TANPA pernah
+  melihat `has_next_page:false` — hasil mungkin belum lengkap; WAJIB partial/error,
+  tidak boleh dianggap done (anti "9–12 nama tapi hijau").
 - Pemetaan status (harus sama di `statusFromReason` background, `mapDone` panel, dan CSS):
-  - `stopped` → stopped · `timeout` → partial
+  - `stopped` → stopped  · `timeout` → partial
+  - `incomplete` → partial bila ada hasil, error bila kosong
   - `rate_limit` / `blocked` / `checkpoint` → partial bila ada hasil, error bila kosong
   - `error, no_template, no_video, no_login, no_media` → error
   - `complete` / `idle` → done bila ada hasil, error bila kosong
@@ -111,8 +117,14 @@ FAB     : forum + data-count badge
 ### 2.6 Model interaksi
 - Klik FAB / chip = **buka panel** saja (tidak memulai proses).
 - Esc / tombol min = tutup panel. Panel tidak pernah auto-buka sendiri.
+  **Guard Esc (v1.0.58)**: Esc diabaikan bila fokus ada di `input`/`textarea`/`select`
+  atau elemen `contenteditable` halaman (kolom komentar milik user, bukan panel).
 - Selama `running`: tombol process → spinner (`progress_activity`), tombol stop muncul,
   FAB berdenyut; status "Menghentikan…" saat stop ditekan.
+- **Cooldown antar-run (v1.0.58)**: tombol Kirim `disabled` selama cooldown, dan status
+  menghitung mundur sisa detik tiap 1 dtk (ticker kosmetik — logika tetap pada timer
+  utama cooldown yang dijadwalkan lebih dulu; kontrak stub timer test tetap indeks-0 =
+  durasi penuh). Reset / run baru melepas kunci lebih awal.
 - Toggle "Sertakan balasan": menyimpan pref seketika (`SET_STATE`) di popup &
   ketiga panel — default per platform FB on / TT-IG off (dapat diubah di Options).
 - Indikator status `stopped` → accent (count) + FAB hijau bila ada hasil

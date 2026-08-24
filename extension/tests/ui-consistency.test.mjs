@@ -840,6 +840,9 @@ function makePanelRenderer(platform, opts = {}) {
     `let names = ${JSON.stringify(opts.names ?? [])};`,
     `let message = "";`,
     `let includeReplies = ${JSON.stringify(!!opts.includeReplies)};`,
+    // State panel v1.0.58: kunci tombol saat cooldown + link "Buka rekap".
+    `let cooldownActive = false;`,
+    `let openResoUrl = "";`,
     `
   function makeEl() {
     const cls = new Set();

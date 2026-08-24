@@ -57,6 +57,22 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
 - **Idempoten**: kirim ulang hanya meng-update rekap (dedupe nama
   case-insensitive + hitung ulang pegawai terlibat di sisi server).
 
+## Permission & Alasan (least privilege)
+
+Ekstensi ini tidak punya telemetry dan tidak mengirim data ke server mana pun
+selain domain ReSo milikmu sendiri. Daftar izin di manifest beserta alasan pemakaiannya:
+
+| Permission | Dipakai untuk |
+|---|---|
+| `storage` | Preferensi panel (tema, balasan), sesi token ReSo, domain terpelajari (`resoUrl`), antrian kiriman gagal (`resoPending`) |
+| `scripting` | Inject `content-reso.js` secara dinamis ke domain ReSo yang dipin/dipelajari (jalur handoff token) |
+| `tabs` | Mencari tab ReSo yang sudah login untuk handoff; membuka tab dari popup |
+| `webRequest` | **Observasional saja** — menangkap bentuk URL API komentar IG/TikTok sebagai template pagination ulang; tidak membaca header/isi |
+| `cookies` | Pre-check login sebelum run (keberadaan cookie sesi FB/IG/TT) — status dibaca lokal, nilainya tidak dikirim ke mana pun |
+| `alarms` | Kirim ulang antrian berkala (tiap 2 menit) saat ada kiriman tertunda |
+| host `facebook.com` / `tiktok.com` / `instagram.com` | Panel & engine ekstraksi di halaman postingan |
+| host domain ReSo | `POST /api/engagement` + probe `/api/health` + handoff token |
+
 ## Cara Pasang (Load Unpacked — disarankan)
 
 1. Buka `chrome://extensions`.
@@ -100,12 +116,37 @@ database ReSo via `POST /api/engagement` — tanpa membuka tab ReSo.
 3. Klik **Rekap + Kirim ke ReSo**, tunggu selesai — username (tanpa `@`) otomatis dikirim ke rekap ReSo.
 4. ⚠️ Instagram paling rentan rate-limit/checkpoint — ekstensi menunggu (backoff) saat 429, berhenti aman saat akun butuh verifikasi ("checkpoint"), saat IG meminta jeda ("Please wait…") atau membatasi akun ("FeedbackRequired"), dan saat permintaan diblokir anti-bot (HTTP 403 — diagnosis akurat, bukan keliru bilang "login"). Replay selalu menyasar post yang sedang dibuka (media_id ditulis ulang dari halaman); endpoint balasan punya fallback `child_comments/`; request menyertakan header `X-IG-WWW-Claim` seperti web IG asli. Ada **cooldown antar-run** (15 dtk, 60 dtk setelah rate limit) agar Proses beruntun tidak memicu checkpoint. Template komentar tidak lagi tertimpa post lain saat run aktif (guard mid-run), dan popup kini konsisten memakai kata "username".
 
+## Selisih Jumlah Komentar FB vs Nama Terekap (normal & tidak normal)
+
+**Selisih kecil itu normal.** Angka "X komentar" di FB menghitung:
+top-level + balasan + komentar yang **disembunyikan filter spam/restriksi akun**
+(komentar semacam ini tidak pernah dikirim FB ke browser mana pun — ekstensi
+mana pun tidak bisa mengambilnya) — dan rekap menghitung **nama unik**: dua
+orang berbeda dengan nama tampilan sama dihitung sekali.
+
+**Selisih besar (mis. 9–12 dari 40+) adalah bug** — sejak v1.0.58 engine memakai
+ukuran halaman minimal 25, guard idle lebih sabar (6 halaman), budget balasan 100,
+dan pass DOM lebih dalam. Bila masih terjadi:
+
+1. Pastikan di **permalink postingan** (bukan feed).
+2. Biarkan panel terbuka dan **jangan klik apa pun selama run berjalan** —
+   status menampilkan progres halaman ("GraphQL halaman N… M nama").
+3. Run berhenti `partial`/timeout? Tunggu cooldown selesai lalu **Proses lagi**
+   — pagination mulai dari halaman 1 dengan ukuran halaman penuh.
+
 ## Pengaturan (Options)
 
 Buka lewat **tombol ⚙ di popup**, atau `chrome://extensions` → **Details** → **Extension options**.
 
 - **Default "Sertakan balasan"** — set nilai awal checkbox reply untuk Facebook, TikTok, dan Instagram (dipakai popup, panel halaman, shortcut, dan menu klik kanan).
 - **Tema** — Sistem (ikut perangkat), Terang, atau Gelap; berlaku langsung di popup & panel tanpa reload.
+
+## Rilis & Versi
+
+- Naikkan versi di **`package.json` DAN `manifest.json` sekaligus** — test
+  `manifest-schema` menolak build bila keduanya tidak sinkron (anti-drift;
+  `stamp-version.mjs` hanya menulis `dist/` saat build).
+- Catat perubahan di `CHANGELOG.md` mengikuti format Keep a Changelog.
 
 ## Struktur Proyek
 

@@ -280,6 +280,23 @@
   gap: 6px;
 }
 
+/* Link "Buka rekap di ReSo" — tampil hanya setelah kirim sukses */
+#ing-root .ing-link {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rs-accent);
+  text-decoration: none;
+  border-radius: 6px;
+}
+
+#ing-root .ing-link:hover {
+  text-decoration: underline;
+}
+
 #ing-root .ing-btn {
   border: 1px solid var(--rs-line);
   background: var(--rs-card);

@@ -318,6 +318,9 @@ function makeFullHarness(platform, opts = {}) {
     `let engineReady = false;`,
     `let currentRunId = null;`,
     `let stopFinalizeTimer = null;`,
+    // State panel v1.0.58 (dipakai startExtract/rekapSend asli):
+    `let cooldownActive = false;`,
+    `let openResoUrl = "";`,
     `const COOLDOWN_MS = 15_000;`,
     `const COOLDOWN_RATE_LIMIT_MS = 60_000;`,
     `let lastRunEndAt = ${JSON.stringify(opts.lastRunEndAt || 0)};`,

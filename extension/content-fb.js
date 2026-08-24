@@ -160,6 +160,13 @@
         ? `Waktu habis — ${c} ${word} (mungkin belum semua).${extra} Klik Rekap + Kirim untuk mengirim.`
         : `Waktu habis — belum ada ${word}.${extra}`;
     }
+    if (reason === "incomplete") {
+      // Pagination berhenti sebelum FB menyatakan has_next_page:false —
+      // jangan beri kesan "selesai"; operator perlu tahu hasil bisa kurang.
+      return c
+        ? `Belum tuntas — ${c} ${word} terkumpul, thread belum terlihat habis. Proses lagi untuk melengkapi.`
+        : `Belum ada ${word} — pagination belum tuntas.${extra}`;
+    }
     if (reason === "idle" || reason === "complete") {
       if (c) return `Selesai — ${c} ${word}.${extra} Klik Rekap + Kirim untuk mengirim.`;
       if (tip) return `Tidak ada ${word}.${tip}`;
@@ -286,6 +293,7 @@
     if (patch.names) names = mergeNames(patch.names);
     if (patch.message != null) message = patch.message;
     if (patch.postHint != null) postHint = patch.postHint;
+    if (patch.openResoUrl != null) openResoUrl = patch.openResoUrl;
     if (typeof patch.includeReplies === "boolean") includeReplies = patch.includeReplies;
     renderUi();
   }
@@ -296,6 +304,11 @@
 
   /** Bumps on every start/stop so superseded async starts abort cleanly */
   let startGen = 0;
+
+  // Cooldown aktif → tombol Kirim disabled + ticker sisa detik di status.
+  let cooldownActive = false;
+  // URL rekap untuk link "Buka rekap" — terisi setelah kirim sukses.
+  let openResoUrl = "";
 
   /** Rekap + Kirim ke ReSo: ekstrak lalu otomatis kirim nama ke database. */
   async function rekapSend() {
@@ -326,11 +339,19 @@
     setLocalState({ message: "Mengirim ke ReSo…" });
     try {
       const out = await sh.sendNamesToResoApi("facebook", list, hint || {});
-      setLocalState({
+      const patch = {
         message:
           (hint && hint.label ? `Post ~${hint.label} — ` : "") +
           (out?.message || (out?.ok ? "Terkirim ke ReSo." : "Gagal kirim.")),
-      });
+      };
+      // Kirim sukses → sediakan pintasan "Buka rekap" (domain terpelajari).
+      if (out?.ok && typeof sh.getResoUrl === "function") {
+        try {
+          const url = await sh.getResoUrl();
+          if (url) patch.openResoUrl = url;
+        } catch { /* tanpa link — bukan fatal */ }
+      }
+      setLocalState(patch);
     } catch (e) {
       setLocalState({ message: `Gagal kirim ke ReSo: ${e?.message || e}` });
     }
@@ -374,18 +395,36 @@
         ? COOLDOWN_RATE_LIMIT_MS - sinceRl
         : Math.max(0, COOLDOWN_MS - sinceEnd);
     if (coolMs > 0) {
+      const endAt = nowC + coolMs;
       const waitSec = Math.ceil(coolMs / 1000);
+      cooldownActive = true;
       setLocalState({
         status: "idle",
         message: `Tunggu ${waitSec} dtk sebelum Proses lagi (cooldown anti rate-limit).`,
       });
+      // Timer utama dijadwalkan DULU (indeks-0 pada stub timer test): akhir
+      // cooldown → pesan siap + lepas kunci tombol Kirim.
       setTimeout(() => {
+        if (!cooldownActive) return;
+        cooldownActive = false;
         if (status !== "running") {
           setLocalState({
             message: "Cooldown selesai — klik Proses untuk mulai.",
           });
         }
       }, coolMs);
+      // Ticker tampilan: sisa detik berjalan tiap 1 dtk (kosmetik — logika
+      // tetap pada timer utama). Berhenti sendiri saat selesai / run mulai.
+      const tickCd = () => {
+        if (!cooldownActive || status === "running") return;
+        const left = Math.ceil((endAt - Date.now()) / 1000);
+        if (left <= 0) return;
+        setLocalState({
+          message: `Tunggu ${left} dtk sebelum Proses lagi (cooldown anti rate-limit).`,
+        });
+        setTimeout(tickCd, 1000);
+      };
+      setTimeout(tickCd, 1000);
       return;
     }
 
@@ -417,10 +456,12 @@
     }
 
     currentRunId = opts.runId || makeRunId();
+    cooldownActive = false;
     setLocalState({
       status: "running",
       names: [],
       message: "Menyiapkan engine…",
+      openResoUrl: "",
     });
     // tabId stamped by background from sender.tab
     const stRes = await sendBg("SET_STATE", {
@@ -514,6 +555,7 @@
 
   async function doReset() {
     startGen += 1;
+    cooldownActive = false;
     if (stopFinalizeTimer) {
       clearTimeout(stopFinalizeTimer);
       stopFinalizeTimer = null;
@@ -525,6 +567,7 @@
       names: [],
       message: "Buka 1 postingan Facebook, lalu klik Proses.",
       postHint: "",
+      openResoUrl: "",
     });
     await sendBg("RESET");
   }
@@ -589,6 +632,7 @@
             <button type="button" class="fnk-btn" data-fnk="stop" hidden title="Hentikan" aria-label="Hentikan">${svgIcon("stop")}</button>
             <button type="button" class="fnk-btn fnk-ghost" data-fnk="reset" title="Bersihkan hasil" aria-label="Bersihkan hasil">${svgIcon("restart_alt")}</button>
           </div>
+          <a class="fnk-link" data-fnk="open-reso" hidden target="_blank" rel="noopener noreferrer">Buka rekap di ReSo &rarr;</a>
         </div>
       </div>
       <button type="button" class="fnk-fab" data-fnk="fab" data-count="" title="Nama Komentar" aria-label="Buka panel Nama Komentar">${svgIcon("forum")}</button>
@@ -614,9 +658,13 @@
         sendBg("SET_STATE", { patch: { includeReplies } });
       }
     });
-    // Keyboard: Esc menutup panel (setara tombol min).
+    // Keyboard: Esc menutup panel (setara tombol min). Abaikan bila user
+    // sedang mengetik di input/textarea/contenteditable halaman (mis. kolom
+    // komentar FB) — Esc milik mereka, bukan panel.
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape" || !ui) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ""))) return;
       if (!ui.classList.contains("fnk-collapsed")) {
         ui.classList.add("fnk-collapsed");
       }
@@ -764,9 +812,10 @@
       /\/permalink\.php\?story_fbid=([^&#]+)/,
       /\/story\.php\?story_fbid=([^&#]+)/,
       /\/photos\/a\.\d+\.(\d+)/, // photos/a.<uid>.<fbid> (album foto)
+      /\/photos\/pcb\.(\d+)/, // photos/pcb.<story>[/<photo>] - multi-foto bentuk PATH (story = feedback post)
       /\/photos\/(\d+)/, // foto tunggal (id foto — probe memvalidasi)
       /\/videos\/(\d+)/,
-      /\/reel\/(\d+)/,
+      /\/reels?\/(\d+)/,
       /\/video\.php\?v=(\d+)/,
     ];
     for (const re of direct) {
@@ -784,9 +833,10 @@
     //      dan a.<album>.<user>.<story> (komponen terakhir = story id)
     try {
       const u = new URL(href);
-      for (const key of ["story_fbid"]) {
+      for (const key of ["story_fbid", "multi_permalinks"]) {
         const val = u.searchParams.get(key);
-        if (val) add(val);
+        // multi_permalinks bisa berisi daftar dipisah koma - ambil token pertama
+        if (val) add(val.split(",")[0].trim());
       }
       const set = u.searchParams.get("set") || "";
       const parts = String(set).split(".");
@@ -829,18 +879,27 @@
     const sendBtn = ui.querySelector('[data-fnk="process-send"]');
     const stopBtn = ui.querySelector('[data-fnk="stop"]');
     const fab = ui.querySelector('[data-fnk="fab"]');
+    const openResoEl = ui.querySelector('[data-fnk="open-reso"]');
     const n = (names || []).length;
     if (statusEl) statusEl.textContent = message;
     if (countEl) countEl.textContent = n ? `${n} nama` : `0 nama`;
     if (replies) replies.checked = includeReplies;
     const running = status === "running";
     if (sendBtn) {
-      sendBtn.disabled = running;
+      sendBtn.disabled = running || cooldownActive;
       const label = running ? "Memproses…" : "Rekap + Kirim ke ReSo";
       sendBtn.setAttribute("aria-label", label);
       sendBtn.title = label;
     }
     if (stopBtn) stopBtn.hidden = !running;
+    if (openResoEl) {
+      if (openResoUrl) {
+        openResoEl.href = openResoUrl;
+        openResoEl.hidden = false;
+      } else {
+        openResoEl.hidden = true;
+      }
+    }
     if (fab) {
       fab.setAttribute("data-count", n > 0 ? String(n) : "");
       fab.classList.toggle("fnk-running", running);
@@ -868,6 +927,7 @@
   function mapDone(stopReason, count) {
     if (stopReason === "stopped") return "stopped";
     if (stopReason === "timeout") return "partial";
+    if (stopReason === "incomplete") return count ? "partial" : "error";
     if (stopReason === "rate_limit") return count ? "partial" : "error";
     if (
       stopReason === "error" ||
