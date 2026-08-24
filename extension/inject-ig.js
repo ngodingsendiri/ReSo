@@ -285,7 +285,8 @@
       const entry = JSON.parse(raw);
       if (!entry || entry.key !== key || !Array.isArray(entry.names)) return null;
       if (!(entry.at > 0 && Date.now() - entry.at < 7 * 86400_000)) return null;
-      return entry.names.filter((n) => typeof n === "string" && n);
+      // Cap baca simetris dgn persist (jaga memori bila store dimanipulasi).
+      return entry.names.filter((n) => typeof n === "string" && n).slice(0, 2000);
     } catch {
       return null;
     }
@@ -419,11 +420,21 @@
     if (!text || !shortcode) return null;
     const scIdx = text.indexOf('"' + shortcode + '"');
     if (scIdx < 0) {
-      // Bentuk escaped (URL-encoded JSON di beberapa embed)
+      // Bentuk escaped (URL-encoded / plain tanpa kutip di beberapa embed)
       const esc = text.indexOf(shortcode);
       if (esc < 0) return null;
       const win = text.slice(esc, esc + 6000);
-      const m = win.match(/"id"\s*:\s*"?(\d\d\d\d\d+)/);
+      let m =
+        win.match(/%22id%22%3A%22(\d\d\d\d\d+)/) ||
+        win.match(/"id"\s*:\s*"?(\d\d\d\d\d+)/);
+      if (!m) {
+        try {
+          const dec = decodeURIComponent(win);
+          m = dec.match(/"id"\s*:\s*"?(\d\d\d\d\d+)/);
+        } catch {
+          /* bukan percent-encoded */
+        }
+      }
       return m ? m[1] : null;
     }
     /**
@@ -482,7 +493,7 @@
       let c;
       while ((c = cRe.exec(win))) {
         const n = Number(c[1]);
-        if (n > best) best = n;
+        if (n > best && n <= 100000) best = n;
       }
     }
     return best;
@@ -515,14 +526,16 @@
    * URL) — anti media-id salah konteks.
    */
   function buildSyntheticCommentsUrl(mediaId, count = 30) {
-    if (!/^\d\d\d\d\d+$/.test(String(mediaId || ""))) return null;
+    const id = String(mediaId || "");
+    // Digit >=5 dan <=25: id IG nyata 15-19 digit; lebih panjang = sampah.
+    if (!/^\d\d\d\d\d+$/.test(id) || id.length > 25) return null;
     const nRaw = Number(count);
     const n = Number.isFinite(nRaw)
       ? Math.min(Math.max(Math.round(nRaw), 30), 50)
       : 30;
     return (
       "https://www.instagram.com/api/v1/media/" +
-      mediaId +
+      id +
       "/comments/?can_support_threading=true&count=" +
       n
     );
@@ -724,14 +737,17 @@
     u.searchParams.set("can_support_threading", "true");
     // Porting FB (bumpPageSizes): halaman lebih besar = lebih sedikit request
     // di dalam budget 150 + pacing longgar. Hanya bila template memang membawa
-    // `count` (jaga bentuk capture); dikepang [30..50]. Berlaku juga utk balasan.
+    // `count` numerik valid (jaga bentuk capture); dikepang [30..50]. Berlaku
+    // juga utk balasan. Count invalid/negatif dibuang agar tidak dikirim.
     const rawCount = Number(u.searchParams.get("count"));
-    if (Number.isFinite(rawCount) && rawCount > 0) {
+    if (Number.isFinite(rawCount) && rawCount >= 1) {
       const n = Math.round(rawCount);
       u.searchParams.set(
         "count",
         String(n < 30 ? 30 : n > 50 ? 50 : n)
       );
+    } else {
+      u.searchParams.delete("count");
     }
     if (nextMaxId) u.searchParams.set("max_id", String(nextMaxId));
     return u.toString();
