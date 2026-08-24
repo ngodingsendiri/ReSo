@@ -475,6 +475,74 @@ test("buildUrl: nextMaxId → param max_id", () => {
   assert.equal(new URL(u).searchParams.get("max_id"), "CUR9");
 });
 
+// ===================== R-IG: bump ukuran halaman [30..50] =====================
+test("buildUrl: count dikepang ke [30..50]; template tanpa count dibiarkan", () => {
+  const bu = makeUrlBuilder(null);
+  const mk = (c) =>
+    `https://www.instagram.com/api/v1/media/111/comments/?can_support_threading=false${
+      c == null ? "" : `&count=${c}`
+    }`;
+  assert.equal(new URL(bu(mk(10), {})).searchParams.get("count"), "30"); // naik
+  assert.equal(new URL(bu(mk(80), {})).searchParams.get("count"), "50"); // cap
+  assert.equal(new URL(bu(mk(33), {})).searchParams.get("count"), "33"); // biarkan
+  const without = new URL(bu(mk(undefined), {}));
+  assert.equal(without.searchParams.get("count"), null); // jaga bentuk capture
+});
+
+// ===================== S3-IG: pre-seed nama run sebelumnya =====================
+function makeIgNameStore(store) {
+  const ls = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => {
+      store[k] = String(v);
+    },
+    removeItem: (k) => {
+      delete store[k];
+    },
+  };
+  return new Function(
+    "localStorage",
+    "Date",
+    [
+      'const NAMES_STORE_KEY = "fnk_ig_names_v1";',
+      extract("loadPriorNames"),
+      extract("persistNames"),
+      "return { loadPriorNames, persistNames };",
+    ].join("\n")
+  )(ls, Date);
+}
+
+test("pre-seed IG: persist → load cocok shortcode; TTL & key salah ditolak", () => {
+  const store = {};
+  const ns = makeIgNameStore(store);
+
+  ns.persistNames("CxAbCdEf", ["user_one", "user.two"]);
+  assert.deepEqual(ns.loadPriorNames("CxAbCdEf"), ["user_one", "user.two"]);
+  // Shortcode berbeda → tidak di-seed
+  assert.equal(ns.loadPriorNames("ZzOther99"), null);
+
+  // TTL kedaluwarsa (8 hari)
+  const stale = JSON.parse(store.fnk_ig_names_v1);
+  stale.at = Date.now() - 8 * 86400_000;
+  store.fnk_ig_names_v1 = JSON.stringify(stale);
+  assert.equal(ns.loadPriorNames("CxAbCdEf"), null);
+
+  // Nama non-string disaring
+  const dirty = {};
+  const ns2 = makeIgNameStore(dirty);
+  dirty.fnk_ig_names_v1 = JSON.stringify({
+    key: "CxAbCdEf",
+    names: ["ok", 7, null],
+    at: Date.now(),
+  });
+  assert.deepEqual(ns2.loadPriorNames("CxAbCdEf"), ["ok"]);
+
+  // persist tanpa key/nama → no-op (tidak menambah kunci baru)
+  ns2.persistNames("", []);
+  ns2.persistNames(null, ["a"]);
+  assert.deepEqual(Object.keys(dirty), ["fnk_ig_names_v1"]);
+});
+
 test("buildUrl: template null / URL tak valid → null", () => {
   const bu = makeUrlBuilder(null);
   assert.equal(bu(null, {}), null);

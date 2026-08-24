@@ -38,6 +38,27 @@ Semua saran hasil audit mesin dieksekusi. Sorotan per item:
 Test: suite **463 → 471** (+8: paginator incomplete & regresi complete, findTotalCount ×2,
 chooseDomBudget, composeReplayParams ×2, pre-seed store).
 
+### Porting ke mesin IG: kejujuran hasil + akumulasi + efisiensi budget
+Menyesuaikan Instagram dengan kemenangan tuning FB (proporsional terhadap
+kerapuhan akun IG — BUDGET 150 tetap):
+
+- **Kejujuran pagination**: tiga cabang yang dulu "complete" palsu kini jujur —
+  kosong-setelah-retry saat `has_more:true`, `has_more` tanpa `next_max_id`, dan
+  guard idle → **`incomplete`** (partial di panel/popup, kontrak DONEMSG/mapDone
+  sudah generic sejak S2).
+- **Ukuran halaman [30..50]**: `buildUrl` mengepang param `count` template replay
+  (hanya bila capture membawanya — bentuk request dijaga); lebih sedikit request
+  dalam budget 150.
+- **Pre-seed per shortcode** (`fnk_ig_names_v1`, TTL 7 hari): Proses lagi pada post
+  yang sama bersifat akumulatif; panel membuka dengan "Melanjutkan N username…".
+- **Budget balasan**: REPLY_BUDGET 40 → 70, target/page 20 → 25 (tetap konservatif;
+  IG = platform paling rapuh checkpoint).
+- **maxMs default 120 dtk → 150 dtk**: headroom untuk backoff/pacing tanpa biaya
+  saat run berakhir cepat.
+
+Test: suite **476 → 478** (+2: buildUrl count-clamp ×1 gabungan, pre-seed store IG);
+fixture buildUrl lama tidak tersentuh (template tanpa count dipertahankan bentuknya).
+
 ### Audit arsitektur 4 lapis: eksekusi rekomendasi (R1–R5)
 Audit per lapisan menemukan + memperbaiki satu bug orkestrasi kritikal, lalu
 mengeksekusi lima rekomendasi:

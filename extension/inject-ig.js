@@ -28,7 +28,7 @@
   let requestBudget = 0;
   const BUDGET = 150;
   /** Extra cap for reply (inline child comment) requests — replies must never starve top-level pagination. */
-  const REPLY_BUDGET = 40;
+  const REPLY_BUDGET = 70;
 
   /** Data-plane only. Control plane is ENGINE_CMD via executeScript. */
   function post(type, payload = {}) {
@@ -272,6 +272,35 @@
     return [...nameMap.values()];
   }
 
+  // ---------------- S3 (porting FB): pre-seed run sebelumnya ----------------
+  // Kunci = shortcode post di URL; TTL 7 hari; re-run bersifat akumulatif.
+  const NAMES_STORE_KEY = "fnk_ig_names_v1";
+
+  function loadPriorNames(key) {
+    try {
+      const raw = localStorage.getItem(NAMES_STORE_KEY);
+      if (!raw || !key) return null;
+      const entry = JSON.parse(raw);
+      if (!entry || entry.key !== key || !Array.isArray(entry.names)) return null;
+      if (!(entry.at > 0 && Date.now() - entry.at < 7 * 86400_000)) return null;
+      return entry.names.filter((n) => typeof n === "string" && n);
+    } catch {
+      return null;
+    }
+  }
+
+  function persistNames(key, names) {
+    try {
+      if (!key || !Array.isArray(names) || !names.length) return;
+      localStorage.setItem(
+        NAMES_STORE_KEY,
+        JSON.stringify({ key, names: names.slice(0, 2000), at: Date.now() })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
   function extractMediaIdFromUrl(url) {
     const m = String(url || "").match(
       /instagram\.com\/api\/v1\/media\/(\d+)\//
@@ -494,6 +523,17 @@
     }
     stripVolatileParams(u);
     u.searchParams.set("can_support_threading", "true");
+    // Porting FB (bumpPageSizes): halaman lebih besar = lebih sedikit request
+    // di dalam budget 150 + pacing longgar. Hanya bila template memang membawa
+    // `count` (jaga bentuk capture); dikepang [30..50]. Berlaku juga utk balasan.
+    const rawCount = Number(u.searchParams.get("count"));
+    if (Number.isFinite(rawCount) && rawCount > 0) {
+      const n = Math.round(rawCount);
+      u.searchParams.set(
+        "count",
+        String(n < 30 ? 30 : n > 50 ? 50 : n)
+      );
+    }
     if (nextMaxId) u.searchParams.set("max_id", String(nextMaxId));
     return u.toString();
   }
@@ -936,7 +976,7 @@
       // Optional replies (inline child comments) — capped per-run so replies
       // can never starve top-level pagination or blow the safety budget.
       if (includeReplies && page.replyTargets?.length) {
-        for (const t of page.replyTargets.slice(0, 20)) {
+        for (const t of page.replyTargets.slice(0, 25)) {
           if (stopFlag || replyRequests >= REPLY_BUDGET) break;
           let rCursor = null;
           let rGuard = 0;
@@ -1012,8 +1052,9 @@
       if (Date.now() - lastNewAt < 2500) idle = Math.max(0, idle - 1);
 
       if (page.batchSize === 0) {
-        // Still empty after retries — nothing more to read
-        reason = "complete";
+        // Kosong setelah retry: bila IG masih bilang has_more → truncation
+        // (jujur: incomplete), bila tidak → benar-benar selesai.
+        reason = page.hasMore ? "incomplete" : "complete";
         break;
       }
       if (!page.hasMore) {
@@ -1021,12 +1062,14 @@
         break;
       }
       if (!page.nextMaxId) {
-        // has_more but no cursor: can't paginate without looping
-        reason = "complete";
+        // has_more tapi tanpa cursor — tidak bisa lanjut: truncation.
+        reason = "incomplete";
         break;
       }
       if (idle >= 6) {
-        reason = "idle";
+        // Window hasil tumpang-tindih tanpa ujung eksplisit — jujur belum
+        // tuntas, jangan beri kesan selesai.
+        reason = "incomplete";
         break;
       }
       nextMaxId = page.nextMaxId;
@@ -1066,9 +1109,23 @@
     lastNewAt = Date.now();
     requestBudget = 0;
 
+    // S3: pre-seed hasil run sebelumnya pada post yang sama (shortcode).
+    let seededCount = 0;
+    const storeKey = extractShortcodeFromUrl(location.href) || "";
+    try {
+      const prior = loadPriorNames(storeKey);
+      if (prior?.length) {
+        for (const n of prior) if (addUsername(n)) seededCount++;
+      }
+    } catch {
+      /* ignore */
+    }
+
     post("PROGRESS", {
-      names: [],
-      message: "Memulai…",
+      names: snapshot(),
+      message: seededCount
+        ? `Melanjutkan ${seededCount} username dari run sebelumnya…`
+        : "Memulai…",
       postHint: extractShortcodeFromUrl(location.href) || "",
     });
 
@@ -1134,6 +1191,11 @@
         }
         if (stillMine()) {
           const names = snapshot();
+          try {
+            persistNames(storeKey || activeMediaId, names);
+          } catch {
+            /* ignore */
+          }
           post("DONE", {
             names,
             stopReason: stopFlag
@@ -1151,12 +1213,18 @@
       const reason = await paginateList(
         templateUrl,
         activeMediaId,
-        options.maxMs || 120_000
+        options.maxMs || 150_000
       );
       scrapeDomUsernames();
       if (stillMine()) {
+        const names = snapshot();
+        try {
+          persistNames(storeKey || activeMediaId, names);
+        } catch {
+          /* ignore */
+        }
         post("DONE", {
-          names: snapshot(),
+          names,
           stopReason: reason,
           postHint: activeMediaId
             ? `media ${activeMediaId}`
