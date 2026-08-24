@@ -20,6 +20,7 @@ import {
   ExternalLink,
   PieChart,
   CheckCircle2,
+  Check,
   LogOut
 } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
@@ -30,6 +31,7 @@ import { toast } from 'sonner';
 import { DailyEngagement, Employee, UnmatchedName } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { logout, dinasCollection, dinasDoc } from '../lib/firebase';
 import { onSnapshot, query, orderBy, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
@@ -279,6 +281,10 @@ export default function EngagementDashboard() {
   const [isUnmatchedReviewOpen, setIsUnmatchedReviewOpen] = useState(false);
   const [mapSelections, setMapSelections] = useState<Record<string, string>>({});
   const [isMapping, setIsMapping] = useState(false);
+
+  // Aksesibilitas modal: fokus masuk saat buka, Tab dipagarkan, kembali ke pemicu.
+  const inputModalRef = useDialogA11y<HTMLDivElement>(isInputModalOpen);
+  const unmatchedModalRef = useDialogA11y<HTMLDivElement>(isUnmatchedReviewOpen);
 
   const selectedUnmatched = useMemo(() => {
     const eng = dailyEngagementsMap[selectedDate];
@@ -1295,13 +1301,17 @@ export default function EngagementDashboard() {
     const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
-    
+
     const days = [];
     // Padding for start of month
     for (let i = 0; i < firstDay.getDay(); i++) {
-      days.push({ day: null, date: '', isCurrentMonth: false, isToday: false, isFilled: false, isFuture: false, isAutoFilled: false, isVerified: false, hasUnmatched: false });
+      days.push({
+        day: null, date: '', isCurrentMonth: false, isToday: false, isFilled: false,
+        isFuture: false, isAutoFilled: false, isVerified: false, hasUnmatched: false,
+        hasIgData: false, hasFbData: false, hasTtData: false, unmatchedCount: 0,
+      });
     }
-    
+
     for (let d = 1; d <= lastDay.getDate(); d++) {
       const date = new Date(year, month, d);
       const dateStr = getLocalISODate(date);
@@ -1320,6 +1330,12 @@ export default function EngagementDashboard() {
         isAutoFilled: !!engagement?.autoFilledAt,
         isVerified: !!engagement?.verifiedAt,
         hasUnmatched: !!engagement?.unmatchedNames?.length,
+        // Platform yang benar-benar punya catatan pada tanggal itu (id cocok
+        // atau raw text) — sumber dot IG/FB/TT di sel kalender.
+        hasIgData: !!engagement && ((engagement.igEngagedEmployeeIds?.length || 0) > 0 || !!engagement.igRawText),
+        hasFbData: !!engagement && ((engagement.fbEngagedEmployeeIds?.length || 0) > 0 || !!engagement.fbRawText),
+        hasTtData: !!engagement && ((engagement.tiktokEngagedEmployeeIds?.length || 0) > 0 || !!engagement.tiktokRawText),
+        unmatchedCount: engagement?.unmatchedNames?.length || 0,
         isFuture: dateStr > getLocalISODate(new Date())
       });
     }
@@ -1760,27 +1776,35 @@ export default function EngagementDashboard() {
                         </Button>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full bg-slate-900" /> Terisi
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 rounded-full bg-slate-900" /> Terisi
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 rounded-full bg-amber-400" /> Otomatis · perlu review
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Check size={10} strokeWidth={3.5} className="text-emerald-600 shrink-0" aria-hidden /> Terverifikasi
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="flex items-center gap-0.5" aria-hidden>
+                                <span className="w-1.5 h-1.5 rounded-full bg-pink-400" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                              </span>
+                              IG/FB/TT ada data
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-black text-amber-500 leading-none">!</span> Belum terpetakan
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 rounded-full bg-white border-2 border-slate-200" /> Kosong
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 rounded-full border-2 border-emerald-500 bg-white" /> Hari ini
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full bg-amber-400" /> Perlu review
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full bg-emerald-500" /> Terverifikasi
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] font-black text-amber-500 leading-none">!</span> Belum terpetakan
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full bg-white border-2 border-slate-200" /> Kosong
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full border-2 border-emerald-500 bg-white" /> Hari ini
-                          </div>
-                        </div>
 
                         {unverifiedAutoFilledDates.length > 0 && (
                           <Button
@@ -1818,9 +1842,16 @@ export default function EngagementDashboard() {
                                       setIsInputModalOpen(true);
                                     }}
                                     disabled={day.isFuture}
+                                    aria-label={[
+                                      `${day.day} ${currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}`,
+                                      day.isFuture ? 'belum bisa diisi' : day.isFilled ? 'rekap terisi' : 'belum ada rekap',
+                                      day.isToday ? 'hari ini' : null,
+                                      day.isVerified ? 'terverifikasi' : null,
+                                      day.unmatchedCount > 0 ? `${day.unmatchedCount} nama belum terpetakan` : null,
+                                    ].filter(Boolean).join(', ')}
                                     className={cn(
                                       "w-full h-full rounded-md md:rounded-lg flex flex-col items-center justify-center gap-0.5 md:gap-1 transition-all relative group border",
-                                      day.isFuture ? "bg-slate-50/50 cursor-not-allowed opacity-30 border-transparent" : 
+                                      day.isFuture ? "bg-slate-50/50 cursor-not-allowed opacity-30 border-transparent" :
                                       day.isToday && day.isFilled ? "bg-slate-900 text-white border-slate-900 ring-1 ring-inset ring-emerald-300" :
                                       day.isFilled ? "bg-slate-900 text-white border-slate-900 hover:bg-slate-800" :
                                       day.isToday ? "bg-white text-slate-900 border-emerald-500 border-2 hover:bg-emerald-50" :
@@ -1831,21 +1862,37 @@ export default function EngagementDashboard() {
                                     {day.isToday && !day.isFilled && (
                                       <span className="text-[7px] font-bold text-emerald-600 leading-none">Hari ini</span>
                                     )}
-                                    <div className="flex gap-0.5">
-                                      {day.isAutoFilled && (
-                                        <div className={cn("w-1 h-1 rounded-full", day.isVerified ? (day.isToday ? "bg-emerald-300" : "bg-emerald-400") : (day.isToday ? "bg-amber-300" : "bg-amber-400"))} />
+                                    <div className="flex gap-0.5 items-center">
+                                      {/* Dot amber = kiriman otomatis ReSoEx yang belum direview operator */}
+                                      {day.isAutoFilled && !day.isVerified && (
+                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-amber-300" : "bg-amber-400")} />
                                       )}
                                       {day.hasUnmatched && (
                                         <span className="text-[8px] font-black text-amber-500 leading-none" title="Ada nama belum terpetakan">!</span>
                                       )}
-                                      {day.isFilled && (
-                                        <>
-                                          <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-pink-300" : "bg-pink-400")} />
-                                          <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-blue-300" : "bg-blue-400")} />
-                                          <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-slate-300" : "bg-slate-500")} />
-                                        </>
+                                      {/* Dot platform hanya muncul untuk platform yang benar-benar ada datanya */}
+                                      {day.hasIgData && (
+                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-pink-300" : "bg-pink-400")} />
+                                      )}
+                                      {day.hasFbData && (
+                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-blue-300" : "bg-blue-400")} />
+                                      )}
+                                      {day.hasTtData && (
+                                        <div className={cn("w-1 h-1 rounded-full", day.isToday ? "bg-slate-300" : "bg-slate-500")} />
                                       )}
                                     </div>
+                                    {/* Tanda terverifikasi — berlaku untuk rekap manual maupun otomatis */}
+                                    {day.isVerified && (
+                                      <Check
+                                        size={9}
+                                        strokeWidth={3.5}
+                                        aria-hidden
+                                        className={cn(
+                                          "absolute right-[3px] top-[3px]",
+                                          day.isFilled ? (day.isToday ? "text-emerald-300" : "text-emerald-400") : "text-emerald-600"
+                                        )}
+                                      />
+                                    )}
                                   </button>
                                 ) : (
                                   <div className="w-full h-full" />
@@ -1879,7 +1926,7 @@ export default function EngagementDashboard() {
                             </div>
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                <Check size={11} strokeWidth={3.5} className="text-emerald-600 shrink-0" aria-hidden />
                                 Terverifikasi
                               </div>
                               <span className="text-sm font-bold text-emerald-600">{monthSummary.verified}</span>
@@ -1935,6 +1982,11 @@ export default function EngagementDashboard() {
                         role="presentation"
                       >
                         <motion.div
+                          ref={inputModalRef}
+                          tabIndex={-1}
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="input-rekap-title"
                           initial={{ opacity: 0, y: 12 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 12 }}
@@ -1944,7 +1996,7 @@ export default function EngagementDashboard() {
                         >
                           <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
                             <div>
-                              <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">Input Rekapitulasi</h3>
+                              <h3 id="input-rekap-title" className="text-base sm:text-lg font-black text-slate-900 leading-tight">Input Rekapitulasi</h3>
                               <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
                                 {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 {dailyEngagementsMap[selectedDate]?.autoFilledAt && (
@@ -1963,13 +2015,19 @@ export default function EngagementDashboard() {
                                   </Badge>
                                 )}
                                 {selectedUnmatched.length > 0 && (
-                                  <Badge
-                                    variant="warning"
-                                    className="ml-1.5 text-[9px] font-bold normal-case cursor-pointer hover:bg-amber-100"
+                                  <button
+                                    type="button"
                                     onClick={() => setIsUnmatchedReviewOpen(true)}
+                                    aria-label={`${selectedUnmatched.length} nama belum terpetakan — buka panel pemetaan`}
+                                    className="ml-1.5 inline-flex align-baseline rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
                                   >
-                                    {selectedUnmatched.length} belum terpetakan
-                                  </Badge>
+                                    <Badge
+                                      variant="warning"
+                                      className="text-[9px] font-bold normal-case cursor-pointer hover:bg-amber-100"
+                                    >
+                                      {selectedUnmatched.length} belum terpetakan
+                                    </Badge>
+                                  </button>
                                 )}
                                 {selectedPostedAt.length > 0 && (
                                   <span className="block mt-1 text-[10px] font-semibold text-slate-500">
@@ -2126,7 +2184,9 @@ export default function EngagementDashboard() {
                                               Post IG {idx + 1}
                                               <ExternalLink size={10} />
                                             </a>
-                                            <button 
+                                            <button
+                                              type="button"
+                                              aria-label={`Hapus Post IG ${idx + 1}`}
                                               onClick={() => {
                                                 const newLinks = [...igLinks];
                                                 newLinks.splice(idx, 1);
@@ -2153,7 +2213,9 @@ export default function EngagementDashboard() {
                                               Post FB {idx + 1}
                                               <ExternalLink size={10} />
                                             </a>
-                                            <button 
+                                            <button
+                                              type="button"
+                                              aria-label={`Hapus Post FB ${idx + 1}`}
                                               onClick={() => {
                                                 const newLinks = [...fbLinks];
                                                 newLinks.splice(idx, 1);
@@ -2180,7 +2242,9 @@ export default function EngagementDashboard() {
                                               Post TikTok {idx + 1}
                                               <ExternalLink size={10} />
                                             </a>
-                                            <button 
+                                            <button
+                                              type="button"
+                                              aria-label={`Hapus Post TikTok ${idx + 1}`}
                                               onClick={() => {
                                                 const newLinks = [...tiktokLinks];
                                                 newLinks.splice(idx, 1);
@@ -2274,6 +2338,11 @@ export default function EngagementDashboard() {
                         role="presentation"
                       >
                         <motion.div
+                          ref={unmatchedModalRef}
+                          tabIndex={-1}
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="unmatched-review-title"
                           initial={{ opacity: 0, y: 12 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 12 }}
@@ -2283,7 +2352,7 @@ export default function EngagementDashboard() {
                         >
                           <div className="p-5 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50/20 shrink-0">
                             <div>
-                              <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">Petakan nama belum terpetakan</h3>
+                              <h3 id="unmatched-review-title" className="text-base sm:text-lg font-black text-slate-900 leading-tight">Petakan nama belum terpetakan</h3>
                               <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
                                 {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
                                 {' · '}{selectedUnmatched.length} nama tanpa pegawai

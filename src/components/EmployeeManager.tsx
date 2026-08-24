@@ -13,6 +13,7 @@ import { useAuth } from './FirebaseProvider';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { cn, getBidangColor } from '@/lib/utils';
 import { auth, dinasCollection, dinasDoc } from '../lib/firebase';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 
 enum OperationType {
   CREATE = 'create',
@@ -314,6 +315,19 @@ export default function EmployeeManager() {
   const cancelDelete = () => {
     setDeleteConfirmId(null);
   };
+
+  // Escape menutup konfirmasi hapus (modal di-portal, di luar jangkauan
+  // handler Escape overlay di EngagementDashboard).
+  React.useEffect(() => {
+    if (!deleteConfirmId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDeleteConfirmId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [deleteConfirmId]);
+
+  const deleteModalRef = useDialogA11y<HTMLDivElement>(!!deleteConfirmId);
 
   const startEdit = (emp: Employee) => {
     setFormData({ 
@@ -1016,6 +1030,11 @@ export default function EmployeeManager() {
               role="presentation"
             >
               <motion.div
+                ref={deleteModalRef}
+                tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="delete-pegawai-title"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 8 }}
@@ -1027,7 +1046,7 @@ export default function EmployeeManager() {
                   <div className="w-14 h-14 bg-rose-50 rounded-xl flex items-center justify-center mx-auto border border-rose-100">
                     <Trash2 size={24} className="text-rose-600" />
                   </div>
-                  <h3 className="text-lg font-bold text-slate-900 tracking-tight">Hapus pegawai?</h3>
+                  <h3 id="delete-pegawai-title" className="text-lg font-bold text-slate-900 tracking-tight">Hapus pegawai?</h3>
                   <p className="text-xs font-medium text-slate-500 leading-relaxed px-2">
                     Tindakan ini tidak bisa dibatalkan. Data pegawai dihapus permanen dari sistem.
                   </p>
