@@ -645,7 +645,7 @@
           post("PROGRESS", {
             names: snapshot(),
             message: `Rate limit (429) — jeda ${Math.round(waitMs / 1000)} dtk…`,
-            videoHint: kindTag + activeAwemeId,
+            videoHint: activeAwemeId,
           });
           if (!(await sleepWhile(waitMs))) throw err;
           continue;
