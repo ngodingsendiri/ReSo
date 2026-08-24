@@ -38,6 +38,29 @@ Semua saran hasil audit mesin dieksekusi. Sorotan per item:
 Test: suite **463 → 471** (+8: paginator incomplete & regresi complete, findTotalCount ×2,
 chooseDomBudget, composeReplayParams ×2, pre-seed store).
 
+### Porting ke mesin TikTok: L1 synthetic-from-page + kejujuran hasil + akumulasi
+TikTok kini setara FB/IG — tanpa template capture sekalipun, pagination penuh
+berjalan tanpa scroll manual:
+
+- **L1-TT synthetic**: `buildSyntheticListUrl(awemeId)` membangun endpoint publik
+  `/api/comment/list/?aweme_id=..&count=30&cursor=0`. Aman karena replay lama
+  sendiri selalu MENGHAPUS signature (X-Bogus/msToken/Gnarly) dan tetap sah dari
+  konteks browser (cookie sesi + Referer). Gagal tanpa hasil → jatuh otomatis ke
+  mode scroll (`synthetic_failed` sentinel), nama yang sudah terkumpul tidak dibuang.
+- **Kejujuran pagination**: guard idle & empty-pages-exhausted kini `incomplete`
+  (partial) — bukan "idle" yang termap done. Matriks CONSISTENCY §2.2: incomplete
+  berlaku **ketiga platform**.
+- **Clamp count [30..50]** di buildUrl: count valid dinormalkan, invalid/negatif/
+  <1 dibuang; template tanpa count dibiarkan absen (fidelitas capture).
+- **REPLY_BUDGET 40 → 70**; maxMs default 120 → 150 dtk (parity FB/IG).
+- **Pre-seed per aweme_id** (`fnk_tt_names_v1`, TTL 7 hari): Proses lagi =
+  akumulatif dengan pesan "Melanjutkan N nama…"; persist di kedua jalur DONE.
+- Registry duplikasi: loadPriorNames/persistNames IG↔TT didaftarkan sebagai
+  pasangan identik resmi (FB beda matching — base64 feedback id).
+
+Test: suite **488 → 507** (+19 total sejak audit 4-lapis IG; TT +5: builder ×2,
+pre-seed ×1, revisi kontrak count reply).
+
 ### Riset + mesin IG terpersonalisasi per struktur konten (gambar / korsel / reel)
 Riset memakai riset internal §3/§4.1 + verifikasi kode. Temuan kunci yang
 membedakan IG dari FB:

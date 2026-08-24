@@ -33,6 +33,12 @@ export const PARITY_REGISTRY = {
   // applyMode: mode ekstensi ON/OFF dari popup (RSX_ENABLED_KEY) — dipakai
   // ketiga panel, identik (popup switch satu-satunya kontrol mode).
   applyMode: ["content-fb.js", "content-tiktok.js", "content-ig.js"],
+  // pre-seed hasil run sebelumnya (v1.0.58): body identik di IG & TT —
+  // nama konstanta store berbeda per file (NAMES_STORE_KEY) sehingga salinan
+  // tetap identik setelah minify. FB beda (matching base64 feedback id via
+  // fbIdsMatch) → sengaja TIDAK didaftarkan di pasangan ini.
+  loadPriorNames: ["inject-ig.js", "inject-tiktok.js"],
+  persistNames: ["inject-ig.js", "inject-tiktok.js"],
 };
 
 /**

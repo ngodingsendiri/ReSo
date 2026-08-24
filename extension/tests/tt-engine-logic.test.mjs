@@ -374,14 +374,16 @@ test("buildUrl: basic — cursor di-set ulang, aweme_id dipertahankan, param sig
   for (const p of SIG_PARAMS) assert.equal(url.searchParams.get(p), null, p);
 });
 
-test("buildUrl: reply=true — path /reply/, item_id menggantikan aweme_id, comment_id + count default 20", () => {
+test("buildUrl: reply=true — path /reply/, item_id menggantikan aweme_id, comment_id; count absen dibiarkan (fidelitas)", () => {
   const u = buildUrl(LIST_TEMPLATE, { cursor: 0, awemeId: "222", reply: true, commentId: "999" });
   const url = new URL(u);
   assert.equal(url.pathname, "/api/comment/list/reply/");
   assert.equal(url.searchParams.get("item_id"), "222");
   assert.equal(url.searchParams.get("aweme_id"), null);
   assert.equal(url.searchParams.get("comment_id"), "999");
-  assert.equal(url.searchParams.get("count"), "20");
+  // v1.0.58-TT: buildUrl tidak lagi MENGARANG count default — server default
+  // yang berlaku; clamp [30..50] hanya utk template yang memang membawa count.
+  assert.equal(url.searchParams.get("count"), null);
 });
 
 test("buildUrl: template sudah /reply/ tidak di-swap ganda", () => {
@@ -792,4 +794,73 @@ test("intercept TT: hook XHR — includeReplies OFF, URL /list/reply tidak diing
   x.send();
   net.fireLoad(x);
   assert.deepEqual(h.ingested, [], "guard /list/reply aktif DI JALUR HOOK (parity FB v1.0.42)");
+});
+
+// ===================== L1-TT: synthetic-from-page =====================
+const buildSyntheticListUrl = new Function(
+  `${extract("buildSyntheticListUrl")}\nreturn buildSyntheticListUrl;`
+)();
+
+test("buildSyntheticListUrl: endpoint publik + clamp [30..50] + cursor non-negatif", () => {
+  const u = new URL(buildSyntheticListUrl("6912345678901234567"));
+  assert.equal(u.origin + u.pathname, "https://www.tiktok.com/api/comment/list/");
+  assert.equal(u.searchParams.get("aweme_id"), "6912345678901234567");
+  assert.equal(u.searchParams.get("count"), "30");
+  assert.equal(u.searchParams.get("cursor"), "0");
+
+  const u2 = new URL(buildSyntheticListUrl("6912345678901234567", { cursor: 120, count: 99 }));
+  assert.equal(u2.searchParams.get("count"), "50");
+  assert.equal(u2.searchParams.get("cursor"), "120");
+
+  const u3 = new URL(buildSyntheticListUrl("6912345678901234567", { cursor: -4, count: 10 }));
+  assert.equal(u3.searchParams.get("cursor"), "0");
+  assert.equal(u3.searchParams.get("count"), "30");
+});
+
+test("buildSyntheticListUrl: aweme invalid → null", () => {
+  for (const bad of [null, "", "abc123", "1234", "x".repeat(26)]) {
+    assert.equal(buildSyntheticListUrl(bad), null, `invalid: ${bad}`);
+  }
+});
+
+// ===================== S3-TT: pre-seed per aweme_id =====================
+function makeTtNameStore(store) {
+  const ls = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => {
+      store[k] = String(v);
+    },
+  };
+  return new Function(
+    "localStorage",
+    "Date",
+    [
+      'const NAMES_STORE_KEY = "fnk_tt_names_v1";',
+      extract("loadPriorNames"),
+      extract("persistNames"),
+      "return { loadPriorNames, persistNames };",
+    ].join("\n")
+  )(ls, Date);
+}
+
+test("pre-seed TT: persist → load cocok aweme; TTL & key salah ditolak; cap baca 2000", () => {
+  const store = {};
+  const ns = makeTtNameStore(store);
+
+  ns.persistNames("6912345678901234567", ["Budi", "Sari"]);
+  assert.deepEqual(ns.loadPriorNames("6912345678901234567"), ["Budi", "Sari"]);
+  assert.equal(ns.loadPriorNames("6912345678909999999"), null);
+
+  const stale = JSON.parse(store.fnk_tt_names_v1);
+  stale.at = Date.now() - 8 * 86400_000;
+  store.fnk_tt_names_v1 = JSON.stringify(stale);
+  assert.equal(ns.loadPriorNames("6912345678901234567"), null);
+
+  const s2 = {};
+  s2.fnk_tt_names_v1 = JSON.stringify({
+    key: "6912345678901234567",
+    names: Array.from({ length: 2500 }, (_, i) => "u" + i),
+    at: Date.now(),
+  });
+  assert.equal(makeTtNameStore(s2).loadPriorNames("6912345678901234567").length, 2000);
 });

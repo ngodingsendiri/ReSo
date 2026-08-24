@@ -439,6 +439,16 @@
       u.searchParams.delete(key);
     }
     u.searchParams.set("cursor", String(cursor || 0));
+    // Porting FB/IG (clamp [30..50]): count numerik-valid dinormalkan;
+    // invalid/negatif/<1 dibuang (server pakai default) — tidak pernah
+    // dikirim mentah. Tanpa count di template pun biarkan absen (fidelitas).
+    const rawCount = Number(u.searchParams.get("count"));
+    if (Number.isFinite(rawCount) && rawCount >= 1) {
+      const n = Math.round(rawCount);
+      u.searchParams.set("count", String(n < 30 ? 30 : n > 50 ? 50 : n));
+    } else {
+      u.searchParams.delete("count");
+    }
     if (awemeId) {
       if (reply) {
         u.searchParams.set("item_id", String(awemeId));
@@ -449,9 +459,66 @@
     }
     if (reply && commentId) {
       u.searchParams.set("comment_id", String(commentId));
-      if (!u.searchParams.get("count")) u.searchParams.set("count", "20");
     }
     return u.toString();
+  }
+
+  // ---------------- L1-TT: synthetic-from-page ----------------
+  /**
+   * Endpoint komentar publik TikTok tanpa signature: /api/comment/list/
+   * berjalan dari konteks browser (cookie sesi + Referer otomatis) dengan
+   * parameter aweme_id/count/cursor — bentuk identik hasil strip signature
+   * pada template replay (buildUrl sudah lama menghapus X-Bogus/msToken dan
+   * replay terbukti jalan, artinya signature tidak wajib dari sisi ini).
+   * Best-effort: bila ditolak, caller jatuh ke mode scroll DOM seperti dulu.
+   */
+  function buildSyntheticListUrl(awemeId, { cursor = 0, count = 30 } = {}) {
+    if (!/^\d\d\d\d\d+$/.test(String(awemeId || "")) ||
+        String(awemeId).length > 25)
+      return null;
+    const cRaw = Number(count);
+    const c = Number.isFinite(cRaw)
+      ? Math.min(Math.max(Math.round(cRaw), 30), 50)
+      : 30;
+    const curRaw = Number(cursor);
+    const cur =
+      Number.isFinite(curRaw) && curRaw >= 0 ? Math.round(curRaw) : 0;
+    return (
+      "https://www.tiktok.com/api/comment/list/?aweme_id=" +
+      awemeId +
+      "&count=" +
+      c +
+      "&cursor=" +
+      cur
+    );
+  }
+
+  // ---------------- S3 (porting FB/IG): pre-seed per aweme_id ----------------
+  const NAMES_STORE_KEY = "fnk_tt_names_v1";
+
+  function loadPriorNames(key) {
+    try {
+      const raw = localStorage.getItem(NAMES_STORE_KEY);
+      if (!raw || !key) return null;
+      const entry = JSON.parse(raw);
+      if (!entry || entry.key !== key || !Array.isArray(entry.names)) return null;
+      if (!(entry.at > 0 && Date.now() - entry.at < 7 * 86400_000)) return null;
+      return entry.names.filter((n) => typeof n === "string" && n).slice(0, 2000);
+    } catch {
+      return null;
+    }
+  }
+
+  function persistNames(key, names) {
+    try {
+      if (!key || !Array.isArray(names) || !names.length) return;
+      localStorage.setItem(
+        NAMES_STORE_KEY,
+        JSON.stringify({ key, names: names.slice(0, 2000), at: Date.now() })
+      );
+    } catch {
+      /* ignore */
+    }
   }
 
   async function fetchJson(url) {
@@ -648,7 +715,7 @@
     return commentPanelOpen();
   }
 
-  async function paginateList(templateUrl, awemeId, maxMs) {
+  async function paginateList(templateUrl, awemeId, maxMs, opts = {}) {
     const start = Date.now();
     const deadline = start + maxMs;
     let cursor = 0;
@@ -656,7 +723,7 @@
     let emptyPages = 0;
     let pages = 0;
     let reason = "idle";
-    const REPLY_BUDGET = 40;
+    const REPLY_BUDGET = 70;
     let replyRequests = 0;
     let replyFailStreak = 0;
 
@@ -692,6 +759,9 @@
             const k2 = err2 && err2.kind;
             if (k2 === "rate_limit") return "rate_limit";
             if (k2 === "no_login") return "no_login";
+            // L1-TT: synthetic gagal tanpa hasil → sinyal khusus agar caller
+            // jatuh ke mode scroll, bukan error mentah.
+            if (opts.synthetic) return "synthetic_failed";
             return nameMap.size ? "timeout" : "error";
           }
         } else {
@@ -772,12 +842,14 @@
           await sleepWhile(2500);
           continue;
         }
-        reason = nameMap.size ? "idle" : "error";
+        reason = nameMap.size ? "incomplete" : "error";
         break;
       }
       emptyPages = 0;
       if (idle >= 6) {
-        reason = "idle";
+        // Window hasil tumpang-tindih tanpa ujung eksplisit — jujur belum
+        // tuntas (kontrak incomplete generic, parity FB/IG).
+        reason = "incomplete";
         break;
       }
 
@@ -820,9 +892,22 @@
     lastNewAt = Date.now();
     requestBudget = 0;
 
+    // S3 (porting FB/IG): pre-seed akumulatif per aweme_id.
+    let seededCount = 0;
+    try {
+      const prior = loadPriorNames(activeAwemeId);
+      if (prior?.length) {
+        for (const n of prior) if (addName(n)) seededCount++;
+      }
+    } catch {
+      /* ignore */
+    }
+
     post("PROGRESS", {
-      names: [],
-      message: "Memulai…",
+      names: snapshot(),
+      message: seededCount
+        ? `Melanjutkan ${seededCount} nama dari run sebelumnya…`
+        : "Memulai…",
       videoHint: activeAwemeId || "",
     });
 
@@ -850,9 +935,10 @@
       let templateUrl = options.templateUrl || engineTemplateUrl || null;
 
       // Poll for template after opening comments (background may capture mid-flight)
+      // T1-AUDIT: 16×250ms = 4 dtk — lapis synthetic mengambil alih setelahnya.
       if (!templateUrl) {
         post("NEED_TEMPLATE", { awemeId: activeAwemeId });
-        for (let i = 0; i < 24 && !stopFlag; i++) {
+        for (let i = 0; i < 16 && !stopFlag; i++) {
           if (!(await sleepWhile(250))) break;
           scrapeDomNicknames();
           templateUrl = engineTemplateUrl || null;
@@ -868,8 +954,8 @@
         }
       }
 
-      if (!templateUrl) {
-        // Pure intercept mode: scroll comments a while
+      // Jalur DOM murni (fallback terakhir).
+      const runPureDomMode = async () => {
         post("PROGRESS", {
           names: snapshot(),
           message: "Menunggu traffic komentar… buka panel komentar",
@@ -907,6 +993,7 @@
         }
         if (stillMine()) {
           const names = snapshot();
+          persistNames(activeAwemeId, names);
           post("DONE", {
             names,
             stopReason: stopFlag
@@ -917,6 +1004,49 @@
             videoHint: activeAwemeId,
           });
         }
+      };
+
+      // L1-TT (synthetic-from-page): /api/comment/list/ publik dari aweme_id
+      // halaman — pagination penuh TANPA scroll manual, bahkan tanpa template
+      // capture. Gagal tanpa hasil → jatuh ke mode scroll.
+      if (!templateUrl && !stopFlag) {
+        const synth = buildSyntheticListUrl(activeAwemeId);
+        if (synth) {
+          post("PROGRESS", {
+            names: snapshot(),
+            message:
+              "Endpoint komentar dibangun dari halaman (mode synthetic)…",
+            videoHint: activeAwemeId,
+          });
+          engineTemplateUrl = synth;
+          const synthReason = await paginateList(
+            synth,
+            activeAwemeId,
+            options.maxMs || 150_000,
+            { synthetic: true }
+          );
+          scrapeDomNicknames();
+          if (stillMine()) {
+            // Gagal total di mode synthetic → serahkan ke mode scroll (nama
+            // yang sudah terkumpul tetap di map, tidak dibuang).
+            if (synthReason === "error" && nameMap.size === 0) {
+              await runPureDomMode();
+              return;
+            }
+            const names = snapshot();
+            persistNames(activeAwemeId, names);
+            post("DONE", {
+              names,
+              stopReason: synthReason,
+              videoHint: activeAwemeId,
+            });
+          }
+          return;
+        }
+      }
+
+      if (!templateUrl) {
+        await runPureDomMode();
         return;
       }
 
@@ -924,12 +1054,14 @@
       const reason = await paginateList(
         templateUrl,
         activeAwemeId,
-        options.maxMs || 120_000
+        options.maxMs || 150_000
       );
       scrapeDomNicknames();
       if (stillMine()) {
+        const names = snapshot();
+        persistNames(activeAwemeId, names);
         post("DONE", {
-          names: snapshot(),
+          names,
           stopReason: reason,
           videoHint: activeAwemeId,
         });
