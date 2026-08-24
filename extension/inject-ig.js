@@ -505,6 +505,29 @@
     }
   }
 
+  // ---------------- L1-IG: synthetic-from-page ----------------
+  /**
+   * Bangun endpoint komentar KANONIK dari media-id kontainer hasil halaman —
+   * menutup lapis synthetic (setara FB): tanpa template capture sekalipun,
+   * pagination tetap jalan. Endpoint /api/v1 ini tidak butuh query_id; auth
+   * lengkap disediakan fetchJson (App-ID + CSRF + sesi).
+   * Syarat pemakaian: operator sedang membuka post nyata (shortcode ada di
+   * URL) — anti media-id salah konteks.
+   */
+  function buildSyntheticCommentsUrl(mediaId, count = 30) {
+    if (!/^\d\d\d\d\d+$/.test(String(mediaId || ""))) return null;
+    const nRaw = Number(count);
+    const n = Number.isFinite(nRaw)
+      ? Math.min(Math.max(Math.round(nRaw), 30), 50)
+      : 30;
+    return (
+      "https://www.instagram.com/api/v1/media/" +
+      mediaId +
+      "/comments/?can_support_threading=true&count=" +
+      n
+    );
+  }
+
   // ---- IG API payload ingest ----
 
   function parsePage(data, isReplyPage = false) {
@@ -1380,6 +1403,22 @@
               postHint: kindTag + (extractShortcodeFromUrl(location.href) || ""),
             });
           }
+        }
+      }
+
+      // L1-IG (synthetic-from-page): tanpa template capture sekalipun, media-id
+      // kontainer dari halaman cukup untuk membangun endpoint kanonik — mode
+      // scroll-only kini benar-benar fallback terakhir. Syarat: shortcode di
+      // URL (bukti operator membuka post nyata) + media-id valid.
+      if (!templateUrl && !stopFlag && pageShortcode && activeMediaId) {
+        templateUrl = buildSyntheticCommentsUrl(activeMediaId);
+        if (templateUrl) {
+          post("PROGRESS", {
+            names: snapshot(),
+            message:
+              "Endpoint komentar dibangun dari halaman (mode synthetic)…",
+            postHint: kindTag + (pageShortcode || String(activeMediaId)),
+          });
         }
       }
 

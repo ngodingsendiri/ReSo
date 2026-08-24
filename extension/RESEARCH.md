@@ -112,6 +112,28 @@ Hasil riset tegas:
 
 ---
 
+### 3.4 Amendemen v1.0.58 — lapis "synthetic-from-page" menutup arsitektur 4 lapis IG
+Riset §3.3 menyimpulkan konversi shortcode→media_id "jangan dilakukan sendiri"
+(base64 legacy tidak andal, oEmbed butuh token). Kesimpulan itu TETAP berlaku —
+tetapi tidak dibutuhkan lagi untuk membangun lapis pertama:
+
+- **Sumber id = halaman, bukan konversi**: `extractMediaIdFromPage(shortcode)`
+  kini sadar-korsel (`pickMediaIdNearShortcode`: id wajib satu-objek dengan
+  shortcode; id slide anak ditolak) dan memprioritaskan script yang menyebut
+  shortcode halaman.
+- **Endpoint kanonik stabil**: `/api/v1/media/<id>/comments/?can_support_threading=
+  true&count=N` tidak memerlukan query_id; auth lengkap disediakan `fetchJson`
+  (X-IG-App-ID + X-CSRFToken + sesi + WWW-Claim).
+- **`buildSyntheticCommentsUrl(mediaId)`** (murni, teruji): validasi digit ≥5,
+  clamp count [30..50]. Dipanggil di runExtract HANYA bila template capture
+  kosong DAN shortcode ada di URL (bukti konteks post nyata).
+
+Hasil: rantai ketahanan IG kini setara FB —
+**synthetic-from-page → capture replay → live intercept → DOM scroll**;
+mode scroll murni menjadi fallback terakhir yang benar-benar jarang terjadi.
+Unit test: endpoint kanonik, clamp count, penolakan media-id invalid (×2 test).
+
+
 ## 4. Penguatan Riset (2026-08-10, sesi ke-2)
 
 Riset ulang untuk memverifikasi/menguatkan detail implementasi komentar IG, TikTok & FB.

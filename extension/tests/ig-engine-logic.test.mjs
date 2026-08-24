@@ -530,6 +530,37 @@ test("commentCountNear: angka dalam jendela media diambil maksimum; tanpa media 
   assert.equal(commentCountNear(null, "111"), 0);
 });
 
+// ===================== L1-IG: synthetic-from-page =====================
+const buildSyntheticCommentsUrl = new Function(
+  `${extract("buildSyntheticCommentsUrl")}\nreturn buildSyntheticCommentsUrl;`
+)();
+
+test("buildSyntheticCommentsUrl: endpoint kanonik + count default 30", () => {
+  const u = new URL(
+    buildSyntheticCommentsUrl("111222333444555666")
+  );
+  assert.equal(
+    u.origin + u.pathname,
+    "https://www.instagram.com/api/v1/media/111222333444555666/comments/"
+  );
+  assert.equal(u.searchParams.get("can_support_threading"), "true");
+  assert.equal(u.searchParams.get("count"), "30");
+});
+
+test("buildSyntheticCommentsUrl: clamp count [30..50] & tolak media-id invalid", () => {
+  assert.equal(
+    new URL(buildSyntheticCommentsUrl("111222333444555666", 99)).searchParams.get("count"),
+    "50"
+  );
+  assert.equal(
+    new URL(buildSyntheticCommentsUrl("111222333444555666", 10)).searchParams.get("count"),
+    "30"
+  );
+  for (const bad of [null, undefined, "", "abc", "1234", "12a4567890"]) {
+    assert.equal(buildSyntheticCommentsUrl(bad), null, `invalid: ${bad}`);
+  }
+});
+
 // ===================== R-IG: bump ukuran halaman [30..50] =====================
 test("buildUrl: count dikepang ke [30..50]; template tanpa count dibiarkan", () => {
   const bu = makeUrlBuilder(null);

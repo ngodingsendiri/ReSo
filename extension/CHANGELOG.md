@@ -79,6 +79,14 @@ Test: suite **478 → 486** (+8: detectPostKind, pickMediaId korsel/single/no-ma
 commentCountNear ×2, template cadangan ×2, scrape dialog-eksklusif; fixture
 dual-scope lama direvisi ke kontrak baru).
 
+### L1-IG: synthetic-from-page — arsitektur 4 lapis penuh
+Tanpa template capture sekalipun, pagination IG tetap jalan:
+- uildSyntheticCommentsUrl(mediaId) membangun endpoint kanonik
+  /api/v1/media/<id>/comments/ (count clamp [30..50], validasi digit >=5).
+- Hanya aktif bila shortcode ada di URL (konteks post nyata) dan template
+  kosong setelah polling; mode scroll murni kini fallback terakhir.
+- Test: suite **486 -> 488** (+2 builder).
+
 ### Porting ke mesin IG: kejujuran hasil + akumulasi + efisiensi budget
 Menyesuaikan Instagram dengan kemenangan tuning FB (proporsional terhadap
 kerapuhan akun IG — BUDGET 150 tetap):
