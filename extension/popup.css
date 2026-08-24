@@ -95,6 +95,12 @@ input:checked + .slider::before {
   transform: translateX(18px);
 }
 
+/* Indikator fokus keyboard — input disembunyikan, jadi ring dipasang di slider */
+input:focus-visible + .slider {
+  outline: 2px solid #0f172a;
+  outline-offset: 2px;
+}
+
 .hint {
   margin-top: 12px;
   font-size: 11.5px;

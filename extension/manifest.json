@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "minimum_chrome_version": "102",
   "name": "ReSo Ekstention",
-  "description": "Ambil nama komentator dari Facebook, TikTok & Instagram, lalu salin ke Excel. Satu extension untuk semua platform.",
-  "version": "1.0.52",
+  "description": "Ambil nama komentator dari Facebook, TikTok & Instagram, lalu kirim otomatis ke rekap web app ReSo.",
+  "version": "1.0.57",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -42,7 +42,7 @@
       "suggested_key": {
         "default": "Ctrl+Shift+E"
       },
-      "description": "ReSo \u00e2\u20ac\u201d Proses / ambil nama komentator di tab aktif"
+      "description": "ReSo \u2014 Proses / ambil nama komentator di tab aktif"
     }
   },
   "host_permissions": [

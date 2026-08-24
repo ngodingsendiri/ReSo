@@ -28,6 +28,19 @@ test("dist/manifest.json valid (0 error) — build output yang di-load-unpacked"
   assert.deepEqual(errors, [], `kesalahan: ${errors.join("; ")}`);
 });
 
+test("versi manifest.json sumber = package.json (anti-drift stamp-version)", () => {
+  // stamp-version.mjs hanya menulis dist/ saat build — tanpa guard ini,
+  // manifest sumber bisa tertinggal (kasus nyata: source 1.0.52 vs pkg 1.0.57)
+  // dan load-unpacked dari folder sumber menampilkan versi salah.
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(ROOT, "manifest.json"), "utf8"));
+  assert.equal(
+    manifest.version,
+    pkg.version,
+    `manifest.json (${manifest.version}) ≠ package.json (${pkg.version}) — naikkan keduanya bersamaan`
+  );
+});
+
 test("version salah format ditolak (5 bagian, non-numerik)", () => {
   for (const version of ["1.0.0.0.1", "1.0.50-alpha", "1.0.0."]) {
     const { errors } = validateManifest(

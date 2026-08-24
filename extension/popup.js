@@ -6,8 +6,9 @@
 const KEY = "rsx_enabled";
 const RESO_PENDING_KEY = "resoPending";
 const RESO_URL_KEY = "resoUrl";
-// Fallback bila user belum pin domain di Options (sama dengan RESO_URL di shared.js).
-const RESO_URL_FALLBACK = "https://reso.sekretariat.fun";
+// Domain default satu-sumber dari shared.js (via shared-module) — jangan
+// duplikasi literal di sini (bibit bug hardcode-domain lama).
+import { RESO_URL } from "./shared-module.js";
 const toggle = document.getElementById("modeToggle");
 const hint = document.getElementById("modeHint");
 const resoStatus = document.getElementById("resoStatus");
@@ -40,13 +41,19 @@ function apply(state) {
 }
 
 async function refreshResoStatus() {
+  const showUnavailable = () => {
+    // Jangan diam total — user harus tahu kenapa statusnya kosong.
+    resoStatus.textContent = "Status ReSo tidak tersedia — coba buka popup lagi.";
+    resoStatus.hidden = false;
+    resoRetry.hidden = true;
+    resoOpen.hidden = true;
+    resoReset.hidden = true;
+    resoLogin.hidden = true;
+  };
   try {
     const r = await chrome.runtime.sendMessage({ type: "RESO_CONN_STATUS" });
     if (!r || typeof r.connected !== "boolean") {
-      resoStatus.hidden = true;
-      resoRetry.hidden = true;
-      resoOpen.hidden = true;
-      resoReset.hidden = true;
+      showUnavailable();
       return;
     }
     const url = await getResoUrlStored();
@@ -65,10 +72,7 @@ async function refreshResoStatus() {
     resoRetry.hidden = !(r.pending > 0);
     resoReset.hidden = !url && !r.authenticated;
   } catch {
-    resoStatus.hidden = true;
-    resoRetry.hidden = true;
-    resoOpen.hidden = true;
-    resoReset.hidden = true;
+    showUnavailable();
   }
 }
 
@@ -97,7 +101,7 @@ resoOpen.addEventListener("click", async () => {
 // terhubung otomatis; bila tak ada push, handoff dari tab terbuka tetap jalan
 // (asalkan content-reso.js ter-inject via pin + izin host).
 resoLogin.addEventListener("click", async () => {
-  const url = (await getResoUrlStored()) || RESO_URL_FALLBACK;
+  const url = (await getResoUrlStored()) || RESO_URL;
   try {
     await chrome.tabs.create({ url });
   } catch {
@@ -106,7 +110,23 @@ resoLogin.addEventListener("click", async () => {
   await refreshResoStatus();
 });
 
+// "Putuskan" destruktif (hapus domain ter-pin + sesi) → pola konfirmasi
+// dua-klik: klik pertama mengubah label jadi "Yakin putuskan?" 3 dtk.
+let resetArmed = false;
+let resetArmTimer = null;
 resoReset.addEventListener("click", async () => {
+  if (!resetArmed) {
+    resetArmed = true;
+    resoReset.textContent = "Yakin putuskan?";
+    resetArmTimer = setTimeout(() => {
+      resetArmed = false;
+      resoReset.textContent = "Putuskan";
+    }, 3000);
+    return;
+  }
+  clearTimeout(resetArmTimer);
+  resetArmed = false;
+  resoReset.textContent = "Putuskan";
   try {
     await chrome.storage.local.remove([RESO_URL_KEY, "resoAuth"]);
   } catch {
