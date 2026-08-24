@@ -79,6 +79,17 @@ Test: suite **478 → 486** (+8: detectPostKind, pickMediaId korsel/single/no-ma
 commentCountNear ×2, template cadangan ×2, scrape dialog-eksklusif; fixture
 dual-scope lama direvisi ke kontrak baru).
 
+### Audit 4 lapis IG — tuning pasca-implementasi
+- **L1**: polling template dipersingkat 24x300ms -> 12x300ms (3,6 dtk) agar
+  lapis synthetic mengambil alih lebih cepat.
+- **L2**: kegagalan halaman-pertama pada mode synthetic kini membawa panduan
+  konkret ("Buka komentar di layar sampai terlihat, lalu Proses lagi"),
+  bukan error mentah — bentuk endpoint bisa berubah antar versi klien IG.
+- **L4**: locale ES/PT/FR untuk tombol muat-komentar (parity FB S7).
+- **L3** live-intercept: tidak berubah — request komentar IG berbasis GET,
+  sisi template sudah tertutup webRequest capture; hook tetap live-saat-running
+  by design (tanpa ring buffer, hemat memori di HP operator).
+
 ### L1-IG: synthetic-from-page — arsitektur 4 lapis penuh
 Tanpa template capture sekalipun, pagination IG tetap jalan:
 - uildSyntheticCommentsUrl(mediaId) membangun endpoint kanonik

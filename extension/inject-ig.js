@@ -941,8 +941,9 @@
    * Selektor mencakup role=button, div[tabindex=0], span[dir=auto], a.
    */
   function findLoadMoreButtons(scope) {
+    // EN + ID (v1.0.56) + ES/PT/FR (L4-AUDIT, parity FB S7).
     const soft =
-      /load more comments|lihat lebih banyak komentar|lihat komentar lainnya|muat komentar|view more comments|show more comments|lihat semua komentar|lihat balasan lainnya|load more replies|view more replies|lihat lebih banyak balasan|lihat balasan/i;    const out = [];
+      /load more comments|lihat lebih banyak komentar|lihat komentar lainnya|muat komentar|view more comments|show more comments|lihat semua komentar|lihat balasan lainnya|load more replies|view more replies|lihat lebih banyak balasan|lihat balasan|ver m\u00e1s comentarios|ver m\u00e1s respuestas|ver mais coment\u00e1rios|ver mais respostas|afficher plus de commentaires|plus de r\u00e9ponses/i;    const out = [];
     const root = scope || document;
     try {
       const els = root.querySelectorAll(
@@ -1087,7 +1088,7 @@
     return added;
   }
 
-  async function paginateList(templateUrl, mediaId, maxMs) {
+  async function paginateList(templateUrl, mediaId, maxMs, opts = {}) {
     const start = Date.now();
     const deadline = start + maxMs;
     const heartbeat = (message) =>
@@ -1165,8 +1166,16 @@
               err2.blocked
             )
               throw err2;
+            // T2-AUDIT: kegagalan pertama pada mode synthetic hampir selalu
+            // berarti bentuk endpoint berubah — panduan konkret, bukan error
+            // mentah: buka komentar manual lalu Proses (jalur DOM/capture).
+            const tip =
+              opts && opts.synthetic
+                ? " Buka komentar di layar sampai terlihat, lalu Proses lagi."
+                : "";
             post("ERROR", {
-              message: String(err2?.message || err2),
+              message:
+                String(err2?.message || err2).slice(0, 160) + tip,
               stopReason: "error",
             });
             return "error";
@@ -1388,9 +1397,11 @@
       let templateUrl = options.templateUrl || engineTemplateUrl || null;
 
       // Poll for template after opening comments (background may capture mid-flight)
+      // T1-AUDIT: 12×300ms = 3,6 dtk cukup — lebih lama dari itu, lapis
+      // synthetic-from-page yang harus mengambil alih (bukan menunggu).
       if (!templateUrl) {
         post("NEED_TEMPLATE", { mediaId: activeMediaId });
-        for (let i = 0; i < 24 && !stopFlag; i++) {
+        for (let i = 0; i < 12 && !stopFlag; i++) {
           if (!(await sleepWhile(300))) break;
           scrapeDomUsernames();
           templateUrl = engineTemplateUrl || null;
@@ -1474,10 +1485,12 @@
       engineTemplateUrl = templateUrl;
       // Riset v1.0.58-IG: estimasi total komentar utk progres N/±M.
       lastRunTotalCount = activeMediaId ? estimateCommentCount(activeMediaId) : 0;
+      const usedSynthetic = !options.templateUrl && templateUrl === buildSyntheticCommentsUrl(activeMediaId || "");
       const reason = await paginateList(
         templateUrl,
         activeMediaId,
-        options.maxMs || 150_000
+        options.maxMs || 150_000,
+        { synthetic: usedSynthetic }
       );
       scrapeDomUsernames();
       if (stillMine()) {
