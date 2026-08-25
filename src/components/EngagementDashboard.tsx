@@ -42,6 +42,7 @@ import { collectUnverifiedAutoFilled } from '../lib/engagement-api';
 import { APP_VERSION } from '../lib/version';
 
 import { DashboardTab } from './tabs/DashboardTab';
+ import { InputModal } from './InputModal';
 import { SettingsTab } from './tabs/SettingsTab';
 import { DailyReportView } from './reports/DailyReportView';
 import { WeeklyReportView } from './reports/WeeklyReportView';
@@ -86,12 +87,6 @@ export default function EngagementDashboard() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [dailyEngagements, setDailyEngagements] = useState<DailyEngagement[]>([]);
   const [selectedDate, setSelectedDate] = useState(getLocalISODate(new Date()));
-  const [igRawInput, setIgRawInput] = useState('');
-  const [fbRawInput, setFbRawInput] = useState('');
-  const [tiktokRawInput, setTiktokRawInput] = useState('');
-  const [igLinks, setIgLinks] = useState<string[]>([]);
-  const [fbLinks, setFbLinks] = useState<string[]>([]);
-  const [tiktokLinks, setTiktokLinks] = useState<string[]>([]);
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -113,10 +108,7 @@ export default function EngagementDashboard() {
 
   // Meta API State
   const [metaToken, setMetaToken] = useState('');
-  const [isFetchingMeta, setIsFetchingMeta] = useState(false);
   const [isSavingToken, setIsSavingToken] = useState(false);
-  const [isMetaExpanded, setIsMetaExpanded] = useState(false);
-  const [activeLinkTab, setActiveLinkTab] = useState<'ig' | 'fb' | 'tiktok'>('ig');
 
   // Load Meta Token from Firestore on mount
   useEffect(() => {
@@ -294,7 +286,6 @@ export default function EngagementDashboard() {
   const [isMapping, setIsMapping] = useState(false);
 
   // Aksesibilitas modal: fokus masuk saat buka, Tab dipagarkan, kembali ke pemicu.
-  const inputModalRef = useDialogA11y<HTMLDivElement>(isInputModalOpen);
   const unmatchedModalRef = useDialogA11y<HTMLDivElement>(isUnmatchedReviewOpen);
 
   const selectedUnmatched = useMemo(() => {
@@ -418,67 +409,8 @@ export default function EngagementDashboard() {
     };
   }, [isInputModalOpen]);
 
-  const [initialIgRawInput, setInitialIgRawInput] = useState('');
-  const [initialFbRawInput, setInitialFbRawInput] = useState('');
-  const [initialTiktokRawInput, setInitialTiktokRawInput] = useState('');
-  const [initialIgLinks, setInitialIgLinks] = useState<string[]>([]);
-  const [initialFbLinks, setInitialFbLinks] = useState<string[]>([]);
-  const [initialTiktokLinks, setInitialTiktokLinks] = useState<string[]>([]);
-  const prevSelectedDateRef = useRef(selectedDate);
-
   // Notifikasi pengisian otomatis dari ReSoEx — sekali per tanggal per sesi.
   const notifiedAutoFillRef = useRef<Set<string>>(new Set());
-
-  // Load raw text and links for selected date if exists
-  useEffect(() => {
-    const isDateChange = selectedDate !== prevSelectedDateRef.current;
-    prevSelectedDateRef.current = selectedDate;
-
-    const isDirty =
-      igRawInput !== initialIgRawInput ||
-      fbRawInput !== initialFbRawInput ||
-      tiktokRawInput !== initialTiktokRawInput ||
-      JSON.stringify(igLinks) !== JSON.stringify(initialIgLinks) ||
-      JSON.stringify(fbLinks) !== JSON.stringify(initialFbLinks) ||
-      JSON.stringify(tiktokLinks) !== JSON.stringify(initialTiktokLinks);
-
-    // If same date and dirty, skip overwriting to preserve unsaved changes
-    if (!isDateChange && isDirty) {
-      toast.info('Ada perubahan yang belum disimpan. Simpan terlebih dahulu atau pilih tanggal lain.');
-      return;
-    }
-
-    const existing = dailyEngagementsMap[selectedDate];
-    if (existing) {
-      setIgRawInput(existing.igRawText || '');
-      setFbRawInput(existing.fbRawText || '');
-      setTiktokRawInput(existing.tiktokRawText || '');
-      setIgLinks(existing.igLinks || []);
-      setFbLinks(existing.fbLinks || []);
-      setTiktokLinks(existing.tiktokLinks || []);
-      
-      setInitialIgRawInput(existing.igRawText || '');
-      setInitialFbRawInput(existing.fbRawText || '');
-      setInitialTiktokRawInput(existing.tiktokRawText || '');
-      setInitialIgLinks(existing.igLinks || []);
-      setInitialFbLinks(existing.fbLinks || []);
-      setInitialTiktokLinks(existing.tiktokLinks || []);
-    } else {
-      setIgRawInput('');
-      setFbRawInput('');
-      setTiktokRawInput('');
-      setIgLinks([]);
-      setFbLinks([]);
-      setTiktokLinks([]);
-      
-      setInitialIgRawInput('');
-      setInitialFbRawInput('');
-      setInitialTiktokRawInput('');
-      setInitialIgLinks([]);
-      setInitialFbLinks([]);
-      setInitialTiktokLinks([]);
-    }
-  }, [selectedDate, dailyEngagements]);
 
   // Data datang langsung dari ekstensi (API → Firestore). Real-time onSnapshot
   // sudah memuatnya; di sini beri tahu operator — data sudah tersimpan otomatis,
@@ -503,149 +435,6 @@ export default function EngagementDashboard() {
       return (a.bidang || '').localeCompare(b.bidang || '') || a.name.localeCompare(b.name);
     });
   }, [employees, weeklySortMode]);
-
-  const handleFetchRecentMeta = async () => {
-    setIsFetchingMeta(true);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-    try {
-      if (!metaToken) throw new Error("Token API Meta tidak boleh kosong.");
-
-      // Window rekap resmi: 15:00 H-1 s/d 15:00 D (WIB) = UTC 08:00
-      const isWithinCustomWindow = (postDateStr: string, targetDateStr: string) => {
-        if (!postDateStr) return false;
-        const postTime = new Date(postDateStr).getTime();
-        if (Number.isNaN(postTime)) return false;
-        const endDate = new Date(`${targetDateStr}T08:00:00Z`);
-        const endTime = endDate.getTime();
-        const startTime = endTime - (24 * 60 * 60 * 1000);
-        return postTime >= startTime && postTime <= endTime;
-      };
-
-      type MetaPost = { id: string; created_time?: string; timestamp?: string; permalink_url?: string; permalink?: string };
-      let fbPosts: MetaPost[] = [];
-      let igPosts: MetaPost[] = [];
-      let pageToken = metaToken;
-      let pageId = "me";
-
-      // Resolve Page Token
-      try {
-        const accRes = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${metaToken}`, { signal: controller.signal });
-        const accData = await accRes.json();
-        if (accData.data && accData.data.length > 0) {
-          pageId = accData.data[0].id;
-          pageToken = accData.data[0].access_token;
-        } else {
-          const debugRes = await fetch(`https://graph.facebook.com/v19.0/debug_token?input_token=${metaToken}&access_token=${metaToken}`, { signal: controller.signal });
-          const debugData = await debugRes.json();
-          if (debugData.data && debugData.data.granular_scopes) {
-            const scope = debugData.data.granular_scopes.find((s: { scope: string; target_ids?: string[] }) =>
-              s.scope === 'pages_show_list' || s.scope === 'pages_read_engagement' || s.scope === 'pages_manage_posts'
-            );
-            if (scope && scope.target_ids && scope.target_ids.length > 0) {
-              pageId = scope.target_ids[0];
-              const pageRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}?fields=access_token&access_token=${metaToken}`, { signal: controller.signal });
-              const pageData = await pageRes.json();
-              if (pageData.access_token) pageToken = pageData.access_token;
-            }
-          }
-        }
-      } catch {
-        // Not a user token, continuing with original token
-      }
-
-      const fbPostsRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/posts?fields=id,created_time,permalink_url&access_token=${pageToken}&limit=50`, { signal: controller.signal });
-      const fbPostsData = await fbPostsRes.json();
-      let latestFbPostDate: string | null = null;
-
-      if (!fbPostsData.error && fbPostsData.data) {
-        if (fbPostsData.data.length > 0) latestFbPostDate = fbPostsData.data[0].created_time;
-        fbPosts = fbPostsData.data.filter((p: MetaPost) => isWithinCustomWindow(p.created_time || '', selectedDate));
-      }
-
-      const igAccRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}?fields=instagram_business_account&access_token=${pageToken}`, { signal: controller.signal });
-      const igAccData = await igAccRes.json();
-      const igAccountId = igAccData.instagram_business_account?.id as string | undefined;
-
-      if (igAccountId) {
-        const igPostsRes = await fetch(`https://graph.facebook.com/v19.0/${igAccountId}/media?fields=id,timestamp,permalink&access_token=${pageToken}&limit=50`, { signal: controller.signal });
-        const igPostsData = await igPostsRes.json();
-        if (!igPostsData.error && igPostsData.data) {
-          igPosts = igPostsData.data.filter((p: MetaPost) => isWithinCustomWindow(p.timestamp || '', selectedDate));
-        }
-      }
-
-      if (fbPostsData.error && !igAccountId) {
-        throw new Error(fbPostsData.error?.message || "Gagal mengakses data Page/Instagram.");
-      }
-
-      const commenters: { platform: 'ig'; username: string; text?: string }[] = [];
-      const newFbLinks = fbPosts.map((p) => p.permalink_url).filter((u): u is string => Boolean(u));
-      const newIgLinks = igPosts.map((p) => p.permalink).filter((u): u is string => Boolean(u));
-
-      // Paralel dengan batas concurrency 5 — N post selesai ±N/5× latensi,
-      // bukan Σ latensi seperti loop sekuensial.
-      const CONCURRENCY = 5;
-      type IgComment = { data?: { username?: string; text?: string }[] };
-      for (let i = 0; i < igPosts.length; i += CONCURRENCY) {
-        const batchPosts = igPosts.slice(i, i + CONCURRENCY);
-        const commentsBatches = await Promise.all(
-          batchPosts.map((post) =>
-            fetch(`https://graph.facebook.com/v19.0/${post.id}/comments?fields=id,text,username,timestamp&access_token=${pageToken}&limit=100`, { signal: controller.signal })
-              .then((res) => res.json() as Promise<IgComment>)
-              .catch(() => ({ data: [] }) as IgComment)
-          )
-        );
-        commentsBatches.forEach((commentsData) => {
-          (commentsData.data || []).forEach((c) => {
-            commenters.push({ platform: 'ig', username: c.username || "Unknown", text: c.text });
-          });
-        });
-      }
-
-      if (newIgLinks.length > 0) {
-        setIgLinks(prev => Array.from(new Set([...prev, ...newIgLinks])));
-      }
-      if (newFbLinks.length > 0) {
-        setFbLinks(prev => Array.from(new Set([...prev, ...newFbLinks])));
-      }
-
-      const igUsernames = commenters.map((c) => c.username).filter(Boolean);
-
-      if (igUsernames.length > 0) {
-        setIgRawInput(prev => mergeUniqueLines(prev, igUsernames));
-      }
-
-      const fbPostCount = fbPosts.length;
-      const igPostCount = igPosts.length;
-
-      if (fbPostCount === 0 && igPostCount === 0) {
-        let msg = `Tidak ada postingan pada tanggal ${selectedDate}.`;
-        if (latestFbPostDate) {
-          const d = new Date(latestFbPostDate);
-          msg += ` Postingan FB terakhir adalah tanggal ${d.toLocaleDateString('id-ID')}.`;
-        }
-        if (!igAccountId) {
-          msg += ` (Akun Instagram Bisnis belum terhubung ke Halaman FB ini).`;
-        }
-        toast.warning(msg, { duration: 6000 });
-      } else {
-        toast.success(`Ditemukan ${igPostCount} post IG & ${fbPostCount} post FB. Berhasil menarik ${commenters.length} komentar IG ke dalam form.`);
-      }
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error && err.name === 'AbortError'
-          ? 'Permintaan Meta API melebihi batas waktu (60 detik). Coba lagi.'
-          : err instanceof Error
-            ? err.message
-            : 'Gagal menarik data Meta API';
-      toast.error(message);
-    } finally {
-      clearTimeout(timeoutId);
-      setIsFetchingMeta(false);
-    }
-  };
 
   // ---- Bangun data laporan (title, subtitle, rows, rate) — dipakai PDF & Gambar ----
   const buildReportData = (type: 'daily' | 'weekly' | 'monthly') => {
@@ -1112,21 +901,6 @@ export default function EngagementDashboard() {
     [employees]
   );
 
-  // Matching preview ditahan (debounce) & hanya dihitung saat modal terbuka —
-  // O(pegawai × baris input) per keystroke terlalu mahal untuk jalan terus.
-  const debouncedIgRawInput = useDebouncedValue(igRawInput);
-  const debouncedFbRawInput = useDebouncedValue(fbRawInput);
-  const debouncedTiktokRawInput = useDebouncedValue(tiktokRawInput);
-
-  const matchPreview = useMemo(
-    () => ({
-      ig: isInputModalOpen ? matchEmployeesToEngagement(debouncedIgRawInput, employees, 'ig').length : 0,
-      fb: isInputModalOpen ? matchEmployeesToEngagement(debouncedFbRawInput, employees, 'fb').length : 0,
-      tiktok: isInputModalOpen ? matchEmployeesToEngagement(debouncedTiktokRawInput, employees, 'tiktok').length : 0,
-    }),
-    [isInputModalOpen, debouncedIgRawInput, debouncedFbRawInput, debouncedTiktokRawInput, employees]
-  );
-
   // Lock body scroll when overlays open
   useEffect(() => {
     if (!isInputModalOpen && !isMoreOpen && !isSidebarOpen) return;
@@ -1152,126 +926,6 @@ export default function EngagementDashboard() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isInputModalOpen, isMoreOpen, isSidebarOpen]);
-
-  const handleSaveEngagement = async () => {
-    if (!user) {
-      toast.error('Anda harus login untuk menyimpan data');
-      return;
-    }
-    
-    setIsLoading(true);
-    try {
-      // Controlled inputs — state is source of truth (avoids stale defaultValue across dates)
-      const currentIgRawInput = igRawInput;
-      const currentFbRawInput = fbRawInput;
-      const currentTiktokRawInput = tiktokRawInput;
-
-      // Always rematch — master pegawai bisa berubah meski raw text sama
-      const igEngagedIds = processEngagementInput(currentIgRawInput, 'ig');
-      const fbEngagedIds = processEngagementInput(currentFbRawInput, 'fb');
-      const tiktokEngagedIds = processEngagementInput(currentTiktokRawInput, 'tiktok');
-
-      const docRef = dinasDoc(db, user.uid, 'dailyEngagement', selectedDate);
-      const existing = dailyEngagementsMap[selectedDate];
-      
-      const igContentChanged = currentIgRawInput !== initialIgRawInput || JSON.stringify(igLinks) !== JSON.stringify(initialIgLinks);
-      const fbContentChanged = currentFbRawInput !== initialFbRawInput || JSON.stringify(fbLinks) !== JSON.stringify(initialFbLinks);
-      const tiktokContentChanged = currentTiktokRawInput !== initialTiktokRawInput || JSON.stringify(tiktokLinks) !== JSON.stringify(initialTiktokLinks);
-
-      const igIdsChanged = !engagedIdsEqual(existing?.igEngagedEmployeeIds || [], igEngagedIds);
-      const fbIdsChanged = !engagedIdsEqual(existing?.fbEngagedEmployeeIds || [], fbEngagedIds);
-      const tiktokIdsChanged = !engagedIdsEqual(existing?.tiktokEngagedEmployeeIds || [], tiktokEngagedIds);
-
-      const igChanged = igContentChanged || igIdsChanged;
-      const fbChanged = fbContentChanged || fbIdsChanged;
-      const tiktokChanged = tiktokContentChanged || tiktokIdsChanged;
-
-      if (!igChanged && !fbChanged && !tiktokChanged) {
-        // Rekap otomatis dari ReSoEx sudah lengkap di DB — Simpan tanpa ubahan
-        // cukup menandai terverifikasi (menghapus kesan "wajib simpan").
-        if (existing?.autoFilledAt && !existing.verifiedAt) {
-          await setDoc(docRef, { date: selectedDate, verifiedAt: serverTimestamp() }, { merge: true });
-          toast.success('Rekap ditandai terverifikasi — data sudah lengkap dari ReSoEx.');
-        } else {
-          toast.info('Tidak ada perubahan untuk disimpan');
-        }
-        closeInputModal();
-        return;
-      }
-      
-      const updateData: Record<string, unknown> = {
-        date: selectedDate,
-        updatedAt: serverTimestamp(),
-        // Menyimpan = operator sudah memeriksa rekap (termasuk yang auto-filled).
-        verifiedAt: serverTimestamp()
-      };
-      
-      if (igChanged) {
-        updateData.igRawText = currentIgRawInput;
-        updateData.igEngagedEmployeeIds = igEngagedIds;
-        updateData.igLinks = igLinks;
-      }
-      
-      if (fbChanged) {
-        updateData.fbRawText = currentFbRawInput;
-        updateData.fbEngagedEmployeeIds = fbEngagedIds;
-        updateData.fbLinks = fbLinks;
-      }
-      
-      if (tiktokChanged) {
-        updateData.tiktokRawText = currentTiktokRawInput;
-        updateData.tiktokEngagedEmployeeIds = tiktokEngagedIds;
-        updateData.tiktokLinks = tiktokLinks;
-      }
-
-      // Antrian nama belum terpetakan: platform yang berubah dihitung ulang,
-      // platform lain dipertahankan dari dokumen (dedupe case-insensitive).
-      const prevUnmatched = Array.isArray(existing?.unmatchedNames)
-        ? (existing.unmatchedNames as UnmatchedName[])
-        : [];
-      const seenU = new Set<string>();
-      const unmatchedNames: UnmatchedName[] = [];
-      const pushU = (u: UnmatchedName) => {
-        const key = `${u.name.trim().toLowerCase()}|${u.platform}`;
-        if (seenU.has(key)) return;
-        seenU.add(key);
-        unmatchedNames.push(u);
-      };
-      for (const p of ['ig', 'fb', 'tiktok'] as const) {
-        const changed = p === 'ig' ? igChanged : p === 'fb' ? fbChanged : tiktokChanged;
-        if (changed) {
-          const raw = p === 'ig' ? currentIgRawInput : p === 'fb' ? currentFbRawInput : currentTiktokRawInput;
-          for (const name of matchEngagementDetail(raw, employees, p).unmatched) pushU({ name, platform: p });
-        } else {
-          for (const u of prevUnmatched) if (u.platform === p) pushU(u);
-        }
-      }
-      updateData.unmatchedNames = unmatchedNames;
-
-      await setDoc(docRef, updateData, { merge: true });
-
-      // Update initial values to match saved state (mark as saved)
-      setInitialIgRawInput(currentIgRawInput);
-      setInitialFbRawInput(currentFbRawInput);
-      setInitialTiktokRawInput(currentTiktokRawInput);
-      setInitialIgLinks(igLinks);
-      setInitialFbLinks(fbLinks);
-      setInitialTiktokLinks(tiktokLinks);
-
-      toast.success(`Data rekap tanggal ${selectedDate} berhasil disimpan`);
-      closeInputModal();
-    } catch (error: unknown) {
-      console.error('Error saving engagement:', error);
-      const err = error as { code?: string; message?: string };
-      if (err.code === 'permission-denied' || err.message?.includes('Missing or insufficient permissions')) {
-        toast.error('Akses ditolak: Anda tidak memiliki izin untuk menyimpan data ini.');
-      } else {
-        toast.error(`Gagal menyimpan data: ${err.message || 'Kesalahan tidak diketahui'}`);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleRecalculateAll = async () => {
     if (!user) {
@@ -2049,361 +1703,18 @@ export default function EngagementDashboard() {
                     </div>
                   </motion.div>
 
-                  {/* Input Modal */}
-                  <AnimatePresence>
-                    {isInputModalOpen && (
-                      <div
-                        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px] p-0 sm:p-4"
-                        onClick={closeInputModal}
-                        role="presentation"
-                      >
-                        <motion.div
-                          ref={inputModalRef}
-                          tabIndex={-1}
-                          role="dialog"
-                          aria-modal="true"
-                          aria-labelledby="input-rekap-title"
-                          initial={{ opacity: 0, y: 12 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 12 }}
-                          transition={{ ease: "easeOut", duration: 0.2 }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] shadow-lg border border-slate-200"
-                        >
-                          <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 shrink-0">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <h3 id="input-rekap-title" className="text-sm font-bold tracking-tight text-slate-900">Input Rekapitulasi</h3>
-                                {dailyEngagementsMap[selectedDate]?.autoFilledAt && (
-                                  <Badge
-                                    variant="outline"
-                                    className={cn(
-                                      'text-[9px] font-bold',
-                                      dailyEngagementsMap[selectedDate]?.verifiedAt
-                                        ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
-                                        : 'border-amber-200 text-amber-700 bg-amber-50'
-                                    )}
-                                  >
-                                    {dailyEngagementsMap[selectedDate]?.verifiedAt
-                                      ? 'ReSoEx · Terverifikasi'
-                                      : 'ReSoEx · Perlu review'}
-                                  </Badge>
-                                )}
-                                {selectedUnmatched.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsUnmatchedReviewOpen(true)}
-                                    aria-label={`${selectedUnmatched.length} nama belum terpetakan — buka panel pemetaan`}
-                                    className="inline-flex rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
-                                  >
-                                    <Badge variant="warning" className="text-[9px] font-bold cursor-pointer hover:bg-amber-100">
-                                      {selectedUnmatched.length} belum terpetakan
-                                    </Badge>
-                                  </button>
-                                )}
-                              </div>
-                              <p className="mt-0.5 truncate text-[11px] font-medium text-slate-400">
-                                {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                                {selectedPostedAt.length > 0 && (
-                                  <span className="ml-2 text-slate-300">•</span>
-                                )}
-                                {selectedPostedAt.length > 0 && (
-                                  <span className="ml-2">Posting {selectedPostedAt.map((t) => t.slice(11)).join(' · ')}</span>
-                                )}
-                              </p>
-                            </div>
-                            <Button variant="ghost" size="icon" onClick={closeInputModal} aria-label="Tutup" className="h-8 w-8 shrink-0 rounded-lg hover:bg-slate-100">
-                              <X className="text-slate-500" size={16} />
-                            </Button>
-                          </div>
-
-                          <div className="space-y-3 overflow-y-auto px-4 py-3 pb-safe">
-                            {/* Meta fetch — token dikelola di Pengaturan */}
-                            <div className="rounded-lg border border-slate-200">
-                              <button
-                                type="button"
-                                onClick={() => setIsMetaExpanded((v) => !v)}
-                                className="flex w-full items-center justify-between gap-2 px-3 py-2 transition-colors hover:bg-slate-50"
-                              >
-                                <span className="flex min-w-0 items-center gap-2">
-                                  <RefreshCw size={13} className="shrink-0 text-slate-500" />
-                                  <span className="truncate text-xs font-bold text-slate-700">Tarik via Meta API</span>
-                                  <span className="hidden text-[10px] font-semibold text-slate-400 sm:inline">15:00 WIB</span>
-                                </span>
-                                <ChevronDown
-                                  size={14}
-                                  className={cn('shrink-0 text-slate-400 transition-transform', isMetaExpanded && 'rotate-180')}
-                                />
-                              </button>
-                              {isMetaExpanded && (
-                                <div className="space-y-1.5 border-t border-slate-100 px-3 py-2.5">
-                                  <Button
-                                    onClick={handleFetchRecentMeta}
-                                    disabled={isFetchingMeta || !metaToken.trim()}
-                                    className="h-8 w-full rounded-lg bg-slate-900 text-[11px] font-bold text-white hover:bg-slate-800"
-                                  >
-                                    {isFetchingMeta
-                                      ? 'Menarik data…'
-                                      : !metaToken.trim()
-                                        ? 'Token belum diatur'
-                                        : `Tarik post (${parseLocalISODate(addLocalDays(selectedDate, -1)).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} → ${parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })})`}
-                                  </Button>
-                                  {!metaToken.trim() ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => { closeInputModal(); setActiveTab('settings'); }}
-                                      className="text-[10px] font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-700"
-                                    >
-                                      Atur token Meta di Pengaturan
-                                    </button>
-                                  ) : (
-                                    <p className="text-[10px] leading-snug text-slate-400">
-                                      IG: komentar + link · FB: link post · Window 15:00 H−1 s/d 15:00 (WIB).
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Meta Links Section */}
-                            <div className="rounded-lg border border-slate-200">
-                              <div className="flex items-center justify-between px-3 pt-2.5">
-                                <div className="flex items-center gap-1.5">
-                                  <LinkIcon size={13} className="text-slate-400" />
-                                  <h4 className="text-xs font-bold text-slate-700">Link Postingan</h4>
-                                  <span className="text-[10px] font-semibold text-slate-400">
-                                    {parseLocalISODate(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Tab platform */}
-                              <div className="flex items-center gap-1 px-3 pt-2">
-                                {(['ig', 'fb', 'tiktok'] as const).map((p) => {
-                                  const counts = { ig: igLinks.length, fb: fbLinks.length, tiktok: tiktokLinks.length }[p];
-                                  const active = activeLinkTab === p;
-                                  const label = p === 'ig' ? 'IG' : p === 'fb' ? 'FB' : 'TikTok';
-                                  const Icon = p === 'ig' ? Instagram : p === 'fb' ? Facebook : TiktokIcon;
-                                  return (
-                                    <button
-                                      key={p}
-                                      type="button"
-                                      onClick={() => setActiveLinkTab(p)}
-                                      className={cn(
-                                        'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition-colors',
-                                        active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'
-                                      )}
-                                    >
-                                      <Icon size={11} className={active ? '' : p === 'ig' ? 'text-pink-500' : p === 'fb' ? 'text-blue-500' : 'text-slate-700'} />
-                                      {label}
-                                      <span className={cn('px-1 text-[9px] font-bold', active ? 'text-white/70' : 'text-slate-400')}>
-                                        {counts}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              <div className="p-3 pt-2">
-                                {/* Smart Link Input */}
-                                <div>
-                                  <textarea
-                                    placeholder="Paste link (pisahkan spasi/enter) — Enter untuk tambah…"
-                                    className="h-11 w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-[11px] transition-all focus:ring-slate-900/5"
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault();
-                                        const val = e.currentTarget.value;
-                                        if (val) {
-                                          const urls = val.split(/[\s,\n]+/).filter(url => url.trim() !== '');
-                                          const newIg = [...igLinks];
-                                          const newFb = [...fbLinks];
-                                          const newTiktok = [...tiktokLinks];
-                                          urls.forEach(rawUrl => {
-                                            let url = rawUrl.trim();
-                                            if (!url) return;
-                                            if (url.includes('instagram.com')) {
-                                              url = url.replace(/\/(?:reel|reels)\//i, '/p/');
-                                              // Hanya cegah duplikat di tanggal yang sedang diedit (bukan seluruh history)
-                                              if (!newIg.includes(url)) newIg.push(url);
-                                            } else if (url.includes('facebook.com') || url.includes('fb.watch') || url.includes('fb.com')) {
-                                              if (url.match(/facebook\.com\/reel\/(\d+)/i)) {
-                                                url = url.replace(/facebook\.com\/reel\/(\d+)/i, 'facebook.com/p/$1');
-                                              } else if (url.match(/facebook\.com\/share\/r\/([a-zA-Z0-9]+)/i)) {
-                                                url = url.replace(/facebook\.com\/share\/r\/([a-zA-Z0-9]+)/i, 'facebook.com/share/p/$1');
-                                              }
-                                              if (!newFb.includes(url)) newFb.push(url);
-                                            } else if (url.includes('tiktok.com')) {
-                                              if (!newTiktok.includes(url)) newTiktok.push(url);
-                                            }
-                                          });
-                                          setIgLinks(newIg);
-                                          setFbLinks(newFb);
-                                          setTiktokLinks(newTiktok);
-                                          e.currentTarget.value = '';
-                                        }
-                                      }
-                                    }}
-                                  />
-                                  <p className="text-[9px] text-slate-400 mt-1">Tekan Enter untuk menambahkan. Sistem otomatis memisahkan link IG dan FB.</p>
-                                </div>
-
-                                {/* Active platform links */}
-                                <div className="flex flex-wrap gap-2 items-center mt-2.5">
-                                  {activeLinkTab === 'ig' && (
-                                    <>
-                                      <Instagram size={14} className="text-pink-500" />
-                                      {igLinks.length > 0 ? (
-                                        igLinks.map((link, idx) => (
-                                          <div key={idx} className="inline-flex items-center gap-1 rounded-md bg-pink-50 px-2 py-0.5 text-[11px] font-medium text-pink-700">
-                                            <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
-                                              Post IG {idx + 1}
-                                              <ExternalLink size={10} />
-                                            </a>
-                                            <button
-                                              type="button"
-                                              aria-label={`Hapus Post IG ${idx + 1}`}
-                                              onClick={() => {
-                                                const newLinks = [...igLinks];
-                                                newLinks.splice(idx, 1);
-                                                setIgLinks(newLinks);
-                                              }}
-                                              className="ml-1 p-0.5 hover:bg-pink-200 rounded-full transition-colors"
-                                            >
-                                              <X size={10} />
-                                            </button>
-                                          </div>
-                                        ))
-                                      ) : (
-                                        <span className="text-xs text-slate-400 italic">Belum ada postingan IG</span>
-                                      )}
-                                    </>
-                                  )}
-                                  {activeLinkTab === 'fb' && (
-                                    <>
-                                      <Facebook size={14} className="text-blue-500" />
-                                      {fbLinks.length > 0 ? (
-                                        fbLinks.map((link, idx) => (
-                                          <div key={idx} className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                                            <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
-                                              Post FB {idx + 1}
-                                              <ExternalLink size={10} />
-                                            </a>
-                                            <button
-                                              type="button"
-                                              aria-label={`Hapus Post FB ${idx + 1}`}
-                                              onClick={() => {
-                                                const newLinks = [...fbLinks];
-                                                newLinks.splice(idx, 1);
-                                                setFbLinks(newLinks);
-                                              }}
-                                              className="ml-1 p-0.5 hover:bg-blue-200 rounded-full transition-colors"
-                                            >
-                                              <X size={10} />
-                                            </button>
-                                          </div>
-                                        ))
-                                      ) : (
-                                        <span className="text-xs text-slate-400 italic">Belum ada postingan FB</span>
-                                      )}
-                                    </>
-                                  )}
-                                  {activeLinkTab === 'tiktok' && (
-                                    <>
-                                      <span className="font-bold text-slate-800 text-sm italic pr-1 leading-none">t</span>
-                                      {tiktokLinks.length > 0 ? (
-                                        tiktokLinks.map((link, idx) => (
-                                          <div key={idx} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-800">
-                                            <a href={link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
-                                              Post TikTok {idx + 1}
-                                              <ExternalLink size={10} />
-                                            </a>
-                                            <button
-                                              type="button"
-                                              aria-label={`Hapus Post TikTok ${idx + 1}`}
-                                              onClick={() => {
-                                                const newLinks = [...tiktokLinks];
-                                                newLinks.splice(idx, 1);
-                                                setTiktokLinks(newLinks);
-                                              }}
-                                              className="ml-1 p-0.5 hover:bg-slate-300 rounded-full transition-colors"
-                                            >
-                                              <X size={10} />
-                                            </button>
-                                          </div>
-                                        ))
-                                      ) : (
-                                        <span className="text-xs text-slate-400 italic">Belum ada postingan TikTok</span>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                              <div>
-                                <label className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                                  <Instagram size={11} className="text-pink-500" />
-                                  List IG
-                                </label>
-                                <textarea
-                                  value={igRawInput}
-                                  onChange={(e) => setIgRawInput(e.target.value)}
-                                  placeholder="Paste username / nama…"
-                                  className="h-24 w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 md:h-32"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                                  <Facebook size={11} className="text-blue-500" />
-                                  List FB
-                                </label>
-                                <textarea
-                                  value={fbRawInput}
-                                  onChange={(e) => setFbRawInput(e.target.value)}
-                                  placeholder="Paste nama / profil…"
-                                  className="h-24 w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 md:h-32"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                                  <TiktokIcon size={13} className="text-slate-800" />
-                                  List TikTok
-                                </label>
-                                <textarea
-                                  value={tiktokRawInput}
-                                  onChange={(e) => setTiktokRawInput(e.target.value)}
-                                  placeholder="Paste nama akun TikTok…"
-                                  className="h-24 w-full resize-none rounded-lg border border-slate-200 bg-white p-2 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 md:h-32"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Live match preview */}
-                            <MatchPreview
-                              ig={matchPreview.ig}
-                              fb={matchPreview.fb}
-                              tiktok={matchPreview.tiktok}
-                            />
-                          </div>
-
-                          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
-                            <Button variant="ghost" onClick={closeInputModal} className="h-8 rounded-lg px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-700">
-                              Batal
-                            </Button>
-                            <Button
-                              onClick={handleSaveEngagement}
-                              disabled={isLoading}
-                              className="h-8 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white hover:bg-slate-800"
-                            >
-                              {isLoading ? 'Menyimpan…' : 'Simpan Rekap'}
-                            </Button>
-                          </div>
-                        </motion.div>
-                      </div>
-                    )}
-                  </AnimatePresence>
+                  <InputModal
+                    open={isInputModalOpen}
+                    date={selectedDate}
+                    existing={dailyEngagementsMap[selectedDate]}
+                    employees={employees}
+                    metaToken={metaToken}
+                    postedAt={selectedPostedAt}
+                    unmatchedCount={selectedUnmatched.length}
+                    onClose={closeInputModal}
+                    onOpenUnmatched={() => setIsUnmatchedReviewOpen(true)}
+                    onGoToSettings={() => setActiveTab('settings')}
+                  />
 
                   {/* Modal review nama belum terpetakan */}
                   <AnimatePresence>
@@ -2712,18 +2023,4 @@ const NavItem = React.memo(function NavItem({ active, onClick, icon, label }: { 
   );
 });
 
-const MatchPreview = React.memo(function MatchPreview({ ig, fb, tiktok }: { ig: number; fb: number; tiktok: number }) {
-  const chip = (label: string, n: number, cls: string) => (
-    <span className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold', cls)}>
-      {label} {n}
-    </span>
-  );
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-400">
-      {chip('IG', ig, 'bg-pink-50 text-pink-600')}
-      {chip('FB', fb, 'bg-blue-50 text-blue-600')}
-      {chip('TT', tiktok, 'bg-slate-100 text-slate-600')}
-      <span>pegawai terdeteksi</span>
-    </div>
-  );
-});
+
