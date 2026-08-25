@@ -26,13 +26,16 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         output: {
-          manualChunks: {
-            firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-            motion: ['motion/react'],
-            recharts: ['recharts'],
-            jspdf: ['jspdf', 'jspdf-autotable'],
-            xlsx: ['xlsx'],
-            screenshot: ['modern-screenshot'],
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('firebase')) return 'firebase';
+            if (/[\\/]react-dom[\\/]|[\\/]react[\\/]|[\\/]scheduler[\\/]/.test(id)) return 'react-vendor';
+            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor') || id.includes('internmap')) return 'recharts';
+            if (id.includes('jspdf')) return 'jspdf';
+            if (id.includes('xlsx')) return 'xlsx';
+            if (id.includes('modern-screenshot')) return 'screenshot';
+            if (id.includes('/motion') || id.includes('framer-motion')) return 'motion';
+            return undefined;
           },
         },
       },
