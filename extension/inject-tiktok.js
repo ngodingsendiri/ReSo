@@ -517,13 +517,16 @@
     const curRaw = Number(cursor);
     const cur =
       Number.isFinite(curRaw) && curRaw >= 0 ? Math.round(curRaw) : 0;
+    // TikTok web 2025-26 selalu kirim aid/app_language/device_platform — tanpa
+    // ini server sering 403/empty walau aweme_id valid (guest tetap butuh).
     return (
-      "https://www.tiktok.com/api/comment/list/?aweme_id=" +
+      "https://www.tiktok.com/api/comment/list/?aid=1988&app_language=id-ID&app_name=tiktok_web&device_platform=web_pc&aweme_id=" +
       awemeId +
       "&count=" +
       c +
       "&cursor=" +
-      cur
+      cur +
+      "&current_region=ID"
     );
   }
 
@@ -671,17 +674,22 @@
     // S3-AUDIT: batasi scope ke kontainer komentar bila ada — selector
     // `class*="Comment"` longgar bisa menghisap username dari konten di luar
     // panel (feed/next-up) → over-count. Fallback document bila tak ketemu.
+    // 2026-08: TikTok merombak data-e2e; tambah fallback generik a[href^="/@"].
     let added = 0;
     const scopeEl =
       document.querySelector(
-        '[data-e2e="comment-list"], [data-e2e="comment-container"], [class*="CommentList"]'
+        '[data-e2e="comment-list"], [data-e2e="comment-container"], [class*="CommentList"], [data-e2e="comment-list-container"]'
       ) || null;
     const root = scopeEl || document;
     const sels = [
       '[data-e2e="comment-username-1"]',
       '[data-e2e="comment-username-2"]',
+      '[data-e2e="comment-username"]',
       '[data-e2e="comment-item"] a[href*="/@"]',
       'div[class*="Comment"] a[href*="/@"]',
+      // 2026 fallback: wrapper komentar baru kadang tanpa data-e2e comment-item
+      '[data-e2e="comment-list"] a[href*="/@"]',
+      '[class*="CommentItem"] a[href*="/@"]',
     ];
     for (const sel of sels) {
       root.querySelectorAll(sel).forEach((el) => {
@@ -696,7 +704,7 @@
 
   function commentPanelOpen() {
     return !!document.querySelector(
-      '[data-e2e="comment-list"], [data-e2e="comment-container"], [class*="CommentList"]'
+      '[data-e2e="comment-list"], [data-e2e="comment-container"], [class*="CommentList"], [data-e2e="comment-list-container"]'
     );
   }
 

@@ -439,27 +439,11 @@
       return;
     }
 
-    // Pre-check login (pola IG): replay API komentar butuh sesi TikTok.
-    // Gagal cepat dengan pesan jelas alih-alih run yang sia-sia saat logout.
+    // TikTok guest tetap boleh (public video) — soft gate saja, jangan hard-block
+    // seperti IG. Jika benar-benar butuh login, engine akan lapor 401/HTML → no_login.
     const login = await sendBg("CHECK_TT_LOGIN");
     if (gen !== startGen) return;
-    if (login && login.loggedIn === false) {
-      const noLoginMsg =
-        "Sesi TikTok tidak aktif — login di tiktok.com lalu Proses lagi.";
-      setLocal({ status: "error", names: [], message: noLoginMsg, videoHint: "" });
-      await sendBg("SET_STATE", {
-        patch: {
-          status: "error",
-          names: [],
-          count: 0,
-          message: noLoginMsg,
-          stopReason: "no_login",
-          videoHint: "",
-          runId: null,
-        },
-      });
-      return;
-    }
+    void login; // guest lanjut — tidak return
 
     currentRunId = opts.runId || makeRunId();
     cooldownActive = false;

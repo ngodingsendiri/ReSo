@@ -4,6 +4,15 @@ Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](htt
 
 ## [Belum dirilis]
 
+## [1.0.60] - 2026-08-26
+
+### Fix TikTok 0-rekap — guest + synthetic + selector 2026
+Root TikTok "gak bisa rekap sama sekali" = gate login terlalu keras. Hotfix:
+- **Gate login jadi soft** `content-tiktok.js:442` + `background.js:885` `CHECK_TT_LOGIN` + `startTikTok:1436`: cek `sessionid/sessionid_ss/sid_tt`, `loggedIn:null` = guest lanjut (bukan `error no_login`). Guest tetap bisa via DOM + synthetic guest (`tt_webid`); 401/HTML di engine tetap jadi `no_login` yang benar. Sebelumnya anon public video langsung `no_login` → 0 nama.
+- **Synthetic diperkuat** `inject-tiktok.js:509` `buildSyntheticListUrl` kini `aid=1988&app_language=id-ID&app_name=tiktok_web&device_platform=web_pc&current_region=ID` selain `aweme_id/count/cursor` — tanpa ini server 403/empty walau aweme valid (2025-26 `aid` wajib).
+- **Selector DOM 2026** `inject-tiktok.js:670` `scrapeDomNicknames` + `commentPanelOpen:706`: tambah `comment-list-container` + `[data-e2e="comment-username"]` + `[class*="CommentItem"] a` agar panel baru TikTok tetap ter-harvest; tetap scoped ke `comment-list` anti over-count (S3-AUDIT).
+- Test: `tt-engine-logic 64/64` + `519/519` tetap hijau.
+
 ## [1.0.59] - 2026-08-25
 
 ### Eksekusi kritik mesin FB: kejujuran hasil + ketahanan (S1–S7)

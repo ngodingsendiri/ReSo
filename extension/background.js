@@ -883,14 +883,21 @@ async function handleMessage(msg, sender) {
     }
 
     case "CHECK_TT_LOGIN": {
-      // Pre-flight gate for TikTok (pola IG): replay comment/list butuh sesi;
-      // tanpa cookie sessionid, run hanya membuang waktu & request.
+      // TikTok: guest (tanpa login) masih bisa baca komentar public via DOM +
+      // synthetic guest (tt_webid) — jangan hard-block. Cek beberapa nama cookie
+      // (sessionid + sessionid_ss) karena domain bervariasi; guest = soft.
       try {
-        const c = await chrome.cookies.get({
-          url: "https://www.tiktok.com/",
-          name: "sessionid",
-        });
-        return { ok: true, loggedIn: !!c };
+        const names = ["sessionid", "sessionid_ss", "sid_tt"];
+        let found = null;
+        for (const n of names) {
+          try {
+            const c = await chrome.cookies.get({ url: "https://www.tiktok.com/", name: n });
+            if (c) { found = c; break; }
+          } catch { /* try next name */ }
+        }
+        // null = guest → loggedIn null (soft, biar panel lanjut coba)
+        if (!found) return { ok: true, loggedIn: null, guest: true };
+        return { ok: true, loggedIn: true };
       } catch (e) {
         return { ok: false, loggedIn: null, error: String(e?.message || e) };
       }
@@ -1433,23 +1440,18 @@ async function startFacebook(tab, msg) {
 }
 
 async function startTikTok(tab, msg) {
-  // Pre-check sesi (pola IG): replay API komentar butuh cookie sessionid.
-  // Gagal cepat dengan pesan jelas alih-alih run yang sia-sia saat logout.
+  // TikTok guest masih bisa (DOM + synthetic guest) — jangan hard-block seperti
+  // IG. Cek sessionid/sessionid_ss; guest tetap lanjut, engine yang memutuskan
+  // apakah perlu login (401/HTML → no_login di engine).
   try {
-    const cookie = await chrome.cookies.get({
-      url: "https://www.tiktok.com/",
-      name: "sessionid",
-    });
-    if (!cookie) {
-      const state = await setState("tiktok", {
-        status: "error",
-        stopReason: "no_login",
-        message: reasonToMessage("no_login", 0, "tiktok"),
-        tabId: tab.id,
-        runId: null,
-      });
-      return { ok: false, state, error: "Not logged in to TikTok" };
+    let hasSession = false;
+    for (const n of ["sessionid", "sessionid_ss", "sid_tt"]) {
+      try {
+        const c = await chrome.cookies.get({ url: "https://www.tiktok.com/", name: n });
+        if (c) { hasSession = true; break; }
+      } catch { /* next */ }
     }
+    void hasSession; // guest tetap lanjut — soft gate saja
   } catch {
     /* cookies API unavailable — let the engine probe instead */
   }
