@@ -13,7 +13,7 @@ function normalize(raw) {
     if (u.protocol === "http:" && u.hostname !== "localhost" && !u.hostname.endsWith(".localhost")) {
       return null;
     }
-    return `${u.protocol}//${u.host}`;
+    return `${u.protocol}//${u.host.toLowerCase()}`;
   } catch {
     return null;
   }
@@ -40,10 +40,20 @@ saveBtn.addEventListener("click", async () => {
   try {
     if (norm) {
       await chrome.storage.local.set({ [KEY]: norm });
-      // Minta izin host (best-effort) agar handoff bisa baca tab.url domain ini.
+      // Minta izin host (best-effort) agar handoff/fetch bisa ke domain custom.
+      // Perlu optional_host_permissions di manifest (H1).
       try {
-        await chrome.permissions.request({ origins: [`${norm}/*`] });
-      } catch {}
+        const granted = await chrome.permissions.request({ origins: [`${norm}/*`] });
+        if (!granted) {
+          errEl.textContent = "Izin host ditolak — buka chrome://extensions → ReSo Ekstension → Site access → Allow.";
+          errEl.hidden = false;
+          return;
+        }
+      } catch (e) {
+        errEl.textContent = `Gagal minta izin host: ${e?.message || e}`;
+        errEl.hidden = false;
+        return;
+      }
     } else {
       await chrome.storage.local.remove(KEY);
     }

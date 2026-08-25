@@ -194,6 +194,13 @@
       // S1-AUDIT-TT: siaran live tidak punya kolom komentar permalink.
       return "Siaran LIVE TikTok tidak memiliki kolom komentar permanen — buka salah satu video/foto, lalu Proses lagi.";
     }
+    if (reason === "synthetic_failed") {
+      // L1-TT: synthetic tanpa capture gagal tanpa hasil (jaringan/signature) —
+      // bukan error mentah; fallback ke scroll yang benar, jangan hijau palsu.
+      return c
+        ? `Belum tuntas — ${c} ${word} terkumpul, endpoint synthetic gagal. Proses lagi untuk melengkapi.`
+        : "Endpoint komentar gagal dibuat — buka panel komentar sampai terlihat, tunggu 2–3 dtk, lalu Proses lagi.";
+    }
     return c ? `${c} ${word}` : "Siap.";
   }
   // END-RESO-DONEMSG
@@ -301,11 +308,14 @@
   async function rekapSend() {
     if (status === "running") return;
     await startExtract();
+    let myRun = null; try { myRun = typeof currentRunId !== "undefined" ? currentRunId : null; } catch { myRun = null; }
     const start = Date.now();
     while (Date.now() - start < 300000) {
+      try { if (typeof currentRunId !== "undefined" && currentRunId !== myRun) return; } catch {}
       if (["done", "partial", "stopped", "error"].includes(status)) break;
       await new Promise((r) => setTimeout(r, 800));
     }
+    try { if (typeof currentRunId !== "undefined" && currentRunId !== myRun) return; } catch {}
     const list = (names || []).slice();
     if (!list.length) {
       setLocal({ message: "Tidak ada nama untuk dikirim ke ReSo." });
@@ -731,6 +741,7 @@
     if (stopReason === "stopped") return "stopped";
     if (stopReason === "timeout") return "partial";
     if (stopReason === "incomplete") return count ? "partial" : "error";
+    if (stopReason === "synthetic_failed") return count ? "partial" : "error";
     if (stopReason === "live") return "error";
     if (stopReason === "rate_limit") return count ? "partial" : "error";
     if (stopReason === "blocked") return count ? "partial" : "error";

@@ -513,6 +513,13 @@ function doneMessage(reason, count, platform, options) {
     // S1-AUDIT-TT: siaran live tidak punya kolom komentar permalink.
     return "Siaran LIVE TikTok tidak memiliki kolom komentar permanen — buka salah satu video/foto, lalu Proses lagi.";
   }
+  if (reason === "synthetic_failed") {
+    // L1-TT: synthetic tanpa capture gagal tanpa hasil (jaringan/signature) —
+    // bukan error mentah; fallback ke scroll yang benar, jangan hijau palsu.
+    return c
+      ? `Belum tuntas — ${c} ${word} terkumpul, endpoint synthetic gagal. Proses lagi untuk melengkapi.`
+      : "Endpoint komentar gagal dibuat — buka panel komentar sampai terlihat, tunggu 2–3 dtk, lalu Proses lagi.";
+  }
   return c ? `${c} ${word}` : "Siap.";
 }
 // END-RESO-DONEMSG
@@ -896,8 +903,9 @@ function sanitizeTikTokTemplateUrl(url) {
  */
 function isTikTokTemplateValid(url, meta, requiredAwemeId = null) {
   if (!url || typeof url !== "string") return false;
-  if (!url.toLowerCase().includes("tiktok.com/api/comment/list")) return false;
-  if (url.toLowerCase().includes("tiktok.com/api/comment/list/reply")) return false;
+  try { if (!new URL(url).hostname.endsWith("tiktok.com")) return false; } catch { return false; }
+  if (!url.toLowerCase().includes("/api/comment/list")) return false;
+  if (url.toLowerCase().includes("/api/comment/list/reply")) return false;
   const capturedAt = meta?.capturedAt;
   if (!capturedAt || typeof capturedAt !== "number") return false;
   if (Date.now() - capturedAt > TEMPLATE_TTL_MS) return false;
@@ -1008,7 +1016,8 @@ function sanitizeInstagramTemplateUrl(url) {
  */
 function isInstagramTemplateValid(url, meta, requiredMediaId = null) {
   if (!url || typeof url !== "string") return false;
-  if (!url.includes("instagram.com/api/v1/media/")) return false;
+  try { if (!new URL(url).hostname.endsWith("instagram.com")) return false; } catch { return false; }
+  if (!url.includes("/api/v1/media/")) return false;
   if (!url.includes("/comments/")) return false;
   if (url.includes("/inline_child_comments")) return false;
   const capturedAt = meta?.capturedAt;
@@ -1037,6 +1046,9 @@ function isInstagramTemplateValid(url, meta, requiredMediaId = null) {
  */
 function sanitizeEngineOptions(cmd, options, platform) {
   const raw = options && typeof options === "object" ? options : {};
+  // M4: hostname check anti spoof substring (evil.com/?u=tiktok.com/api/...)
+  const isTikTokHost = (u) => { try { return new URL(u).hostname.endsWith("tiktok.com"); } catch { return false; } };
+  const isIgHost = (u) => { try { return new URL(u).hostname.endsWith("instagram.com"); } catch { return false; } };
   if (cmd === "SET_TEMPLATE") {
     const url =
       typeof raw.templateUrl === "string" ? raw.templateUrl.slice(0, 4000) : null;
@@ -1044,7 +1056,8 @@ function sanitizeEngineOptions(cmd, options, platform) {
       return {
         templateUrl:
           url &&
-          url.toLowerCase().includes("tiktok.com/api/comment/list") &&
+          isTikTokHost(url) &&
+          url.toLowerCase().includes("/api/comment/list") &&
           !url.toLowerCase().includes("/list/reply")
             ? url
             : null,
@@ -1054,7 +1067,8 @@ function sanitizeEngineOptions(cmd, options, platform) {
       return {
         templateUrl:
           url &&
-          url.includes("instagram.com/api/v1/media/") &&
+          isIgHost(url) &&
+          url.includes("/api/v1/media/") &&
           url.includes("/comments/") &&
           !url.includes("/inline_child_comments")
             ? url
@@ -1089,7 +1103,8 @@ function sanitizeEngineOptions(cmd, options, platform) {
       typeof raw.templateUrl === "string" ? raw.templateUrl.slice(0, 4000) : null;
     out.templateUrl =
       url &&
-      url.toLowerCase().includes("tiktok.com/api/comment/list") &&
+      isTikTokHost(url) &&
+      url.toLowerCase().includes("/api/comment/list") &&
       !url.toLowerCase().includes("/list/reply")
         ? url
         : null;
@@ -1102,7 +1117,8 @@ function sanitizeEngineOptions(cmd, options, platform) {
       typeof raw.templateUrl === "string" ? raw.templateUrl.slice(0, 4000) : null;
     out.templateUrl =
       url &&
-      url.includes("instagram.com/api/v1/media/") &&
+      isIgHost(url) &&
+      url.includes("/api/v1/media/") &&
       url.includes("/comments/") &&
       !url.includes("/inline_child_comments")
         ? url
@@ -1117,7 +1133,7 @@ function applyStatePatch(prev, patch, platform) {
   const def = defaultStateFor(platform);
   const next = { ...def, ...prev, ...patch, updatedAt: Date.now() };
   if (Array.isArray(next.names)) {
-    next.names = mergeNames([], next.names, platform);
+    next.names = mergeNames([], next.names, platform).slice(0, 5000);
     next.count = next.names.length;
   }
   return next;
@@ -1562,19 +1578,30 @@ async function enqueueResoPayload(payload) {
   if (idx >= 0) {
     list[idx] = {
       ...list[idx],
-      names: mergeNames(list[idx].names || [], names),
+      names: mergeNames(list[idx].names || [], names).slice(0, 10000),
       createdAt: list[idx].createdAt || Date.now(),
     };
   } else {
     list.push({
       platform: payload.platform,
-      names,
+      names: names.slice(0, 10000),
       date: payload.date,
       postedAt: payload.postedAt || null,
       createdAt: Date.now(),
     });
   }
-  await setResoPending(list);
+  // H4: cap antrian 30 entry anti QUOTA_EXCEEDED (10MB chrome.storage.local).
+  // Entry terlama dibuang duluan; data terbaru prioritas.
+  if (list.length > 30) list.splice(0, list.length - 30);
+  try {
+    await setResoPending(list);
+  } catch (e) {
+    // Quota penuh → buang setengah tertua coba lagi
+    if (String(e?.message || "").includes("QUOTA") || String(e).includes("quota")) {
+      list.splice(0, Math.ceil(list.length / 2));
+      try { await setResoPending(list); } catch { /* give up */ }
+    } else throw e;
+  }
 }
 
 /** Kirim ulang semua antrian yang bisa dikirim. Error definitif (400/403/404:

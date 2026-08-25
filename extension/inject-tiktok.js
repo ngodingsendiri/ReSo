@@ -1116,10 +1116,10 @@
           );
           scrapeDomNicknames();
           if (stillMine()) {
-            // Gagal total di mode synthetic:
+            // Gagal total di mode synthetic (error atau synthetic_failed tanpa hasil):
             //  • embed → scroll mustahil (tak ada panel DOM) → panduan eksplisit
             //  • lainnya → serahkan ke mode scroll (nama terkumpul tetap ada)
-            if (synthReason === "error" && nameMap.size === 0) {
+            if ((synthReason === "error" || synthReason === "synthetic_failed") && nameMap.size === 0) {
               if (isEmbed) {
                 post("ERROR", {
                   message:

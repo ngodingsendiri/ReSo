@@ -4,6 +4,17 @@ Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](htt
 
 ## [Belum dirilis]
 
+## [1.0.61] - 2026-08-26
+
+### Audit bug komprehensif — H1-H5 + M1-M6 (anti data hilang & ilusi sukses)
+11 bug dari audit mendalam v1.0.60 (belum tercakup test):
+- **H1 (custom domain fetch diblok)** `manifest.json:48` tambah `optional_host_permissions: https://*/*, http://localhost/*`; `options.js:41` cek `granted===false` → error Site access Allow. Tanpa ini `fetch(getResoUrl()/api/engagement)` ke `reso-xxx.vercel.app` selalu Failed to fetch.
+- **H2 (synthetic_failed hijau palsu)** `inject-tiktok.js:818` `synthetic_failed` → `content-*.js:719` `mapDone` + `background.js:430` `statusFromReason` + `shared.js:428` `doneMessage` kini `partial/error` (bukan `done`). `runExtract` `inject-tiktok.js:1122` fallback DOM untuk `synthetic_failed`.
+- **H3 (TOCTOU running hijack)** `background.js:713` `withStateLock` per-platform serialisasi `SET_STATE running` & `ENGINE_CMD START` — dua tab START bersamaan tidak lagi baca `idle` bersamaan.
+- **H4 (antrian unbounded QUOTA)** `shared.js:1551` `enqueueResoPayload` cap 30 entry (splice tertua) + `names.slice(0,5000)` + QUOTA catch; `shared.js:1123` `applyStatePatch` slice 5000.
+- **H5 (onRemoved SW suspend)** `background.js:673` `onRemoved` pakai `Promise.all` + `onStartup` recovery orphan running; `persistResult` di-await.
+- **M2** `inject-tiktok.js:371` `payloadMatchesVideo` hapus shape-only fallback → anti kontaminasi lintas video. **M3** `background.js:875` `GET_STATE tt hasTemplate` false di profil/feed tanpa aweme (`sameVideo` check). **M4** `shared.js:1045` `sanitizeEngineOptions` + `isTemplateValid` `shared.js:904` pakai `hostname.endsWith`. **M6** `content-*.js:318` `rekapSend` `myRun` guard race. **M1** `content-fb.js:338` `scanPageForPostDate` prefer `postRoot`.
+
 ## [1.0.60] - 2026-08-26
 
 ### Fix TikTok 0-rekap — guest + synthetic + selector 2026

@@ -432,6 +432,7 @@ function statusFromReason(reason, count) {
   if (reason === "timeout") return "partial";
   // Pagination berhenti sebelum ujung thread terlihat — jangan pernah "done".
   if (reason === "incomplete") return count > 0 ? "partial" : "error";
+  if (reason === "synthetic_failed") return count > 0 ? "partial" : "error";
   // Siaran live tidak punya kolom komentar permalink.
   if (reason === "live") return "error";
   if (reason === "rate_limit") return count > 0 ? "partial" : "error";
@@ -670,22 +671,28 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 // If the tab owning a run is closed, finalize the run instead of leaving it hung
-chrome.tabs.onRemoved.addListener(async (tabId) => {
+// H5: SW bisa suspend sebelum async selesai → keepAlive + Promise.all,
+// + recovery orphan di onStartup (tab sudah hilang sebelum event).
+chrome.tabs.onRemoved.addListener((tabId) => {
   injectedEngines.delete(tabId);
-  for (const p of PLATFORMS) {
-    const state = await getState(p);
-    if (state.status !== "running" || state.tabId !== tabId) continue;
-    const count = state.names?.length || 0;
-    const finalState = await setState(p, {
-      status: count ? "stopped" : "idle",
-      names: state.names || [],
-      stopReason: "stopped",
-      message: reasonToMessage("stopped", count, p, "(tab ditutup)"),
-      tabId: null,
-      runId: null,
+  (async () => {
+    const tasks = PLATFORMS.map(async (p) => {
+      const state = await getState(p);
+      if (state.status !== "running" || state.tabId !== tabId) return;
+      const count = state.names?.length || 0;
+      const finalState = await setState(p, {
+        status: count ? "stopped" : "idle",
+        names: state.names || [],
+        stopReason: "stopped",
+        message: reasonToMessage("stopped", count, p, "(tab ditutup)"),
+        tabId: null,
+        runId: null,
+      });
+      if (count) await persistResult(p, finalState).catch(() => {});
     });
-    if (count) persistResult(p, finalState).catch(() => {});
-  }
+    await Promise.all(tasks).catch(() => {});
+  })();
+  return true;
 });
 
 chrome.tabs.onActivated.addListener(() => {
@@ -715,6 +722,18 @@ function withResoQueueLock(fn) {
   return next;
 }
 
+// H3 — TOCTOU `running` hijack: SET_STATE/ENGINE_CMD baca-cek-tulis harus
+// serial per platform. Lock per-platform (mirip resoQueue) agar dua START
+// bersamaan tidak dua-duanya baca `idle`.
+const stateQueue = new Map(); // platform -> Promise
+function withStateLock(platform, fn) {
+  const key = platform || "__global__";
+  const prev = stateQueue.get(key) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  stateQueue.set(key, next.catch(() => {}));
+  return next;
+}
+
 /** Flush antrian kiriman ke ReSo dengan cooldown. Hanya jalan bila ada yang
  *  antri (cek storage murah), jadi offline/tanpa kiriman = nol beban. */
 async function maybeFlushResoQueue() {
@@ -732,6 +751,28 @@ async function maybeFlushResoQueue() {
 
 chrome.runtime.onStartup.addListener(() => {
   registerResoContentScript().catch(() => {});
+  // H5 recovery: run `running` yang tab-nya sudah hilang sebelum onRemoved
+  (async () => {
+    try {
+      const tabs = await chrome.tabs.query({});
+      const ids = new Set(tabs.map((t) => t.id));
+      for (const p of PLATFORMS) {
+        const st = await getState(p);
+        if (st.status === "running" && st.tabId && !ids.has(st.tabId)) {
+          const count = st.names?.length || 0;
+          const fin = await setState(p, {
+            status: count ? "stopped" : "idle",
+            names: st.names || [],
+            stopReason: "stopped",
+            message: reasonToMessage("stopped", count, p, "(tab ditutup)"),
+            tabId: null,
+            runId: null,
+          });
+          if (count) await persistResult(p, fin).catch(() => {});
+        }
+      }
+    } catch { /* best-effort */ }
+  })();
   maybeFlushResoQueue();
   try {
     chrome.alarms.create(RESO_FLUSH_ALARM, { periodInMinutes: 2 });
@@ -841,8 +882,13 @@ async function handleMessage(msg, sender) {
           });
           aweme = extractAwemeId(tab?.url);
         }
-        const replay = await getReplayTemplate(aweme);
-        state.hasTemplate = !!replay.url;
+        // M3: jangan hijau palsu di profil/feed tanpa aweme
+        if (!aweme) {
+          state.hasTemplate = false;
+        } else {
+          const replay = await getReplayTemplate(aweme);
+          state.hasTemplate = !!replay.url && !!replay.sameVideo;
+        }
       }
       if (platform === "instagram") {
         // Simetris dengan TikTok: recompute dari session template (TTL + shape)
@@ -932,76 +978,79 @@ async function handleMessage(msg, sender) {
       if (!platform) {
         return { ok: false, error: "No supported platform" };
       }
-      // Whitelist patch fields (prevent arbitrary state injection)
-      const raw = msg.patch && typeof msg.patch === "object" ? msg.patch : {};
-      const patch = {};
-      const allow = [
-        "status",
-        "names",
-        "count",
-        "message",
-        "stopReason",
-        "includeReplies",
-        "runId",
-        "postHint",
-        "videoHint",
-        "hasTemplate",
-      ];
-      for (const k of allow) {
-        if (k in raw) patch[k] = raw[k];
-      }
-      // Never trust client-supplied tabId — stamp from content sender when present
-      if (sender.tab?.id) {
-        patch.tabId = sender.tab.id;
-      }
-      const allowedStatus = new Set([
-        "idle",
-        "running",
-        "done",
-        "partial",
-        "stopped",
-        "error",
-      ]);
-      if (patch.status != null && !allowedStatus.has(patch.status)) {
-        delete patch.status;
-      }
-      if (Array.isArray(patch.names)) {
-        patch.names = patch.names
-          .filter((n) => typeof n === "string")
-          .slice(0, 5000);
-      }
-      if (typeof patch.message === "string") {
-        patch.message = patch.message.slice(0, 500);
-      }
-      if (typeof patch.runId === "string") {
-        patch.runId = patch.runId.slice(0, 80);
-      } else if ("runId" in patch && patch.runId != null) {
-        delete patch.runId;
-      }
-
-      // Prevent tab B from silently hijacking an in-flight run on tab A
-      if (patch.status === "running" && sender.tab?.id) {
-        const prev = await getState(platform);
-        if (
-          prev.status === "running" &&
-          prev.tabId &&
-          prev.tabId !== sender.tab.id
-        ) {
-          return {
-            ok: false,
-            error: "Run active on another tab",
-            state: prev,
-          };
+      // H3: serialize per-platform agar TOCTOU `running` tidak hijack
+      return withStateLock(platform, async () => {
+        // Whitelist patch fields (prevent arbitrary state injection)
+        const raw = msg.patch && typeof msg.patch === "object" ? msg.patch : {};
+        const patch = {};
+        const allow = [
+          "status",
+          "names",
+          "count",
+          "message",
+          "stopReason",
+          "includeReplies",
+          "runId",
+          "postHint",
+          "videoHint",
+          "hasTemplate",
+        ];
+        for (const k of allow) {
+          if (k in raw) patch[k] = raw[k];
         }
-      }
+        // Never trust client-supplied tabId — stamp from content sender when present
+        if (sender.tab?.id) {
+          patch.tabId = sender.tab.id;
+        }
+        const allowedStatus = new Set([
+          "idle",
+          "running",
+          "done",
+          "partial",
+          "stopped",
+          "error",
+        ]);
+        if (patch.status != null && !allowedStatus.has(patch.status)) {
+          delete patch.status;
+        }
+        if (Array.isArray(patch.names)) {
+          patch.names = patch.names
+            .filter((n) => typeof n === "string")
+            .slice(0, 5000);
+        }
+        if (typeof patch.message === "string") {
+          patch.message = patch.message.slice(0, 500);
+        }
+        if (typeof patch.runId === "string") {
+          patch.runId = patch.runId.slice(0, 80);
+        } else if ("runId" in patch && patch.runId != null) {
+          delete patch.runId;
+        }
 
-      if (typeof patch.includeReplies === "boolean") {
-        saveIncludeRepliesPref(platform, patch.includeReplies).catch(() => {});
-      }
-      return {
-        ok: true,
-        state: await setState(platform, patch),
-      };
+        // Prevent tab B from silently hijacking an in-flight run on tab A
+        if (patch.status === "running" && sender.tab?.id) {
+          const prev = await getState(platform);
+          if (
+            prev.status === "running" &&
+            prev.tabId &&
+            prev.tabId !== sender.tab.id
+          ) {
+            return {
+              ok: false,
+              error: "Run active on another tab",
+              state: prev,
+            };
+          }
+        }
+
+        if (typeof patch.includeReplies === "boolean") {
+          saveIncludeRepliesPref(platform, patch.includeReplies).catch(() => {});
+        }
+        return {
+          ok: true,
+          state: await setState(platform, patch),
+        };
+      });
     }
 
     case "RESET": {
@@ -1101,24 +1150,29 @@ async function handleMessage(msg, sender) {
         return { ok: false, error: "Invalid engine cmd" };
       }
       if (cmd === "START") {
-        const st = await getState(platform);
-        const runId = msg.options?.runId;
-        // One active extract per platform globally
-        if (st.status === "running") {
-          if (st.tabId && st.tabId !== tabId) {
-            return {
-              ok: false,
-              error: "Run active on another tab — stop it first",
-            };
+        return withStateLock(platform, async () => {
+          const st = await getState(platform);
+          const runId = msg.options?.runId;
+          // One active extract per platform globally
+          if (st.status === "running") {
+            if (st.tabId && st.tabId !== tabId) {
+              return {
+                ok: false,
+                error: "Run active on another tab — stop it first",
+              };
+            }
+            if (st.runId && runId && st.runId !== runId) {
+              return { ok: false, error: "Another run is active" };
+            }
           }
-          if (st.runId && runId && st.runId !== runId) {
-            return { ok: false, error: "Another run is active" };
+          // START must carry a runId so progress can be correlated
+          if (typeof runId !== "string" || !runId) {
+            return { ok: false, error: "START requires runId" };
           }
-        }
-        // START must carry a runId so progress can be correlated
-        if (typeof runId !== "string" || !runId) {
-          return { ok: false, error: "START requires runId" };
-        }
+          const options =
+            msg.options && typeof msg.options === "object" ? msg.options : {};
+          return await engineCmd(tabId, platform, cmd, options);
+        });
       }
       const options =
         msg.options && typeof msg.options === "object" ? msg.options : {};
