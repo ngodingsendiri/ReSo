@@ -4,6 +4,12 @@ Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](htt
 
 ## [Belum dirilis]
 
+## [1.0.62] - 2026-08-26
+
+### Simulasi Chrome Playwright — verifikasi FB/TT/IG 3/3 OK + rilis
+- **`extension/scripts/chrome-simulation.mjs`** baru: Playwright Chromium headless jalankan engine **asli** `inject-*.js` di V8 Chrome (bukan Node mock) + `page.route` mock API. Hasil `v1.0.61`: TikTok 3 nama `complete`, IG 2 `complete`, FB 1 `complete` — semua `OK`.
+- Bump `1.0.61 → 1.0.62` untuk rilis baru (tidak ada perubahan logic, hanya tambah tool simulasi + bump versi rilis).
+
 ## [1.0.61] - 2026-08-26
 
 ### Audit bug komprehensif — H1-H5 + M1-M6 (anti data hilang & ilusi sukses)
