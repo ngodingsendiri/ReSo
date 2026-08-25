@@ -8,7 +8,8 @@ import { toast } from 'sonner';
 import { useAuth } from '../FirebaseProvider';
 import { APP_VERSION } from '../../lib/version';
 import { useAppLogo } from '../../hooks/useAppLogo';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { dinasDoc } from '../../lib/firebase';
 
 interface SettingsTabProps {
   recalculateConfig: { mode: 'last_day' | 'last_week' };
@@ -54,7 +55,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     if (!user || !db) return;
     const load = async () => {
       try {
-        const docRef = doc(db, 'settings', 'social_links');
+        const docRef = dinasDoc(db, user.uid, 'settings', 'social_links');
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           const data = snap.data() as { ig?: string; fb?: string; tiktok?: string };
@@ -75,7 +76,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     if (!user || !db) return;
     setIsSavingSocial(true);
     try {
-      await setDoc(doc(db, 'settings', 'social_links'), {
+      await setDoc(dinasDoc(db, user.uid, 'settings', 'social_links'), {
         ...socialLinks,
         updatedAt: serverTimestamp()
       });

@@ -468,7 +468,19 @@ export default function EmployeeManager({ employees }: EmployeeManagerProps) {
         const employeesRef = dinasCollection(db, user.uid, 'employees');
         let chunkCount = 0;
 
-        for (const row of chunk) {
+        // Deduplikasi NIP dalam chunk (hindari multiple writes ke doc sama dalam 1 batch)
+        const uniqueByNip = new Map<string, any>();
+        for (const r of chunk) {
+          const n = String((r as any).nip || (r as any)['NIP'] || (r as any)['Nomor Induk Pegawai'] || '').trim();
+          if (n) {
+            uniqueByNip.set(n, r);
+          } else {
+            // Baris tanpa NIP tetap diproses terpisah (akan gagal validasi name&&nip)
+            uniqueByNip.set(`__nonip_${Math.random().toString(36).slice(2)}`, r);
+          }
+        }
+
+        for (const row of uniqueByNip.values()) {
           // Map potential column names (Indonesian/English)
           const name = String(row.name || row['Nama Lengkap'] || row['Nama'] || '').trim();
           const nip = String(row.nip || row['NIP'] || row['Nomor Induk Pegawai'] || '').trim();
@@ -496,9 +508,9 @@ export default function EmployeeManager({ employees }: EmployeeManagerProps) {
             if (tiktokName) optionalFields.tiktokName = tiktokName;
             if (tiktokName2) optionalFields.tiktokName2 = tiktokName2;
 
-            // Check if it exists in the current database
+            // Check if it exists in the current database (hanya NIP, bukan nama)
             const existingEmployee = employees.find(
-              emp => emp.nip === nip || emp.name.toLowerCase() === name.toLowerCase()
+              emp => emp.nip === nip
             );
 
             if (existingEmployee) {

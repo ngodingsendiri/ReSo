@@ -82,6 +82,7 @@ export function InputModal({
   const [initialTiktokLinks, setInitialTiktokLinks] = useState<string[]>([]);
 
   const prevDateRef = useRef(date);
+  const notifiedDirtyRef = useRef<string | null>(null);
 
   // Matching preview ditahan (debounce) — hanya dihitung selagi modal terbuka.
   const debouncedIgRawInput = useDebouncedValue(igRawInput);
@@ -100,10 +101,10 @@ export function InputModal({
   // Muat isi dokumen saat modal dibuka / ganti tanggal. Guard "dirty"
   // mencegah data tarikan Meta/API yang belum disimpan tertimpa snapshot baru.
   useEffect(() => {
-    if (!open) return;
-
-    const isDateChange = date !== prevDateRef.current;
-    prevDateRef.current = date;
+    if (!open) {
+      notifiedDirtyRef.current = null;
+      return;
+    }
 
     const isDirty =
       igRawInput !== initialIgRawInput ||
@@ -113,10 +114,22 @@ export function InputModal({
       JSON.stringify(fbLinks) !== JSON.stringify(initialFbLinks) ||
       JSON.stringify(tiktokLinks) !== JSON.stringify(initialTiktokLinks);
 
-    if (!isDateChange && isDirty) {
-      toast.info('Ada perubahan yang belum disimpan. Simpan terlebih dahulu atau pilih tanggal lain.');
-      return;
+    const isDateChange = date !== prevDateRef.current;
+
+    if (isDirty) {
+      if (isDateChange) {
+        const ok = window.confirm('Ada perubahan belum disimpan. Buang perubahan dan muat tanggal baru?');
+        if (!ok) return;
+      } else {
+        if (notifiedDirtyRef.current !== date) {
+          notifiedDirtyRef.current = date;
+          toast.info('Ada perubahan yang belum disimpan. Simpan terlebih dahulu.');
+        }
+        return;
+      }
     }
+    notifiedDirtyRef.current = null;
+    prevDateRef.current = date;
 
     if (existing) {
       setIgRawInput(existing.igRawText || '');
@@ -155,7 +168,8 @@ export function InputModal({
     const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     try {
-      if (!metaToken) throw new Error("Token API Meta tidak boleh kosong.");
+      const token = metaToken.trim();
+      if (!token) throw new Error("Token API Meta tidak boleh kosong.");
 
       // Window rekap resmi: 15:00 H-1 s/d 15:00 D (WIB) = UTC 08:00
       const isWithinCustomWindow = (postDateStr: string, targetDateStr: string) => {
@@ -171,18 +185,18 @@ export function InputModal({
       type MetaPost = { id: string; created_time?: string; timestamp?: string; permalink_url?: string; permalink?: string };
       let fbPosts: MetaPost[] = [];
       let igPosts: MetaPost[] = [];
-      let pageToken = metaToken;
+      let pageToken = token;
       let pageId = "me";
 
       // Resolve Page Token
       try {
-        const accRes = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${metaToken}`, { signal: controller.signal });
+        const accRes = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${token}`, { signal: controller.signal });
         const accData = await accRes.json();
         if (accData.data && accData.data.length > 0) {
           pageId = accData.data[0].id;
           pageToken = accData.data[0].access_token;
         } else {
-          const debugRes = await fetch(`https://graph.facebook.com/v19.0/debug_token?input_token=${metaToken}&access_token=${metaToken}`, { signal: controller.signal });
+          const debugRes = await fetch(`https://graph.facebook.com/v19.0/debug_token?input_token=${token}&access_token=${token}`, { signal: controller.signal });
           const debugData = await debugRes.json();
           if (debugData.data && debugData.data.granular_scopes) {
             const scope = debugData.data.granular_scopes.find((s: { scope: string; target_ids?: string[] }) =>
@@ -190,7 +204,7 @@ export function InputModal({
             );
             if (scope && scope.target_ids && scope.target_ids.length > 0) {
               pageId = scope.target_ids[0];
-              const pageRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}?fields=access_token&access_token=${metaToken}`, { signal: controller.signal });
+              const pageRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}?fields=access_token&access_token=${token}`, { signal: controller.signal });
               const pageData = await pageRes.json();
               if (pageData.access_token) pageToken = pageData.access_token;
             }
@@ -412,7 +426,8 @@ export function InputModal({
       {open && (
         <div
           className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-[2px] p-0 sm:p-4"
-          onClick={onClose}
+          onClick={isSaving || isFetchingMeta ? undefined : onClose}
+          aria-hidden={isSaving || isFetchingMeta ? 'true' : undefined}
           role="presentation"
         >
           <motion.div
@@ -468,7 +483,7 @@ export function InputModal({
                   )}
                 </p>
               </div>
-              <Button variant="ghost" size="icon" onClick={onClose} aria-label="Tutup" className="h-8 w-8 shrink-0 rounded-lg hover:bg-slate-100">
+              <Button variant="ghost" size="icon" onClick={onClose} disabled={isSaving || isFetchingMeta} aria-label="Tutup" className="h-8 w-8 shrink-0 rounded-lg hover:bg-slate-100 disabled:opacity-50">
                 <X className="text-slate-500" size={16} />
               </Button>
             </div>
@@ -578,17 +593,26 @@ export function InputModal({
                             urls.forEach(rawUrl => {
                               let url = rawUrl.trim();
                               if (!url) return;
-                              if (url.includes('instagram.com')) {
+                              // Validasi host — hanya izinkan domain sosmed resmi
+                              let host = '';
+                              try {
+                                const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+                                host = parsed.hostname.toLowerCase();
+                              } catch { return; }
+                              const isIg = host === 'instagram.com' || host.endsWith('.instagram.com');
+                              const isFb = host === 'facebook.com' || host.endsWith('.facebook.com') || host === 'fb.watch' || host.endsWith('.fb.watch') || host === 'fb.com' || host.endsWith('.fb.com');
+                              const isTt = host === 'tiktok.com' || host.endsWith('.tiktok.com');
+                              if (isIg) {
                                 url = url.replace(/\/(?:reel|reels)\//i, '/p/');
                                 if (!newIg.includes(url)) newIg.push(url);
-                              } else if (url.includes('facebook.com') || url.includes('fb.watch') || url.includes('fb.com')) {
+                              } else if (isFb) {
                                 if (url.match(/facebook\.com\/reel\/(\d+)/i)) {
                                   url = url.replace(/facebook\.com\/reel\/(\d+)/i, 'facebook.com/p/$1');
                                 } else if (url.match(/facebook\.com\/share\/r\/([a-zA-Z0-9]+)/i)) {
                                   url = url.replace(/facebook\.com\/share\/r\/([a-zA-Z0-9]+)/i, 'facebook.com/share/p/$1');
                                 }
                                 if (!newFb.includes(url)) newFb.push(url);
-                              } else if (url.includes('tiktok.com')) {
+                              } else if (isTt) {
                                 if (!newTiktok.includes(url)) newTiktok.push(url);
                               }
                             });
@@ -744,13 +768,13 @@ export function InputModal({
             </div>
 
             <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
-              <Button variant="ghost" onClick={onClose} className="h-8 rounded-lg px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-700">
+              <Button variant="ghost" onClick={onClose} disabled={isSaving || isFetchingMeta} className="h-8 rounded-lg px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50">
                 Batal
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={isSaving}
-                className="h-8 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white hover:bg-slate-800"
+                disabled={isSaving || isFetchingMeta}
+                className="h-8 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50"
               >
                 {isSaving ? 'Menyimpan…' : 'Simpan Rekap'}
               </Button>

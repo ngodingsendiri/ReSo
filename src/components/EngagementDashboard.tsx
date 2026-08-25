@@ -8,20 +8,15 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   History,
   Settings,
-  Instagram,
-  Facebook,
   FileText,
   Menu,
-  Link as LinkIcon,
-  RefreshCw,
-  ExternalLink,
   PieChart,
   CheckCircle2,
   Check,
-  LogOut
+  LogOut,
+  RefreshCw
 } from 'lucide-react';
 import { TiktokIcon } from './icons/TiktokIcon';
 import { motion, AnimatePresence } from 'motion/react';
@@ -32,12 +27,11 @@ import { DailyEngagement, Employee, UnmatchedName } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
 import { useDialogA11y } from '../hooks/useDialogA11y';
-import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { logout, dinasCollection, dinasDoc } from '../lib/firebase';
 import { onSnapshot, query, orderBy, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
-import { getLocalISODate, parseLocalISODate, addLocalDays } from '../lib/date';
-import { matchEmployeesToEngagement, matchEngagementDetail, engagedIdsEqual, mergeUniqueLines } from '../lib/matching';
+import { getLocalISODate, parseLocalISODate } from '../lib/date';
+import { matchEmployeesToEngagement, matchEngagementDetail, engagedIdsEqual } from '../lib/matching';
 import { collectUnverifiedAutoFilled } from '../lib/engagement-api';
 import { APP_VERSION } from '../lib/version';
 
@@ -957,19 +951,26 @@ export default function EngagementDashboard() {
         return;
       }
 
-      const updates: { id: string; ig: string[]; fb: string[]; tiktok: string[] }[] = [];
+      const updates: { id: string; ig: string[]; fb: string[]; tiktok: string[]; unmatchedNames: UnmatchedName[] }[] = [];
 
       for (const eng of engagementsToProcess) {
         const ig = matchEmployeesToEngagement(eng.igRawText || '', employees, 'ig');
         const fb = matchEmployeesToEngagement(eng.fbRawText || '', employees, 'fb');
         const tiktok = matchEmployeesToEngagement(eng.tiktokRawText || '', employees, 'tiktok');
+        const unmatchedNames: UnmatchedName[] = (['ig', 'fb', 'tiktok'] as const).flatMap((p) => {
+          const rawKey = `${p}RawText` as keyof DailyEngagement;
+          const raw = (eng[rawKey] as string) || '';
+          return matchEngagementDetail(raw, employees, p).unmatched.map((name) => ({ name, platform: p }));
+        });
 
         const igChanged = !engagedIdsEqual(eng.igEngagedEmployeeIds || [], ig);
         const fbChanged = !engagedIdsEqual(eng.fbEngagedEmployeeIds || [], fb);
         const tiktokChanged = !engagedIdsEqual(eng.tiktokEngagedEmployeeIds || [], tiktok);
+        const existingUnmatched = eng.unmatchedNames || [];
+        const unmatchedChanged = JSON.stringify([...existingUnmatched].sort((a, b) => a.name.localeCompare(b.name) || a.platform.localeCompare(b.platform))) !== JSON.stringify([...unmatchedNames].sort((a, b) => a.name.localeCompare(b.name) || a.platform.localeCompare(b.platform)));
 
-        if (igChanged || fbChanged || tiktokChanged) {
-          updates.push({ id: eng.id, ig, fb, tiktok });
+        if (igChanged || fbChanged || tiktokChanged || unmatchedChanged) {
+          updates.push({ id: eng.id, ig, fb, tiktok, unmatchedNames });
         }
       }
 
@@ -989,6 +990,7 @@ export default function EngagementDashboard() {
               igEngagedEmployeeIds: u.ig,
               fbEngagedEmployeeIds: u.fb,
               tiktokEngagedEmployeeIds: u.tiktok,
+              unmatchedNames: u.unmatchedNames,
               updatedAt: serverTimestamp(),
             },
             { merge: true }
