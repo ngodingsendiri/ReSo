@@ -35,10 +35,10 @@ const itemVariants: import('motion/react').Variants = {
 };
 
 const colorMap: Record<string, string> = {
-  rose: 'bg-rose-50 text-rose-600 border-rose-100',
-  sky: 'bg-sky-50 text-sky-600 border-sky-100',
-  violet: 'bg-violet-50 text-violet-600 border-violet-100',
-  emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+  rose: 'bg-rose-50 text-rose-600',
+  sky: 'bg-sky-50 text-sky-600',
+  violet: 'bg-violet-50 text-violet-600',
+  emerald: 'bg-emerald-50 text-emerald-600',
 };
 
 const StatCard = React.memo(function StatCard({
@@ -55,11 +55,11 @@ const StatCard = React.memo(function StatCard({
   subtitle?: string;
 }) {
   return (
-    <Card className="h-full border border-slate-200 rounded-xl overflow-hidden bg-white">
+    <Card className="h-full">
       <div className="p-4 sm:p-5 flex flex-col h-full justify-between gap-3">
         <div className="flex justify-between items-start">
           <p className="text-[11px] font-semibold text-slate-500">{title}</p>
-          <div className={cn('p-2 rounded-xl border', colorMap[color])}>{icon}</div>
+          <div className={cn('p-2 rounded-xl', colorMap[color])}>{icon}</div>
         </div>
         <div>
           <p className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{value}</p>
@@ -98,42 +98,6 @@ export const DashboardTab = ({
   onGoInput?: () => void;
   onGoDaily?: () => void;
 }) => {
-  const StatCard = React.memo(function StatCard({
-    title,
-    value,
-    icon,
-    color,
-    subtitle,
-  }: {
-    title: string;
-    value: string;
-    icon: React.ReactNode;
-    color: string;
-    subtitle?: string;
-  }) {
-    const colorMap: Record<string, string> = {
-      rose: 'bg-rose-50 text-rose-600 border-rose-100',
-      sky: 'bg-sky-50 text-sky-600 border-sky-100',
-      violet: 'bg-violet-50 text-violet-600 border-violet-100',
-      emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    };
-
-    return (
-      <Card className="h-full border border-slate-200 rounded-xl overflow-hidden bg-white">
-        <div className="p-4 sm:p-5 flex flex-col h-full justify-between gap-3">
-          <div className="flex justify-between items-start">
-            <p className="text-[11px] font-semibold text-slate-500">{title}</p>
-            <div className={cn('p-2 rounded-xl border', colorMap[color])}>{icon}</div>
-          </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{value}</p>
-            {subtitle && <p className="text-[10px] text-slate-400 mt-0.5">{subtitle}</p>}
-          </div>
-        </div>
-      </Card>
-    );
-  });
-
   return (
     <motion.div
       key="dashboard"
@@ -150,7 +114,7 @@ export const DashboardTab = ({
         {onGoInput && (
           <Button
             onClick={onGoInput}
-            className="w-full h-11 rounded-xl bg-slate-900 text-white font-bold text-sm gap-2"
+            className="w-full bg-slate-900 text-white font-bold text-sm gap-2"
           >
             Input rekap hari ini
             <ArrowRight size={16} />
@@ -166,7 +130,7 @@ export const DashboardTab = ({
         {onGoInput && (
           <Button
             onClick={onGoInput}
-            className="gap-2 h-11 rounded-xl bg-slate-900 text-white font-bold text-sm px-5"
+            className="gap-2 bg-slate-900 text-white font-bold text-sm px-5"
           >
             <ArrowRight size={16} />
             Input rekap hari ini
@@ -212,7 +176,7 @@ export const DashboardTab = ({
                 </CardDescription>
               </div>
               {onGoDaily && (
-                <Button variant="ghost" size="sm" onClick={onGoDaily} className="text-xs font-bold text-slate-500 hover:text-slate-900 rounded-xl gap-1 shrink-0">
+                <Button variant="link" size="sm" onClick={onGoDaily} className="text-xs font-bold text-slate-500 hover:text-slate-900 gap-1 shrink-0">
                   Lihat semua
                   <ArrowRight size={13} />
                 </Button>
@@ -229,11 +193,11 @@ export const DashboardTab = ({
                     return (
                       <div
                         key={eng.id || i}
-                        className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                        className="px-4 py-3 flex items-center justify-between transition-colors"
                       >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
-                            <CalendarIcon size={14} />
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-500 shrink-0">
+                            <CalendarIcon size={18} />
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-slate-900 truncate">
@@ -242,7 +206,7 @@ export const DashboardTab = ({
                                 month: 'long',
                               })}
                             </p>
-                            <p className="text-[11px] text-slate-400 flex items-center gap-1 flex-wrap">
+                            <p className="text-xs text-slate-500 flex items-center gap-1 flex-wrap">
                               <span className="text-pink-500 font-semibold">IG {ig}</span>
                               <span>·</span>
                               <span className="text-blue-500 font-semibold">FB {fb}</span>
@@ -251,7 +215,7 @@ export const DashboardTab = ({
                             </p>
                           </div>
                         </div>
-                        <Badge variant="outline" className={`text-[10px] font-semibold shrink-0 ${status.className}`}>
+                        <Badge variant="outline" className={`text-[10px] font-semibold shrink-0 rounded-full ${status.className}`}>
                           {status.label}
                         </Badge>
                       </div>

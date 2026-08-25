@@ -42,7 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
           </p>
           <Button 
             onClick={() => window.location.reload()}
-            className="bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold transition-all active:scale-[0.98]"
+            className="bg-slate-900 hover:bg-slate-800 text-white font-bold"
           >
             <RefreshCcw className="w-4 h-4 mr-2" />
             Muat Ulang

@@ -1,111 +1,144 @@
+/* ReSo Options — token selaras aplikasi web */
 :root {
   color-scheme: light;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --background: #ffffff;
+  --surface: #f8fafc;
+  --surface-hover: #eef2f7;
+  --foreground: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --primary: #0f172a;
+  --success: #15803d;
+  --danger: #b91c1c;
+  --code-bg: #eef2f7;
+  --radius: 12px;
+  --radius-sm: 10px;
+  font-family: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+
 * {
   box-sizing: border-box;
 }
+
 body {
   margin: 0;
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--surface);
+  color: var(--foreground);
 }
+
 .wrap {
   max-width: 460px;
   margin: 32px auto;
   padding: 0 20px;
 }
+
 h1 {
   font-size: 18px;
   margin: 0 0 2px;
 }
+
 .sub {
   margin: 0 0 20px;
-  color: #64748b;
+  color: var(--muted);
   font-size: 13px;
 }
+
 .field {
   display: block;
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 6px;
 }
+
 .hint {
   display: block;
   font-weight: 400;
-  color: #64748b;
+  color: var(--muted);
   font-size: 12px;
   margin-top: 4px;
   line-height: 1.5;
 }
+
 input {
   width: 100%;
   padding: 10px 12px;
   font-size: 13px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--background);
 }
+
 input:focus {
-  outline: 2px solid #0f172a;
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
+
 .err {
-  color: #b91c1c;
+  color: var(--danger);
   font-size: 12px;
   margin: 8px 0 0;
 }
+
 .row {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 12px;
 }
+
 button {
   padding: 9px 14px;
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: #0f172a;
-  border: 1px solid #0f172a;
-  border-radius: 10px;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
+
 button.ghost {
-  color: #0f172a;
-  background: #fff;
+  color: var(--foreground);
+  background: var(--background);
+  border-color: var(--border-strong);
 }
+
 .btn-download {
   display: inline-flex;
   align-items: center;
   padding: 9px 14px;
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
-  background: #fff;
-  border: 1px solid #0f172a;
-  border-radius: 10px;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   text-decoration: none;
   cursor: pointer;
 }
+
 .btn-download:hover {
-  background: #eef2f7;
+  background: var(--surface-hover);
 }
+
 .saved {
   font-size: 12px;
-  color: #15803d;
+  color: var(--success);
   font-weight: 600;
 }
+
 .note {
   margin-top: 22px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--muted);
   line-height: 1.6;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--border);
   padding-top: 14px;
 }
+
 code {
-  background: #eef2f7;
+  background: var(--code-bg);
   padding: 1px 4px;
   border-radius: 4px;
   font-size: 11px;

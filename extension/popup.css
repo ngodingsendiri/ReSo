@@ -1,3 +1,21 @@
+/* ReSo Popup — token selaras aplikasi web */
+:root {
+  --background: #ffffff;
+  --surface: #f8fafc;
+  --surface-hover: #f1f5f9;
+  --foreground: #0f172a;
+  --muted: #64748b;
+  --subtle: #94a3b8;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --primary: #0f172a;
+  --primary-hover: #1e293b;
+  --info-bg: #eff6ff;
+  --info-border: #bfdbfe;
+  --radius: 12px;
+  --radius-sm: 10px;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -5,10 +23,10 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Geist Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   width: 280px;
-  background: #fff;
-  color: #0f172a;
+  background: var(--background);
+  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -26,7 +44,7 @@ body {
 .logo {
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   object-fit: contain;
 }
 
@@ -39,7 +57,7 @@ body {
 
 .brand-txt .sub {
   font-size: 11.5px;
-  color: #64748b;
+  color: var(--muted);
 }
 
 /* ---- Toggle mode (flat) ---- */
@@ -48,9 +66,9 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .switch-label {
@@ -69,7 +87,7 @@ body {
   position: relative;
   width: 42px;
   height: 24px;
-  background: #cbd5e1;
+  background: var(--border-strong);
   border-radius: 999px;
   transition: background 0.15s ease;
   flex-shrink: 0;
@@ -88,7 +106,7 @@ body {
 }
 
 input:checked + .slider {
-  background: #0f172a;
+  background: var(--primary);
 }
 
 input:checked + .slider::before {
@@ -97,14 +115,14 @@ input:checked + .slider::before {
 
 /* Indikator fokus keyboard — input disembunyikan, jadi ring dipasang di slider */
 input:focus-visible + .slider {
-  outline: 2px solid #0f172a;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
 .hint {
   margin-top: 12px;
   font-size: 11.5px;
-  color: #64748b;
+  color: var(--muted);
   line-height: 1.5;
 }
 
@@ -115,10 +133,10 @@ input:focus-visible + .slider {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
-  color: #0f172a;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 10px;
+  color: var(--foreground);
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-sm);
 }
 
 .reso-actions {
@@ -136,35 +154,35 @@ input:focus-visible + .slider {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #0f172a;
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .reso-open,
 .reso-login {
-  background: #0f172a;
+  background: var(--primary);
   color: #fff;
-  border-color: #0f172a;
+  border-color: var(--primary);
 }
 
 .reso-retry:hover,
 .reso-open:hover,
 .reso-reset:hover {
-  background: #f1f5f9;
+  background: var(--surface-hover);
 }
 
 .reso-open:hover,
 .reso-login:hover {
-  background: #1e293b;
+  background: var(--primary-hover);
 }
 
 .ver {
   margin-top: 14px;
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--subtle);
   text-align: center;
   letter-spacing: 0.02em;
 }

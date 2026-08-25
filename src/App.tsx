@@ -23,7 +23,7 @@ function LoadingScreen() {
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="bg-white p-8 rounded-2xl border border-slate-200 flex flex-col items-center w-full max-w-sm shadow-sm"
+        className="bg-white p-8 rounded-xl border border-slate-200 flex flex-col items-center w-full max-w-sm shadow-sm"
       >
         <img src={logoUrl} alt="ReSo" className="w-16 h-16 object-contain mb-6" />
         <h2 className="text-xl font-bold text-slate-900 tracking-tight mb-1">

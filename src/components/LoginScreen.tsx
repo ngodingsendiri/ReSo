@@ -56,7 +56,7 @@ export default function LoginScreen({ externalError }: LoginScreenProps) {
         <div className="absolute bottom-[10%] -right-[10%] w-[50%] h-[50%] bg-slate-300/30 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative z-10 w-full max-w-sm bg-white border border-slate-200 rounded-xl p-8 shadow-sm">
+      <div className="relative z-10 w-full max-w-sm bg-white border border-slate-200 rounded-xl p-8 shadow-md">
         <img src={appLogo} alt="ReSo" className="w-16 h-16 object-contain mx-auto mb-5" />
         <h1 className="text-2xl font-bold text-center text-slate-900 mb-1">ReSo</h1>
         <p className="text-center text-slate-500 text-sm mb-6 leading-relaxed">
