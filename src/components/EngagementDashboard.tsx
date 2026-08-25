@@ -32,6 +32,7 @@ import { DailyEngagement, Employee, UnmatchedName } from '../types';
 import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
 import { useDialogA11y } from '../hooks/useDialogA11y';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { logout, dinasCollection, dinasDoc } from '../lib/firebase';
 import { onSnapshot, query, orderBy, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
@@ -51,6 +52,10 @@ const EmployeeManager = React.lazy(() => import('./EmployeeManager'));
 
 // Batas pegawai untuk export gambar — satu lembar gambar, lebih dari ini wajib PDF/Excel.
 const IMAGE_EXPORT_LIMIT = 60;
+
+// Cache hasil konversi logo SVG→PNG dataURL: konversi cukup mahal dan identik
+// untuk seluruh sesi, tak ada alasan mengulang tiap export PDF.
+let logoDataUrlCache: Promise<string | null> | null = null;
 
 const containerVariants: import('motion/react').Variants = {
   hidden: { opacity: 0 },
@@ -196,19 +201,25 @@ export default function EngagementDashboard() {
     return unsubscribe;
   }, [user, loading, db]);
 
-  // Calculate the oldest date we need to fetch based on current views
-  const oldestRequiredDate = useMemo(() => {
-    const dates = [
-      currentMonthlyReportDate,
-      currentWeekDate,
-      new Date() // Today
-    ];
-    // Set to 1st of the month for each date to ensure we get the full month
-    const oldest = new Date(Math.min(...dates.map(d => new Date(d.getFullYear(), d.getMonth(), 1).getTime())));
-    // Subtract 7 days just to be safe with timezone issues and week overlaps
-    oldest.setDate(oldest.getDate() - 7);
-    return getLocalISODate(oldest);
-  }, [currentMonthlyReportDate, currentWeekDate]);
+  // Window riwayat STATIS: ±3 bulan ke belakang dari sesi login.
+  // Sengaja tidak mengikuti navigasi bulan/minggu — snapshot tidak perlu
+  // re-subscribe + re-download seluruh riwayat hanya karena pindah bulan.
+  const HISTORY_LOOKBACK_DAYS = 92;
+  const historyWindowStart = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - HISTORY_LOOKBACK_DAYS);
+    return getLocalISODate(d);
+  }, []);
+
+  /** Apakah tanggal berada di luar jendela riwayat yang dimuat? */
+  const isOutsideHistoryWindow = useCallback((d: Date) => {
+    const earliest = parseLocalISODate(historyWindowStart);
+    earliest.setHours(0, 0, 0, 0);
+    return d < earliest;
+  }, [historyWindowStart]);
+
+  const notifyHistoryLimit = () =>
+    toast.info('Riwayat rekap tersedia sekitar 3 bulan terakhir.');
 
   // Load daily engagements
   useEffect(() => {
@@ -219,7 +230,7 @@ export default function EngagementDashboard() {
 
     const q = query(
       dinasCollection(db, user.uid, 'dailyEngagement'), 
-      where('date', '>=', oldestRequiredDate),
+      where('date', '>=', historyWindowStart),
       orderBy('date', 'desc')
     );
     const unsubscribe = onSnapshot(
@@ -234,7 +245,7 @@ export default function EngagementDashboard() {
       }
     );
     return unsubscribe;
-  }, [user, loading, oldestRequiredDate, db]);
+  }, [user, loading, db, historyWindowStart]);
 
   const dailyEngagementsMap = useMemo(() => {
     return dailyEngagements.reduce((acc, curr) => {
@@ -573,11 +584,23 @@ export default function EngagementDashboard() {
       const newFbLinks = fbPosts.map((p) => p.permalink_url).filter((u): u is string => Boolean(u));
       const newIgLinks = igPosts.map((p) => p.permalink).filter((u): u is string => Boolean(u));
 
-      for (const post of igPosts) {
-        const commentsRes = await fetch(`https://graph.facebook.com/v19.0/${post.id}/comments?fields=id,text,username,timestamp&access_token=${pageToken}&limit=100`, { signal: controller.signal });
-        const commentsData = await commentsRes.json();
-        (commentsData.data || []).forEach((c: { username?: string; text?: string }) => {
-          commenters.push({ platform: 'ig', username: c.username || "Unknown", text: c.text });
+      // Paralel dengan batas concurrency 5 — N post selesai ±N/5× latensi,
+      // bukan Σ latensi seperti loop sekuensial.
+      const CONCURRENCY = 5;
+      type IgComment = { data?: { username?: string; text?: string }[] };
+      for (let i = 0; i < igPosts.length; i += CONCURRENCY) {
+        const batchPosts = igPosts.slice(i, i + CONCURRENCY);
+        const commentsBatches = await Promise.all(
+          batchPosts.map((post) =>
+            fetch(`https://graph.facebook.com/v19.0/${post.id}/comments?fields=id,text,username,timestamp&access_token=${pageToken}&limit=100`, { signal: controller.signal })
+              .then((res) => res.json() as Promise<IgComment>)
+              .catch(() => ({ data: [] }) as IgComment)
+          )
+        );
+        commentsBatches.forEach((commentsData) => {
+          (commentsData.data || []).forEach((c) => {
+            commenters.push({ platform: 'ig', username: c.username || "Unknown", text: c.text });
+          });
         });
       }
 
@@ -1013,21 +1036,24 @@ export default function EngagementDashboard() {
   };
 
   async function fetchLogoDataUrl(): Promise<string | null> {
-    try {
-      const resp = await fetch('/logo.svg');
-      const svgText = await resp.text();
-      const img = new Image();
-      const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      img.src = url;
-      await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(); });
-      const c = document.createElement('canvas');
-      c.width = 64; c.height = 64;
-      const ctx = c.getContext('2d')!;
-      ctx.drawImage(img, 0, 0, 64, 64);
-      URL.revokeObjectURL(url);
-      return c.toDataURL('image/png');
-    } catch { return null; }
+    logoDataUrlCache ??= (async (): Promise<string | null> => {
+      try {
+        const resp = await fetch('/logo.svg');
+        const svgText = await resp.text();
+        const img = new Image();
+        const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        img.src = url;
+        await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(); });
+        const c = document.createElement('canvas');
+        c.width = 64; c.height = 64;
+        const ctx = c.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, 64, 64);
+        URL.revokeObjectURL(url);
+        return c.toDataURL('image/png');
+      } catch { return null; }
+    })();
+    return logoDataUrlCache;
   }
 
   const chartData = useMemo(() => {
@@ -1086,13 +1112,19 @@ export default function EngagementDashboard() {
     [employees]
   );
 
+  // Matching preview ditahan (debounce) & hanya dihitung saat modal terbuka —
+  // O(pegawai × baris input) per keystroke terlalu mahal untuk jalan terus.
+  const debouncedIgRawInput = useDebouncedValue(igRawInput);
+  const debouncedFbRawInput = useDebouncedValue(fbRawInput);
+  const debouncedTiktokRawInput = useDebouncedValue(tiktokRawInput);
+
   const matchPreview = useMemo(
     () => ({
-      ig: matchEmployeesToEngagement(igRawInput, employees, 'ig').length,
-      fb: matchEmployeesToEngagement(fbRawInput, employees, 'fb').length,
-      tiktok: matchEmployeesToEngagement(tiktokRawInput, employees, 'tiktok').length,
+      ig: isInputModalOpen ? matchEmployeesToEngagement(debouncedIgRawInput, employees, 'ig').length : 0,
+      fb: isInputModalOpen ? matchEmployeesToEngagement(debouncedFbRawInput, employees, 'fb').length : 0,
+      tiktok: isInputModalOpen ? matchEmployeesToEngagement(debouncedTiktokRawInput, employees, 'tiktok').length : 0,
     }),
-    [igRawInput, fbRawInput, tiktokRawInput, employees]
+    [isInputModalOpen, debouncedIgRawInput, debouncedFbRawInput, debouncedTiktokRawInput, employees]
   );
 
   // Lock body scroll when overlays open
@@ -1470,6 +1502,10 @@ export default function EngagementDashboard() {
   const changeWeek = (offset: number) => {
     const newDate = new Date(currentWeekDate);
     newDate.setDate(newDate.getDate() + (offset * 7));
+    if (isOutsideHistoryWindow(newDate)) {
+      notifyHistoryLimit();
+      return;
+    }
     setCurrentWeekDate(newDate);
   };
 
@@ -1580,18 +1616,32 @@ export default function EngagementDashboard() {
   const changeMonthlyReportDate = (offset: number) => {
     const newDate = new Date(currentMonthlyReportDate);
     newDate.setMonth(newDate.getMonth() + offset);
+    if (isOutsideHistoryWindow(newDate)) {
+      notifyHistoryLimit();
+      return;
+    }
     setCurrentMonthlyReportDate(newDate);
   };
 
   const changeDailyDate = (offset: number) => {
     const newDate = new Date(currentDailyDate);
     newDate.setDate(newDate.getDate() + offset);
+    if (isOutsideHistoryWindow(newDate)) {
+      notifyHistoryLimit();
+      return;
+    }
     setCurrentDailyDate(newDate);
   };
 
   const changeMonth = (offset: number) => {
     const newMonth = new Date(currentMonth);
+    // Normalisasi ke tanggal-1 agar pembanding tidak salah karena ujung bulan.
+    newMonth.setDate(1);
     newMonth.setMonth(newMonth.getMonth() + offset);
+    if (isOutsideHistoryWindow(newMonth)) {
+      notifyHistoryLimit();
+      return;
+    }
     setCurrentMonth(newMonth);
   };
 
@@ -2018,7 +2068,7 @@ export default function EngagementDashboard() {
                           exit={{ opacity: 0, y: 12 }}
                           transition={{ ease: "easeOut", duration: 0.2 }}
                           onClick={(e) => e.stopPropagation()}
-                          className="bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] shadow-xl border border-slate-200"
+                          className="bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] shadow-lg border border-slate-200"
                         >
                           <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 shrink-0">
                             <div className="min-w-0">
@@ -2506,7 +2556,7 @@ export default function EngagementDashboard() {
                 exit="hidden"
               >
                 <React.Suspense fallback={<div className="w-full h-full flex mt-20 items-center justify-center text-slate-400 text-xs font-bold">Memuat Modul Data Pegawai...</div>}>
-                  <EmployeeManager />
+                  <EmployeeManager employees={employees} />
                 </React.Suspense>
               </motion.div>
             )}

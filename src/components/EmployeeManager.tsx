@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { addDoc, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Employee } from '../types';
 import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
@@ -81,12 +81,12 @@ const EmployeeRow = React.memo(({ emp, index, onEdit, onDelete }: { emp: Employe
         </div>
       </TableCell>
       <TableCell>
-        <span className={cn("text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase tracking-wider", getBidangColor(emp.bidang))}>
+        <span className={cn("text-[10px] font-mono font-bold px-2 py-0.5 rounded-full uppercase tracking-wider", getBidangColor(emp.bidang))}>
           {emp.bidang || 'N/A'}
         </span>
       </TableCell>
       <TableCell>
-        <code className="text-[10px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200 text-slate-500 font-mono">{emp.nip}</code>
+        <code className="text-[10px] bg-slate-50 px-2 py-0.5 rounded-full border border-slate-200 text-slate-500 font-mono">{emp.nip}</code>
       </TableCell>
       <TableCell>
         <div className="flex flex-col gap-1.5">
@@ -156,15 +156,19 @@ const itemVariants: Variants = {
   }
 };
 
-export default function EmployeeManager() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
+interface EmployeeManagerProps {
+  /** Master pegawai dari listener tunggal di EngagementDashboard (anti listener ganda). */
+  employees: Employee[];
+}
+
+export default function EmployeeManager({ employees }: EmployeeManagerProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [formData, setFormData] = useState({ name: '', nip: '', bidang: '', igUsername: '', igUsername2: '', fbName: '', fbName2: '', tiktokName: '', tiktokName2: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const { user, loading, db } = useAuth();
+  const { user, db } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   type SortField = 'name' | 'bidang' | 'nip';
@@ -231,25 +235,6 @@ export default function EmployeeManager() {
     if (sortConfig?.field !== field) return <ArrowUpDown size={12} className="ml-1 opacity-20" />;
     return sortConfig.direction === 'asc' ? <ArrowUp size={12} className="ml-1 text-slate-900" /> : <ArrowDown size={12} className="ml-1 text-slate-900" />;
   };
-
-  useEffect(() => {
-    if (loading || !user) {
-      setEmployees([]);
-      return;
-    }
-
-    const q = query(dinasCollection(db, user.uid, 'employees'), orderBy('name', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const emps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
-      setEmployees(emps);
-    }, (error) => {
-      console.error("Firestore Error:", error);
-      if (user) {
-        toast.error("Gagal memuat data pegawai");
-      }
-    });
-    return unsubscribe;
-  }, [user, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -590,15 +575,15 @@ export default function EmployeeManager() {
               placeholder="Cari nama pegawai..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-11 text-xs rounded-xl bg-slate-50 border-transparent focus:bg-white transition-all font-medium"
+              className="pl-9 text-xs rounded-xl bg-slate-50 border-transparent focus:bg-white transition-all font-medium"
             />
           </div>
           <div className="flex flex-wrap gap-2 w-full xl:w-auto">
-            <Button variant="outline" size="sm" onClick={downloadTemplate} className="flex-1 md:flex-none gap-2 rounded-xl border-slate-200 hover:bg-slate-50 text-slate-600 h-11 px-4 text-xs font-bold">
+            <Button variant="outline" onClick={downloadTemplate} className="flex-1 md:flex-none gap-2 border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold">
               <FileSpreadsheet size={14} className="text-emerald-600" />
               Template
             </Button>
-            <Button variant="outline" size="sm" onClick={exportData} className="flex-1 md:flex-none gap-2 rounded-xl border-slate-200 hover:bg-slate-50 text-slate-600 h-11 px-4 text-xs font-bold">
+            <Button variant="outline" onClick={exportData} className="flex-1 md:flex-none gap-2 border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold">
               <Download size={14} className="text-blue-600" />
               Export
             </Button>
@@ -614,8 +599,8 @@ export default function EmployeeManager() {
               <label 
                 htmlFor="excel-upload" 
                 className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "w-full rounded-xl border-slate-200 hover:bg-slate-50 text-slate-600 cursor-pointer gap-2 flex items-center justify-center h-11 px-4 text-xs font-bold",
+                  buttonVariants({ variant: "outline" }),
+                  "w-full border-slate-200 hover:bg-slate-50 text-slate-600 cursor-pointer gap-2 flex items-center justify-center text-xs font-bold",
                   isUploading && "opacity-50 pointer-events-none"
                 )}
               >
@@ -625,14 +610,13 @@ export default function EmployeeManager() {
             </div>
             {!isAdding && (
               <Button 
-                size="sm" 
                 onClick={() => {
                   setIsAdding(true);
                   setTimeout(() => {
                     document.getElementById('employee-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }, 100);
                 }} 
-                className="w-full md:w-auto gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white  h-11 px-6 text-xs font-bold border-none transition-all active:scale-[0.98]"
+                className="w-full md:w-auto gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold"
               >
                 <UserPlus size={14} />
                 Tambah
@@ -814,13 +798,13 @@ export default function EmployeeManager() {
                       type="button" 
                       variant="ghost" 
                       onClick={resetForm} 
-                      className="w-full sm:w-auto rounded-xl px-6 font-semibold text-slate-500 hover:bg-slate-50 h-10 text-sm"
+                      className="w-full sm:w-auto px-6 font-semibold text-slate-500 hover:bg-slate-50"
                     >
                       Batal
                     </Button>
                     <Button 
                       type="submit" 
-                      className="w-full sm:w-auto rounded-xl px-8 bg-slate-900 hover:bg-slate-800 text-white h-10 font-bold  transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-sm border-none"
+                      className="w-full sm:w-auto px-8 bg-slate-900 hover:bg-slate-800 text-white font-bold flex items-center justify-center gap-2"
                     >
                       <Save size={16} />
                       {editingId ? 'Simpan Perubahan' : 'Simpan Pegawai'}
@@ -843,7 +827,7 @@ export default function EmployeeManager() {
                   <TableHeader className="bg-slate-50/50 sticky top-0 z-10">
                     <TableRow className="hover:bg-transparent border-slate-200">
                       <TableHead 
-                        className="pl-6 py-4 font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50/90 backdrop-blur-sm cursor-pointer hover:text-slate-700 select-none group transition-colors"
+                        className="pl-6 py-4 font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50 cursor-pointer hover:text-slate-700 select-none group transition-colors"
                         onClick={() => handleSort('name')}
                       >
                         <div className="flex items-center">
@@ -851,7 +835,7 @@ export default function EmployeeManager() {
                         </div>
                       </TableHead>
                       <TableHead 
-                        className="font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50/90 backdrop-blur-sm cursor-pointer hover:text-slate-700 select-none group transition-colors"
+                        className="font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50 cursor-pointer hover:text-slate-700 select-none group transition-colors"
                         onClick={() => handleSort('bidang')}
                       >
                         <div className="flex items-center">
@@ -859,15 +843,15 @@ export default function EmployeeManager() {
                         </div>
                       </TableHead>
                       <TableHead 
-                        className="font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50/90 backdrop-blur-sm cursor-pointer hover:text-slate-700 select-none group transition-colors"
+                        className="font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50 cursor-pointer hover:text-slate-700 select-none group transition-colors"
                         onClick={() => handleSort('nip')}
                       >
                         <div className="flex items-center">
                           Identitas (NIP) <SortIcon field="nip" />
                         </div>
                       </TableHead>
-                      <TableHead className="font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50/90 backdrop-blur-sm">Sosial Media</TableHead>
-                      <TableHead className="text-right pr-6 font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50/90 backdrop-blur-sm">Aksi</TableHead>
+                      <TableHead className="font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50">Sosial Media</TableHead>
+                      <TableHead className="text-right pr-6 font-bold text-slate-400 uppercase tracking-widest text-[10px] bg-slate-50">Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <motion.tbody 
@@ -954,7 +938,7 @@ export default function EmployeeManager() {
                     
                     <div className="flex flex-col gap-2 pt-2 border-t border-slate-50 mt-2">
                       <div className="flex">
-                        <span className={cn("text-[9px] font-bold px-2.5 py-1 rounded-xl uppercase tracking-wider", getBidangColor(emp.bidang))}>
+                        <span className={cn("text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider", getBidangColor(emp.bidang))}>
                           {emp.bidang || 'N/A'}
                         </span>
                       </div>
@@ -1040,10 +1024,10 @@ export default function EmployeeManager() {
                 exit={{ opacity: 0, y: 8 }}
                 transition={{ ease: "easeOut", duration: 0.18 }}
                 onClick={(e) => e.stopPropagation()}
-                className="bg-white w-full max-w-sm rounded-2xl border border-slate-200 overflow-hidden shadow-xl"
+                className="bg-white w-full max-w-sm rounded-xl border border-slate-200 overflow-hidden shadow-lg"
               >
                 <div className="p-6 text-center space-y-3">
-                  <div className="w-14 h-14 bg-rose-50 rounded-xl flex items-center justify-center mx-auto border border-rose-100">
+                  <div className="w-14 h-14 bg-rose-50 rounded-xl flex items-center justify-center mx-auto">
                     <Trash2 size={24} className="text-rose-600" />
                   </div>
                   <h3 id="delete-pegawai-title" className="text-lg font-bold text-slate-900 tracking-tight">Hapus pegawai?</h3>
@@ -1055,14 +1039,14 @@ export default function EmployeeManager() {
                   <Button 
                     variant="outline" 
                     onClick={cancelDelete} 
-                    className="flex-1 font-bold text-xs h-11 rounded-xl"
+                    className="flex-1 font-bold text-xs rounded-xl"
                   >
                     Batal
                   </Button>
                   <Button 
                     onClick={executeDelete} 
                     variant="destructive"
-                    className="flex-1 font-bold text-xs h-11 rounded-xl border-none"
+                    className="flex-1 font-bold text-xs rounded-xl"
                   >
                     Hapus
                   </Button>
