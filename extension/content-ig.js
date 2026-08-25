@@ -720,7 +720,7 @@
       const fabTitle = running
         ? "Proses berjalan — buka panel untuk Stop"
         : n > 0
-          ? `Buka panel — ${n} username terkumpul`
+          ? `Buka panel — ${n} username terkumpul (username unik, bukan hitungan komentar)`
           : "Username Komentar";
       fab.title = fabTitle;
       fab.setAttribute("aria-label", fabTitle);

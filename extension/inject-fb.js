@@ -1877,6 +1877,10 @@
       }
 
       pages++;
+      // Fase B: heartbeat DOM tiap 3 halaman — bantu harvest nama yang sudah ter-render
+      if (pages % 3 === 0) {
+        try { scrapeDomNames(postRoot); } catch {}
+      }
       // Budget guard: never paginate forever on huge threads
       if (pages > 120) {
         reason = "timeout";
@@ -2277,7 +2281,7 @@
         el.scrollIntoView({ block: "center" });
         el.click();
         await sleepWhile(700);
-        if (gqlTemplates.size > 0) return true;
+        if (gqlTemplates.size > 0 || (scope || document).querySelectorAll('[role="article"]').length > 1) return true;
       } catch {
         /* ignore */
       }

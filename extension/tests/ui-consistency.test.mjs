@@ -927,7 +927,7 @@ test("RENDER instagram (exec): FAB data-count + kelas running/done + title/aria 
   const r3 = makePanelRenderer("instagram", { status: "done", names: ["alice"] });
   r3.render();
   assert.equal(r3.els.fab.classList._has("ing-done"), true);
-  assert.equal(r3.els.fab.title, "Buka panel — 1 username terkumpul");
+  assert.equal(r3.els.fab.title, "Buka panel — 1 username terkumpul (username unik, bukan hitungan komentar)");
 
   // done TANPA nama → bukan done (kelas butuh names.length > 0), data-count kosong.
   const r4 = makePanelRenderer("instagram", { status: "done", names: [] });

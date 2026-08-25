@@ -914,7 +914,7 @@
       const fabTitle = running
         ? "Proses berjalan — buka panel untuk Stop"
         : n > 0
-          ? `Buka panel — ${n} nama terkumpul`
+          ? `Buka panel — ${n} nama terkumpul (nama unik, bukan hitungan komentar)`
           : "Nama Komentar";
       fab.title = fabTitle;
       fab.setAttribute("aria-label", fabTitle);
