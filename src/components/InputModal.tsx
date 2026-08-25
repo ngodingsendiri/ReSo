@@ -229,8 +229,8 @@ export function InputModal({
       const newFbLinks = fbPosts.map((p) => p.permalink_url).filter((u): u is string => Boolean(u));
       const newIgLinks = igPosts.map((p) => p.permalink).filter((u): u is string => Boolean(u));
 
-      // Paralel dengan batas concurrency 5 — N post selesai ±N/5× latensi.
-      const CONCURRENCY = 5;
+      // Paralel dengan batas concurrency 7 — N post selesai ±N/7× latensi.
+      const CONCURRENCY = 7;
       type IgComment = { data?: { username?: string; text?: string }[] };
       for (let i = 0; i < igPosts.length; i += CONCURRENCY) {
         const batchPosts = igPosts.slice(i, i + CONCURRENCY);

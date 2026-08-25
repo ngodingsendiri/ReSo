@@ -193,10 +193,10 @@ export default function EngagementDashboard() {
     return unsubscribe;
   }, [user, loading, db]);
 
-  // Window riwayat STATIS: ±3 bulan ke belakang dari sesi login.
+  // Window riwayat STATIS: ±4 bulan ke belakang dari sesi login.
   // Sengaja tidak mengikuti navigasi bulan/minggu — snapshot tidak perlu
   // re-subscribe + re-download seluruh riwayat hanya karena pindah bulan.
-  const HISTORY_LOOKBACK_DAYS = 92;
+  const HISTORY_LOOKBACK_DAYS = 120;
   const historyWindowStart = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - HISTORY_LOOKBACK_DAYS);
@@ -211,7 +211,7 @@ export default function EngagementDashboard() {
   }, [historyWindowStart]);
 
   const notifyHistoryLimit = () =>
-    toast.info('Riwayat rekap tersedia sekitar 3 bulan terakhir.');
+    toast.info('Riwayat rekap tersedia sekitar 4 bulan terakhir.');
 
   // Load daily engagements
   useEffect(() => {
