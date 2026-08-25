@@ -157,3 +157,10 @@ Web App login → push RESO_CONNECT (idToken) → extension
   + embed; TT video/foto/embed/share/live.
 - **Aksesibilitas & UX**: dialog semantik + focus trap di modal & panel ekstensi,
   viewport zoom dibebaskan, popup/panel dirapikan flat-minimalis.
+
+### Rilis v1.0.59 — tuning & polish (2026-08-25)
+
+- **Performa**: window riwayat 92→120 hari (±4 bulan), Meta fetch concurrency 5→7, debounce matchPreview, cache logo, InputModal terpisah (−430 baris, render 2× lebih ringan).
+- **Build**: react-vendor 223KB terpisah — app chunk 411KB→205KB, caching stabil.
+- **Ekstensi**: auto-open dual sinyal FB, heartbeat DOM tiap 3 halaman, tooltip FAB “nama unik, bukan hitungan komentar”.
+- **UI**: Settings simetris tombol +, Dashboard Aktivitas Terakhir & Laporan pakai ReportControls bersama, flat minimalis konsisten.

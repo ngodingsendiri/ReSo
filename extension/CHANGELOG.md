@@ -4,6 +4,8 @@ Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](htt
 
 ## [Belum dirilis]
 
+## [1.0.59] - 2026-08-25
+
 ### Eksekusi kritik mesin FB: kejujuran hasil + ketahanan (S1–S7)
 Semua saran hasil audit mesin dieksekusi. Sorotan per item:
 
