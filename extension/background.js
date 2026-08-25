@@ -647,6 +647,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   // Navigasi apa pun menghancurkan MAIN world → cache engine ikut di-reset.
   injectedEngines.delete(tabId);
   const url = tab?.url;
+  // Tab ReSo selesai dimuat = sesi segar mungkin tersedia → coba flush.
+  if (changeInfo.status === "complete" && tab && typeof tab.url === "string") {
+    const base = await getResoUrl();
+    if (tab.url.startsWith(base) || tab.url.startsWith(RESO_DEV_URL)) {
+      maybeFlushResoQueue();
+    }
+  }
   if (!url) return;
   if (changeInfo.status === "complete") updateBadge().catch(() => {});
 
@@ -686,14 +693,7 @@ chrome.tabs.onActivated.addListener(() => {
   maybeFlushResoQueue();
 });
 
-// Tab ReSo selesai dimuat = sesi segar mungkin tersedia → coba flush.
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete" || !tab || typeof tab.url !== "string") return;
-  const base = await getResoUrl();
-  if (tab.url.startsWith(base) || tab.url.startsWith(RESO_DEV_URL)) {
-    maybeFlushResoQueue();
-  }
-});
+
 
 // ===================== Jembatan ReSo — antrian & konektivitas =====================
 // Extension → ReSo dibuat TANGGUH: kiriman yang gagal karena masalah transien

@@ -3,7 +3,7 @@
   "minimum_chrome_version": "102",
   "name": "ReSo Ekstention",
   "description": "Ambil nama komentator dari Facebook, TikTok & Instagram, lalu kirim otomatis ke rekap web app ReSo.",
-  "version": "1.0.58",
+  "version": "1.0.59",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -33,7 +33,7 @@
   ],
   "externally_connectable": {
     "matches": [
-      "https://reso.sekretariat.fun/*",
+      "https://*/*",
       "http://localhost:3000/*"
     ]
   },
@@ -46,10 +46,6 @@
     }
   },
   "host_permissions": [
-    "https://www.facebook.com/*",
-    "https://web.facebook.com/*",
-    "https://m.facebook.com/*",
-    "https://facebook.com/*",
     "*://*.facebook.com/*",
     "*://*.tiktok.com/*",
     "*://*.instagram.com/*",
@@ -58,10 +54,6 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.facebook.com/*",
-        "https://web.facebook.com/*",
-        "https://m.facebook.com/*",
-        "https://facebook.com/*",
         "*://*.facebook.com/*"
       ],
       "js": [

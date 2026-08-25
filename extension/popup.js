@@ -118,13 +118,16 @@ resoReset.addEventListener("click", async () => {
   if (!resetArmed) {
     resetArmed = true;
     resoReset.textContent = "Yakin putuskan?";
+    if (resetArmTimer) clearTimeout(resetArmTimer);
     resetArmTimer = setTimeout(() => {
       resetArmed = false;
       resoReset.textContent = "Putuskan";
+      resetArmTimer = null;
     }, 3000);
     return;
   }
-  clearTimeout(resetArmTimer);
+  if (resetArmTimer) clearTimeout(resetArmTimer);
+  resetArmTimer = null;
   resetArmed = false;
   resoReset.textContent = "Putuskan";
   try {
@@ -155,6 +158,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
   ) {
     refreshResoStatus();
   }
+});
+
+// Popup unload → clear armed timer agar buka lagi tidak stuck di state armed (audit).
+window.addEventListener("pagehide", () => {
+  if (resetArmTimer) clearTimeout(resetArmTimer);
+  resetArmTimer = null;
+});
+window.addEventListener("beforeunload", () => {
+  if (resetArmTimer) clearTimeout(resetArmTimer);
+  resetArmTimer = null;
 });
 
 (async () => {

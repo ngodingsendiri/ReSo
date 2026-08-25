@@ -1353,17 +1353,6 @@
     nameMap.clear();
     currentRunId = myRunId;
     includeReplies = options.includeReplies === true;
-    // Prioritas: explicit → post yang sedang dibuka (halaman) → media asal
-    // template. Halaman diutamakan agar replay tidak menyasar post lain.
-    activeMediaId =
-      options.mediaId ||
-      extractMediaIdFromPage() ||
-      extractMediaIdFromUrl(options.templateUrl);
-    running = true;
-    stopFlag = false;
-    nameMap.clear();
-    currentRunId = myRunId;
-    includeReplies = options.includeReplies === true;
     // Riset v1.0.58-IG: kenali jenis konten utk hint panel & kunci pre-seed.
     const postKind = detectPostKind(location.href) || "post";
     const pageShortcode = extractShortcodeFromUrl(location.href) || "";

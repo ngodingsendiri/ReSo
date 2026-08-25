@@ -306,11 +306,6 @@
     return 0;
   }
 
-  function snapshot() {
-    return [...nameMap.values()];
-  }
-
-
   function extractAwemeId(url) {
     if (!url) url = location.href;
     const patterns = [

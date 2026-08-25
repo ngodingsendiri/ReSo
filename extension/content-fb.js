@@ -291,7 +291,6 @@
     return names;
   }
 
-
   function setLocalState(patch) {
     if (patch.status) status = patch.status;
     if (patch.names) names = mergeNames(patch.names);
@@ -868,12 +867,6 @@
   }
   // END-RESO-FBURLS
 
-  /** FB: engine dapat paginate via GraphQL bila halaman post permalink
-   *  (synthetic template dari feedbackId di URL — via blok FBURLS). */
-  function fbGraphqlReady() {
-    return isFacebookPostPage(String(location.href));
-  }
-
   function renderUi() {
     if (!ui) createUi();
     ui.setAttribute("data-status", status || "idle");
@@ -957,6 +950,7 @@
 
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
+    if (event.origin !== location.origin) return;
     const data = event.data;
     if (!acceptFromInject(data)) return;
 
@@ -1129,7 +1123,6 @@
       navTimer = setTimeout(() => {
         onNavigation();
         if (!document.getElementById(ROOT_ID)) placeUi();
-        else placeInlineBar();
       }, 300);
     }
 

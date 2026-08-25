@@ -254,12 +254,11 @@
     return [...map.values()];
   }
 
-  /** Daftar username yang terlihat — hormati filter pencarian & urutan A–Z. */
+  /** Daftar nama yang terlihat — hormati filter pencarian & urutan A–Z. */
 
   function visible() {
     return names;
   }
-
 
   function setLocal(patch) {
     if (patch.status) status = patch.status;
@@ -756,6 +755,7 @@
 
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
+    if (event.origin !== location.origin) return;
     const data = event.data;
     if (!acceptFromInject(data)) return;
 

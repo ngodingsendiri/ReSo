@@ -63,8 +63,16 @@
   const REQUEST_BUDGET = 350;
   /** S1: estimasi jumlah komentar post dari run terakhir (0 = tak diketahui). */
   let lastRunTotalCount = 0;
-  /** L1.1-AUDIT: doc_id → jumlah gagal probe (diagnosa doc_id mati via rsx_debug). */
+  /** L1.1-AUDIT: doc_id → jumlah gagal probe (diagnosa doc_id mati via rsx_debug). Bounded 20 entries. */
   const probeStats = new Map();
+  const PROBE_STATS_MAX = 20;
+  function trackProbeStat(key) {
+    probeStats.set(key, (probeStats.get(key) || 0) + 1);
+    if (probeStats.size > PROBE_STATS_MAX) {
+      const first = probeStats.keys().next().value;
+      probeStats.delete(first);
+    }
+  }
   /** @type {Element | null} */
   let postRoot = null;
   let engineMode = "idle"; // graphql | hybrid | dom
@@ -1771,7 +1779,7 @@
             // L1.1-AUDIT: catat gagal probe per doc_id (diagnosa doc mati).
             const docKey =
               String((cand && cand.params && cand.params.doc_id) || "?");
-            probeStats.set(docKey, (probeStats.get(docKey) || 0) + 1);
+            trackProbeStat(docKey);
             if (probeErrStreak >= 2) {
               bustTokenCache();
               probeErrStreak = 0;
@@ -1980,7 +1988,7 @@
           const docKey = String(
             (nextCand && nextCand.params && nextCand.params.doc_id) || "?"
           );
-          probeStats.set(docKey, (probeStats.get(docKey) || 0) + 1);
+          trackProbeStat(docKey);
           /* kandidat cadangan berikutnya */
         }
         if (switched) continue;

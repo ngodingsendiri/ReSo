@@ -1160,7 +1160,8 @@ function normalizeResoUrl(raw) {
   if (u.protocol === "http:" && u.hostname !== "localhost" && !u.hostname.endsWith(".localhost")) {
     return null; // hanya localhost yang diizinkan tanpa https
   }
-  return `${u.protocol}//${u.host}`;
+  // Host case-insensitive — lowercase untuk stable origin compare (audit EXT).
+  return `${u.protocol}//${u.host.toLowerCase()}`;
 }
 
 /** Domain ReSo yang dipakai API/health/handoff — hasil pin manual (`resoUrl`)

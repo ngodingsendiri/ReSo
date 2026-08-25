@@ -254,7 +254,6 @@
     return names;
   }
 
-
   function mergeNames(list) {
     const map = new Map();
     for (const n of list || []) {
@@ -760,6 +759,7 @@
 
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
+    if (event.origin !== location.origin) return;
     const data = event.data;
     if (!acceptFromInject(data)) return;
 
