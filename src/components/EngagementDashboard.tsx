@@ -28,7 +28,7 @@ import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
 import { useDialogA11y } from '../hooks/useDialogA11y';
 import { logout, dinasCollection, dinasDoc } from '../lib/firebase';
-import { onSnapshot, query, orderBy, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
+import { onSnapshot, query, orderBy, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion, runTransaction } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate } from '../lib/date';
 import { matchEmployeesToEngagement, matchEngagementDetail, engagedIdsEqual } from '../lib/matching';
@@ -256,15 +256,12 @@ export default function EngagementDashboard() {
     if (!unverifiedAutoFilledDates.length) return;
     setIsVerifyingAll(true);
     try {
-      const batch = writeBatch(db);
-      for (const date of unverifiedAutoFilledDates) {
-        batch.set(
-          dinasDoc(db, user.uid, 'dailyEngagement', date),
-          { date, verifiedAt: serverTimestamp() },
-          { merge: true }
-        );
-      }
-      await batch.commit();
+      await runTransaction(db, async (transaction) => {
+        for (const date of unverifiedAutoFilledDates) {
+          const ref = dinasDoc(db, user.uid, 'dailyEngagement', date);
+          transaction.set(ref, { date, verifiedAt: serverTimestamp() }, { merge: true });
+        }
+      });
       toast.success(`${unverifiedAutoFilledDates.length} rekap otomatis ditandai terverifikasi.`);
     } catch (error: unknown) {
       console.error('Error verifying auto-filled rekaps:', error);
@@ -819,9 +816,15 @@ export default function EngagementDashboard() {
   };
 
   async function fetchLogoDataUrl(): Promise<string | null> {
-    logoDataUrlCache ??= (async (): Promise<string | null> => {
+    if (logoDataUrlCache) {
+      const prev = await logoDataUrlCache.catch(() => null);
+      if (prev !== null) return prev;
+      logoDataUrlCache = null;
+    }
+    logoDataUrlCache = (async (): Promise<string | null> => {
       try {
         const resp = await fetch('/logo.svg');
+        if (!resp.ok) throw new Error(`logo fetch ${resp.status}`);
         const svgText = await resp.text();
         const img = new Image();
         const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
@@ -834,7 +837,10 @@ export default function EngagementDashboard() {
         ctx.drawImage(img, 0, 0, 64, 64);
         URL.revokeObjectURL(url);
         return c.toDataURL('image/png');
-      } catch { return null; }
+      } catch {
+        logoDataUrlCache = null;
+        return null;
+      }
     })();
     return logoDataUrlCache;
   }

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RefreshCw, ChevronDown, X, Instagram, Facebook, ExternalLink } from 'lucide-react';
-import { setDoc, serverTimestamp } from 'firebase/firestore';
+import { setDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
@@ -172,6 +172,7 @@ export function InputModal({
       if (!token) throw new Error("Token API Meta tidak boleh kosong.");
 
       // Window rekap resmi: 15:00 H-1 s/d 15:00 D (WIB) = UTC 08:00
+      // Batas eksklusif di start (hindari double-count tepat 15:00), inklusif di end.
       const isWithinCustomWindow = (postDateStr: string, targetDateStr: string) => {
         if (!postDateStr) return false;
         const postTime = new Date(postDateStr).getTime();
@@ -179,7 +180,7 @@ export function InputModal({
         const endDate = new Date(`${targetDateStr}T08:00:00Z`);
         const endTime = endDate.getTime();
         const startTime = endTime - (24 * 60 * 60 * 1000);
-        return postTime >= startTime && postTime <= endTime;
+        return postTime > startTime && postTime <= endTime;
       };
 
       type MetaPost = { id: string; created_time?: string; timestamp?: string; permalink_url?: string; permalink?: string };
@@ -338,9 +339,11 @@ export function InputModal({
 
       if (!igChanged && !fbChanged && !tiktokChanged) {
         // Rekap otomatis dari ReSoEx sudah lengkap di DB — simpan tanpa ubahan
-        // cukup menandai terverifikasi.
+        // cukup menandai terverifikasi. Gunakan transaction agar tidak race dengan extension.
         if (existing?.autoFilledAt && !existing.verifiedAt) {
-          await setDoc(docRef, { date, verifiedAt: serverTimestamp() }, { merge: true });
+          await runTransaction(db, async (tx) => {
+            tx.set(docRef, { date, verifiedAt: serverTimestamp() }, { merge: true });
+          });
           toast.success('Rekap ditandai terverifikasi — data sudah lengkap dari ReSoEx.');
         } else {
           toast.info('Tidak ada perubahan untuk disimpan');
@@ -396,7 +399,30 @@ export function InputModal({
       }
       updateData.unmatchedNames = unmatchedNames;
 
-      await setDoc(docRef, updateData, { merge: true });
+      await runTransaction(db, async (tx) => {
+        // Baca snapshot terbaru untuk hindari last-write-wins dengan extension
+        const snap = await tx.get(docRef);
+        const latest = snap.exists() ? (snap.data() as DailyEngagement) : undefined;
+        // Jika ekstensi baru saja menulis rawText untuk platform yang tidak kita ubah,
+        // jangan timpa — merge dengan data terbaru untuk platform tersebut
+        const merged: Record<string, unknown> = { ...updateData };
+        if (!igChanged && latest?.igRawText !== undefined) {
+          merged.igRawText = latest.igRawText;
+          merged.igEngagedEmployeeIds = latest.igEngagedEmployeeIds;
+          merged.igLinks = latest.igLinks;
+        }
+        if (!fbChanged && latest?.fbRawText !== undefined) {
+          merged.fbRawText = latest.fbRawText;
+          merged.fbEngagedEmployeeIds = latest.fbEngagedEmployeeIds;
+          merged.fbLinks = latest.fbLinks;
+        }
+        if (!tiktokChanged && latest?.tiktokRawText !== undefined) {
+          merged.tiktokRawText = latest.tiktokRawText;
+          merged.tiktokEngagedEmployeeIds = latest.tiktokEngagedEmployeeIds;
+          merged.tiktokLinks = latest.tiktokLinks;
+        }
+        tx.set(docRef, merged, { merge: true });
+      });
 
       // Sinkronkan baseline agar dirty-check menganggap tersimpan.
       setInitialIgRawInput(currentIgRawInput);

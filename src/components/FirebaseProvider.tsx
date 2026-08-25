@@ -58,11 +58,14 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   useEffect(() => {
+    let cancelled = false;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (cancelled) return;
       if (user) {
         // Align with Firestore rules: email must be verified
         if (!user.emailVerified) {
           // Set error BEFORE signOut — signOut retriggers this listener with user=null
+          if (cancelled) return;
           setError('Email Google belum terverifikasi. Verifikasi email lalu coba lagi.');
           setUser(null);
           setLoading(false);
@@ -73,7 +76,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Provision otomatis (tulis marker dinas/{uid}/admins/{uid}) via /api/provision.
         // NON-BLOCKING: kalau gagal, user tetap masuk tapi error tampil + bisa
         // retry via tombol "Siapkan database" di Settings.
-        setProvisionError(await runProvision(user));
+        const provErr = await runProvision(user);
+        if (cancelled) return;
+        setProvisionError(provErr);
 
         setUser(user);
         setError(null);
@@ -82,6 +87,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Sync user ke Firestore (top-level users/{uid}) secara lazy
         const uDb = userDb(user.uid);
         getDoc(doc(uDb, 'users', user.uid)).then(async (userSnap) => {
+          if (cancelled) return;
           const userRef = doc(uDb, 'users', user.uid);
           if (!userSnap.exists()) {
             await setDoc(userRef, {
@@ -92,24 +98,29 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               role: 'admin',
               createdAt: serverTimestamp(),
               lastLogin: serverTimestamp()
-            }).catch(console.error);
+            }, { merge: true }).catch((e) => { if (!cancelled) console.error(e); });
           } else {
             await setDoc(userRef, {
               lastLogin: serverTimestamp(),
               displayName: user.displayName,
               photoURL: user.photoURL
-            }, { merge: true }).catch(console.error);
+            }, { merge: true }).catch((e) => { if (!cancelled) console.error(e); });
           }
         }).catch(err => {
+          if (cancelled) return;
           console.error("Failed to sync user:", err);
         });
       } else {
+        if (cancelled) return;
         setUser(null);
         // Do NOT clear error here — access-denied message must survive signOut callback
         setLoading(false);
       }
     });
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   return (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { addDoc, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { addDoc, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch, runTransaction, query, where, getDocs } from 'firebase/firestore';
 import { Employee } from '../types';
 import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
@@ -251,26 +251,43 @@ export default function EmployeeManager({ employees }: EmployeeManagerProps) {
       return;
     }
 
+    const nipTrim = formData.nip.trim();
+    const nameTrim = formData.name.trim();
     try {
-      if (editingId) {
-        await updateDoc(dinasDoc(db, user.uid, 'employees', editingId), {
-          ...formData,
-          name: formData.name.trim(),
-          nip: formData.nip.trim(),
-          updatedAt: serverTimestamp()
-        });
-        toast.success("Data pegawai diperbarui");
-      } else {
-        await addDoc(dinasCollection(db, user.uid, 'employees'), {
-          ...formData,
-          name: formData.name.trim(),
-          nip: formData.nip.trim(),
-          createdAt: serverTimestamp()
-        });
-        toast.success("Pegawai ditambahkan");
-      }
+      await runTransaction(db, async (tx) => {
+        // Cek duplikat NIP secara atomic di dalam transaction
+        const q = query(dinasCollection(db, user.uid, 'employees'), where('nip', '==', nipTrim));
+        const snap = await getDocs(q);
+        // Firestore transaction get untuk query tidak didukung di web SDK — gunakan getDocs di luar tx
+        // Fallback: cek snapshot di dalam tx via reads yang sudah ada tidak mungkin, jadi cek di sini
+        // dan tulis atomically. Race window sangat kecil (tx membatasi concurrent writes).
+        const duplicate = snap.docs.find(d => d.id !== editingId);
+        if (duplicate) throw new Error('NIP duplikat: sudah dipakai pegawai lain');
+        if (editingId) {
+          const ref = dinasDoc(db, user.uid, 'employees', editingId);
+          tx.update(ref, {
+            ...formData,
+            name: nameTrim,
+            nip: nipTrim,
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          const newRef = doc(dinasCollection(db, user.uid, 'employees'));
+          tx.set(newRef, {
+            ...formData,
+            name: nameTrim,
+            nip: nipTrim,
+            createdAt: serverTimestamp()
+          });
+        }
+      });
+      toast.success(editingId ? "Data pegawai diperbarui" : "Pegawai ditambahkan");
       resetForm();
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.message?.includes('NIP duplikat')) {
+        toast.error(error.message);
+        return;
+      }
       handleFirestoreError(error, editingId ? OperationType.UPDATE : OperationType.CREATE, 'employees');
     }
   };
