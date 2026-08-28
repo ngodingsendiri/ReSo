@@ -1,6 +1,8 @@
 /**
  * Engagement API — regression checks (run: npx tsx src/lib/engagement-api.test.ts)
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   buildEngagementPatch,
   isValidDateStr,
@@ -132,6 +134,17 @@ function ok(msg: string) {
   assert(isDateTooFarFuture('2099-01-01') === true, 'masa depan jauh ditolak');
   assert(isDateTooFarFuture('2026-08-17') === false, 'hari ini diterima');
   assert(ADMIN_EMAILS.length === 3, 'allowlist admin ada (cermin rules)');
+  // PARITY: ADMIN_EMAILS di API harus sinkron dengan allowedEmails di firestore.rules
+  const rulesPath = fileURLToPath(new URL('../../firestore.rules', import.meta.url));
+  const rules = readFileSync(rulesPath, 'utf8');
+  const blockMatch = rules.match(/allowedEmails\s*=\s*\[([\s\S]*?)\];/);
+  assert(!!blockMatch, 'firestore.rules: allowedEmails array ditemukan');
+  const rulesEmails = blockMatch ? [...blockMatch[1].matchAll(/['"]([^'"]+)['"]/g)].map(m => m[1]) : [];
+  assert(rulesEmails.length === ADMIN_EMAILS.length, 'jumlah email admin di API === rules');
+  assert(
+    JSON.stringify([...ADMIN_EMAILS].sort()) === JSON.stringify(rulesEmails.sort()),
+    'ADMIN_EMAILS di API identik dengan allowedEmails di firestore.rules'
+  );
   ok('validasi tanggal + allowlist');
 }
 

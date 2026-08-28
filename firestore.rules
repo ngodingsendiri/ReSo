@@ -6,7 +6,9 @@
 //    hanya ke `dinas/{request.auth.uid}`.
 //  - Super-admin (allowlist email) boleh akses semua dinas.
 //  - Ekstensi menulis via API (api/engagement.ts) ke `dinas/<uid>/...`.
-// JAGA SINKRON: `node scripts/sync-rules.mjs` -> api/provision-rules.ts
+// JAGA SINKRON: allowlist email di sini (`isSuperAdmin`) dicerminkan di
+// `src/lib/engagement-api.ts` (`ADMIN_EMAILS`) — drift dicegah test
+// `src/lib/engagement-api.test.ts` (PARITY) via `npm run test:api`.
 // ===============================================================
 
 rules_version = '2';

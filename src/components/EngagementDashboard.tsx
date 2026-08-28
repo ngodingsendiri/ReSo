@@ -36,7 +36,7 @@ import { collectUnverifiedAutoFilled } from '../lib/engagement-api';
 import { APP_VERSION } from '../lib/version';
 
 import { DashboardTab } from './tabs/DashboardTab';
- import { InputModal } from './InputModal';
+import { InputModal } from './InputModal';
 import { SettingsTab } from './tabs/SettingsTab';
 import { DailyReportView } from './reports/DailyReportView';
 import { WeeklyReportView } from './reports/WeeklyReportView';

@@ -11,6 +11,7 @@ const RESO_URL_KEY = "resoUrl";
 import { RESO_URL } from "./shared-module.js";
 const toggle = document.getElementById("modeToggle");
 const hint = document.getElementById("modeHint");
+const modeBadge = document.getElementById("modeBadge");
 const resoStatus = document.getElementById("resoStatus");
 const resoLogin = document.getElementById("resoLogin");
 const resoRetry = document.getElementById("resoRetry");
@@ -34,10 +35,15 @@ async function getResoUrlStored() {
 
 function apply(state) {
   toggle.checked = state !== false;
-  hint.textContent =
-    state === false
-      ? "Nonaktif — ikon mengambang disembunyikan dari Facebook, TikTok & Instagram."
-      : "Aktif → ikon mengambang muncul di Facebook, TikTok & Instagram.";
+  const on = state !== false;
+  hint.textContent = on
+    ? "FAB & panel tersedia di Facebook, TikTok & Instagram."
+    : "FAB & panel disembunyikan dari Facebook, TikTok & Instagram.";
+  if (modeBadge) {
+    modeBadge.textContent = on ? "Aktif" : "Nonaktif";
+    modeBadge.classList.toggle("on", on);
+    modeBadge.classList.toggle("off", !on);
+  }
 }
 
 async function refreshResoStatus() {

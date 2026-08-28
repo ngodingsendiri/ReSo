@@ -1,8 +1,3 @@
-/** Tanggal hari ini dalam WIB (Asia/Jakarta) sebagai YYYY-MM-DD. */
-export function getWibTodayISO(now = new Date()): string {
-  return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-}
-
 /** Local calendar date as YYYY-MM-DD (WIB). */
 export function getLocalISODate(date: Date = new Date()): string {
   return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
