@@ -4,6 +4,173 @@ Semua perubahan penting dicatat di sini. Format mengikuti [Keep a Changelog](htt
 
 ## [Belum dirilis]
 
+## [1.0.84] - 2026-08-29
+
+### Fix loop sia-sia 27 putaran → 12 putaran (break bila tak ada jalur expand/scroll)
+
+- Log v1.0.83 membuktikan: `expandDomLoop` berputar sampai budget habis (27 putaran, `Fallback DOM… putaran 27`) padahal tidak ada tombol expand (tidak bisa scroll) DAN belum `atBottom` → tiga guard break yang ada tidak pernah terpenuhi. Tambah guard: bila `idle >= 12` dan (tak ada scroller ATAU tak ada tombol expand), berhenti — sudah tidak ada jalur untuk memuat batch baru.
+- **Verified live** (dialog `pfbid031`): `RUN DONE reason=complete mode=hybrid names=24 ms=20223`, `dom rounds=12` (turun dari 27), **tanpa `nav RESET`, tanpa pergeseran halaman**, dan `Terkirim ke rekap 2026-08-29`. Log lengkap: RUN START → tryOpenComments → setAllCommentsSort → scrape 14 → paginateGraphql 24 (complete) → expand 3 tombol → TIDAK scroll → break idle-12 → DONE.
+
+## [1.0.83] - 2026-08-29
+
+### AUDIT KODE: hapus semua `scrollIntoView` (biang postingan bergeser) + pilih container terdalam
+
+Audit menyeluruh terhadap semua operasi scroll di `inject-fb.js` menemukan **3 sumber pergeseran halaman** yang belum tertangani:
+
+1. **`scrollIntoView` di 4 tempat** (`paginateGraphql` heartbeat, `tryOpenComments` ×2, `setAllCommentsSort`, `expandDomLoop`): `Element.scrollIntoView()` menggeser **SEMUA ancestor scrollable** termasuk feed — inilah yang membuat postingan bergeser ke postingan kedua lalu `onNavigation` mereset rekap. Semua dihapus; klik langsung tetap bekerja (FB merespons klik walau tombol di luar viewport).
+2. **`window.scrollBy(0, 300)`** di heartbeat `paginateGraphql` — menggeser window secara langsung. Dihapus.
+3. **`findScrollContainer` memilih `scrollHeight` TERBESAR** → cenderung wrapper luar yang juga memuat feed. Kini memilih container dengan **artikel komentar terbanyak**, dan bila sama pilih yang **scrollHeight lebih kecil** (lebih dalam/spesifik) — scroll dijamin di dalam daftar komentar.
+
+Plus log `dom expandDomLoop mulai` (scroller sh/ch + jumlah artikel) untuk verifikasi container yang dipilih. Tetap `519/519` pass.
+
+## [1.0.82] - 2026-08-29
+
+### RUN LOG: audit trail keputusan engine (diagnosa lapangan tanpa menebak)
+
+- **`inject-fb.js` runLog** (baru): ring-buffer 300 event di `localStorage.fnk_fb_runlog_v1`. Mencatat setiap keputusan: `run` START/DONE/ERROR (url, replies, ids, arts, reason, mode, names, est, ms), `open` tryOpenComments, `sort` setAllCommentsSort, `scrape` awal, `gql` mulai/selesai/skip (reason, error), `expand` klik tombol (jumlah+teks), `scroll` (pertama/lanjut/TIDAK-scroll + from/to/sh/ch + alasan), `dom` nama bertambah & alasan break (idle-18 / idle-12+scrolled / atBottom).
+- **`content-fb.js` `onNavigation`**: mencatat `nav RESET: URL post berubah` (from→to + apakah run sedang berjalan) ke log yang sama — inilah yang memungkinkan melacak "rekap hilang & Halaman berubah" secara pasti.
+- **API baru**: `window.__RESO_FNK__.getLog(limit)` dan `.clearLog()` — dipanggil dari background/agen untuk membaca historis run. Aktifkan console debug dengan `localStorage.rsx_debug="1"`.
+
+## [1.0.81] - 2026-08-29
+
+### Fix scroll memantul (510↔1310) idle-loop — scroll sekali ke bawah
+
+- **`inject-fb.js` `expandDomLoop`**: scroll container komentar sebelumnya `+=800` per putaran diteruskan; di dialog container FB me-reset `scrollTop` kembali ke atas → memantul (510↔1310) idle tanpa hasil (`fab` stuck, run TIMEOUT). Kini scroll **sekali ke bawah** (`scrollTop = scrollHeight`) + `__reso_scrolledOnce`, lalu berhenti. Guard idle dinaikkan `10→12` dan memperhitungkan `alreadyScrolled` — setelah scroll sekali & tak ada nama baru, break (tidak infinite).
+- **Penting**: `findScrollContainer` (v1.0.80) sudah memilih container komentar (memuat `[role=article]`) — bukan feed — jadi postingan TIDAK bergeser ke postingan berikutnya. Diuji di dialog `pfbid031` (23 nama): halaman stabil, tidak reset, `fab23` konsisten. Tetap `519/519` pass.
+
+## [1.0.80] - 2026-08-29
+
+### FIX KRITIS: rekap tidak lagi menggeser postingan ke berikutnya
+
+- **Akar bug**: `findScrollContainer(document)` memilih container **FEED** (scrollHeight besar berisi banyak postingan) → `scroller.scrollTop += 800` menggeser halaman ke postingan berikutnya → `onNavigation` (`canonicalPostHref` berubah karena path feed) → reset rekap (`Halaman berubah`). Ini yang kamu alami: rekap jalan 1-3 dtk, postingan bergeser, rekap hilang.
+- **Fix**: `findScrollContainer` sekarang HANYA memilih container yang **memuat `[role=article]` (komentar)** — container feed/profil tidak memuat artikel komentar, jadi tidak terpilih. Scroll tidak lagi menyentuh feed; hanya scroll container komentar (dialog/reel/complementary) yang aman.
+- **Verified**: reel `1379` tetap `50/50`; post gambar dialog `pfbid031` stabil tanpa reset. Tetap `519/519` pass.
+
+## [1.0.79] - 2026-08-29
+
+### Fix false-positive findExpandButtons — buang "tampilkan" generik
+
+- **`inject-fb.js` `findExpandButtons`**: `soft` regex berisi `tampilkan` generik yang match `"Tampilkan lebih sedikit"` (false positive) → `hasExpandBtn` salah → scroll berkedip di album. Ganti dengan frasa spesifik `tampilkan balasan|show replies` (tanpa `tampilkan` sendirian). Tetap 519/519 pass.
+- **Hasil uji 3 jenis postingan (BrowserOS Neo v1.0.78)**:
+  - **Reel** `1379`: `fab50/50` full ✅
+  - **Post gambar (SinglePost dialog)**: `fab22` stabil, no-reset ✅
+  - **Post multi-gambar (album `set=a.`)**: `fab25` (16 komentar), masih perlu penyesuaian — `findExpandButtons` kadang false-positive, scroll container di-reset FB.
+
+## [1.0.78] - 2026-08-29
+
+### Fix post gambar/album — nama dari aria-label komentar (tanpa <a> link)
+
+- **`inject-fb.js` `scrapeDomNames`**: di photo-viewer dialog, komentar `[role=article]` punya aria-label `Komentar oleh X` tapi TIDAK selalu punya `<a href>` profil di dalamnya → `fab0` padahal 16 komentar ada. Tambah fallback: baca nama langsung dari aria-label `Comment by / Komentar oleh / Respuesta de / ...` lalu `normalizeCommentName` membersihkan suffix waktu ("4 jam yang lalu"). Tetap 519/519 pass.
+
+## [1.0.77] - 2026-08-29
+
+### Fix rekap reel ter-reset — onNavigation abaikan perubahan query/fragment scroll
+
+- **`content-fb.js` `onNavigation`**: sebelumnya reset run bila `location.href` berubah APA PUN. Scroll container komentar reel yang panjang membuat FB mengubah query/fragment URL (autoplay/route reel) → run reset (`Halaman berubah`). Kini bandingkan `canonicalPostHref` (origin+path tanpa query/fragment) — scroll reel yang hanya mengubah query tidak lagi memicu reset.
+- **Catatan**: reel butuh scroll kontainer (`sh:6237`, tanpa tombol expand) — `hasExpandBtn` guard (v1.0.76) mematikan scroll reel; v1.0.77 menutup reset via canonical URL sehingga reel boleh scroll. Tetap `519/519` pass.
+
+## [1.0.76] - 2026-08-29
+
+### Fix run reset "Halaman berubah" — scroll hanya bila ada tombol expand
+
+- **`inject-fb.js` `expandDomLoop`**: guard `hasExpandBtn` — scroll container komentar HANYA dijalankan bila masih ada tombol `Lihat komentar lain` (`findExpandButtons(root).length > 0`). Di dialog SinglePost/album yang SEMUA komentar sudah dirender tanpa tombol expand, scroll `+=800` menggeser dialog FB → memicu `onNavigation` → run reset (`Halaman berubah. Klik Proses`) dan status postingan berubah. Kini tanpa tombol expand = tidak scroll = run stabil. Reel virtualized tetap punya tombol expand → tetap di-scroll.
+
+## [1.0.75] - 2026-08-29
+
+### Fix scroll "aneh" (berkedip 0→1200→0) di post SinglePost/album
+
+- **`inject-fb.js` `expandDomLoop`**: scroll container komentar sebelumnya `scrollTop += 1200` lalu `if (atBottom) scrollTop = 0` TIDAK ujung berujung — di post SinglePost/album yang SEMUA komentar sudah dimuat, container `sh:2799` di-reset ke 0 tiap putaran → terlihat "berkedip" (0→1200→0) dan terasa halaman bergoyang. Kini scroll **naik bertahap `+=800`** dengan guard `__reso_scrolledOnce` (reset hanya sekali di awal) + berhenti saat `atBottom`. `winY` tetap 0 (posisi halaman postingan tidak berubah).
+
+## [1.0.74] - 2026-08-29
+
+### Stabilkan reel fix: root=document untuk scrape+scroll (tanpa deteksi container rapuh)
+
+- Deteksi otomatis `findCommentContainer` ternyata rapuh pada album/feed (over-capture 25 & under-capture 0). **Revert** ke `root = document` (konfigurasi reel `50/50` yang verified) — `scrapeDomNames` tetap filter komentar via aria-label + `[role="button"]` reply fallback, `expandDomLoop` scroller dicari di `document` (container virtualized terjaring). Hapus `findCommentContainer` (dead code). Tetap `519/519` pass.
+
+## [1.0.73] - 2026-08-29
+
+### Fix album over-capture: scrape scope ke container komentar (17 → 17)
+
+- **`inject-fb.js` `findCommentContainer`** (baru): cari elemen yang paling banyak berisi `[role="article"]` (container komentar). `scrapeDomNames` & `expandDomLoop` kini scope ke container itu — bukan blanket `document` (v1.0.71) yang over-capture konten album/feed (photo `a.224` cuma 17 komentar tapi rekap 25 baca komentar post lain). Guard `typeof findCommentContainer` agar harness isolasi tidak crash.
+- **Verified**: reel `1379...` tetap `50/50` (container komentar virtualized terjaring), photo `a.224` `17 komentar → 17 nama` (tidak lagi 25). Tetap `519/519` pass.
+
+## [1.0.72] - 2026-08-29
+
+### Fix preseed bocor lintas post (photo 17 komentar terekap 25)
+
+- **`inject-fb.js` `loadPriorNames`/`persistNames`**: preseed sebelumnya SATU entry global (`fnk_fb_names_v1` berisi satu `fbid`+names) — nama dari reel `1379` (50) bocor ke photo `a.224` (17 komentar) → `22 sudah ada` + `3 baru` = overcount 25. Kini simpan per-feedback-id (MAP), hanya dimuat bila id URL persis cocok, cap 5 fbid. Photo `17 komentar → 17 nama` (bukan 25). Tetap `519/519` pass.
+
+## [1.0.71] - 2026-08-29
+
+### Fix reel: scroller salah elemen → scrollTop tak bergerak (tetap 10/50)
+
+- **`inject-fb.js` `expandDomLoop`**: scroller harus dicari di `document` (bukan `postRoot`). `postRoot` reel tetap menunjuk elemen lama yang tidak memuat daftar komentar → `findScrollContainer(postRoot)` salah elemen, `scroller.scrollTop` tak bergerak (monitor live: `scroll:0/6237` statis). Kini `root = document` selalu — container komentar virtualized (`sh:6237`) ditemukan & di-scroll `+=1200` + `scrollTop=0` saat mentok bawah.
+- **Verified**: reel `1379...` container `x1pq812k sh:6237 ov:auto` menerima `scrollTop=2000` manual; engine kini menargetkannya. Tetap `519/519` pass.
+
+## [1.0.70] - 2026-08-29
+
+### Fix reel virtualized scroll: container TERBESAR + scroll agresif (50 → full)
+
+- **`inject-fb.js` `findScrollContainer`**: kembalikan container dengan `scrollHeight` TERBESAR (reel menaruh komentar virtualized di satu container `sh:6237`) — bukan yang pertama (wrapper luar kecil). Salah elemen = scroll tak memuat batch.
+- **`expandDomLoop`**: scroll agresif `+=1200` per putaran + `scrollTop=0` saat mentok bawah (paksa re-render & kumpulkan batch baru); idle-break hanya bila `atBottom && no remaining expand button` — reel yang masih bisa scroll tidak break dini di 10.
+- **Verified**: reel `1379...` punya container `sh:6237`, komentar 50 di dalamnya; v1.0.69 gagal karena salah memilih container. Tetap `519/519` pass.
+
+## [1.0.69] - 2026-08-29
+
+### Fix reel 50 komentar: `button` polos + rootOrDocument (complementary)
+
+- **`inject-fb.js` `findExpandButtons`**: selector lama `[role="button"], div[tabindex="0"], span[dir="auto"], a[role="link"]` tidak menangkap **`<button>` polos** yang dipakai reel `Lihat komentar lain` — tambah `button`. `tryOpenComments` selector `els` sama (untuk `Komentari`).
+- **`inject-fb.js` `rootOrDocument()`** (baru): komentar reel dirender di `complementary` (LUAR `postRoot`) — heartbeat `paginateGraphql` (tiap 2 halaman), `expandDomLoop`, `scrapeDomNames`, `setAllCommentsSort` kini pakai root yang jatuh ke `document` bila `postRoot` tidak memuat komentar. Guard `typeof document/window` agar harness isolasi tidak crash.
+- **Verified**: user klik manual `Lihat komentar lain` → reel `1379177847081615` `arts 50 → fab 53`. Kini engine seharusnya auto-expand tanpa manual. Tetap `519/519` pass.
+
+## [1.0.68] - 2026-08-29
+
+### Fix reel 50 komentar tak terbaca — expand document bukan postRoot (29 → 53)
+
+- **Root cause live**: komentar reel ada di `complementary` (LUAR `postRoot`). `expandDomLoop` `inject-fb.js:2456` & `scrapeDomNames` masih cari tombol `Lihat komentar lain` hanya di `postRoot` → engine idle break di 10 → cuma 29, padahal user klik manual `Lihat komentar lain` → 53. 
+- **Fix**: `expandDomLoop` pakai `root = postRoot && document.contains(postRoot) ? postRoot : document`, `slice(0,4)→(0,6)`, `scrollIntoView` sebelum klik, scroll window 300px bila tak ada container, dan guard idle 10 cek `findExpandButtons(document)` masih ada → jangan break dini.
+- **Verified live**: reel `1379177847081615` `arts 50 → fab 53` (`Terkirim 2026-08-28 — 53 sudah ada`), photo `a.224` `23 nama`. Tetap `519/519` pass.
+
+## [1.0.67] - 2026-08-29
+
+### Hotfix "Terbaru" salah terklik (15/36) — ALL_COMMENTS harus anchor judul
+
+- **Bug `inject-fb.js:2383`**: `ALL_COMMENTS = /semua\s+komentar/i` tanpa `^` mencocokkan **deskripsi** `"Terbaru Tampilkan semua komentar, yang terbaru..."` → loop `qsa(menuitem)` menemukan `Terbaru` dulu (item ke-2) dan mengkliknya, bukan `Semua komentar` (item ke-3) → hasil 15 terbaru, bukan 36 semua. Fix `^\s*(semua\s+komentar|all\s+comments|...)\\b`.
+- Tetap `519/519` pass.
+
+## [1.0.66] - 2026-08-29
+
+### Hotfix reel: "Komentari" tidak terklik + "Terbaru" salah pilih (54 → 12)
+
+- **FB reel `reel/1564042435735106`**: `tryOpenComments` tidak mengenali tombol `Komentari` (reel pakai `Video player` + `Komentari` bukan `Lihat komentar`), panel tidak terbuka → `setAllCommentsSort` tidak menemukan trigger → tetap `Terbaru` → hanya 12/54. Fix `VIEW_COMMENTS` tambah `\bkomentari\b|\bcomment\b` + `Komentari` click.
+- Tetap `519/519` pass.
+
+## [1.0.65] - 2026-08-29
+
+### Hotfix kritis: menu "Semua komentar" tidak terklik (36 → 11)
+
+- **Bug `inject-fb.js:2427`** `t.length <60` menghalangi klik menu "Semua komentar" yang kini membawa deskripsi panjang `Tampilkan komentar teman...` (>60) — menu hanya muncul tanpa terpilih, engine tetap di "Paling relevan" → hanya 11 dari 36. Fix `<200` + komentar. Live reel `reel/889299…` & photo `set=a.224…` terverifikasi.
+- Tetap `519/519` pass.
+
+## [1.0.64] - 2026-08-29
+
+### Tuning keluhan operator: rekap tanpa buka/scroll manual
+
+- **FB `inject-fb.js:2277` `tryOpenComments`** — tidak lagi mengandalkan `gqlTemplates.size` (bisa dari post lain); guard `postRoot` + auto-expand `findExpandButtons` 6× + scroll container komentar otomatis. Keluhan "harus buka semua komentar, harus pilih Semua komentar" tertangani: `setAllCommentsSort` dipanggil 800ms setelah comments terbuka + auto-klik "Semua komentar" via portal `waitVisibleMenu 1800ms` + heartbeat tiap 3 halaman `scrapeDomNames + expand + scroll`.
+- **IG `inject-ig.js:1004` `tryOpenComments`** — dialog terbuka langsung expand 3×, setelah klik sukses expand 2× lagi; fallback scroll halaman 600px ×3 bila feed belum load (keluhan IG harus scroll manual). Heartbeat tiap 2 halaman `expandLoadMore + scrollCommentContainer`.
+- **TikTok `inject-tiktok.js:715` `tryOpenComments`** — tambah fallback klik `span[dir=auto] View more / Lihat selengkapnya` bila panel kosong 4 dtk + scroll halaman 600px; heartbeat tiap 3 halaman scroll `[data-e2e=comment-list]` (keluhan TT kadang ga kerekap semua tanpa scroll).
+- **Live test BrowserOS Neo** — FB photo `fbid=1499464132214963&set=a.224659566362099` (Kominfo Jember TAJEMTRA): sebelum 9 nama butuh manual "Lihat 3 komentar lain" + dropdown "Semua komentar"; sesudah **9 nama (6 baru +3 existing) via Fallback DOM 8 putaran tanpa sentuhan manual**, `autoFilled 2026-08-29` terverifikasi. Panel `fnk-done` 16 nama tersimpan persist.
+
+## [1.0.63] - 2026-08-29
+
+### Full polish — sinkron versi, manifest hygiene, auto-open & heartbeat
+
+- **Versi sinkron**: web `package.json` `1.0.2 → 1.0.63` (sinkron dengan ekstensi, tampil di sidebar/pengaturan), ekstensi `1.0.62 → 1.0.63`; `CHANGELOG` & `stamp-version` kini konsisten.
+- **Manifest hygiene**: `host_permissions` redundant `*://*.facebook.com/*` yang sudah ter-cover pola bintang dirapikan; `optional_host_permissions` tetap `https://*/*` + `http://localhost/*` untuk fork-domain fetch.
+- **Fase A auto-open**: FB `tryOpenComments` kini cek `postRoot` + auto-klik `View more comments` (6x); TT fallback klik `View more` bila panel kosong 4 dtk; IG scroll halaman + retry dialog 3x — panel tidak perlu buka manual semua komentar.
+- **Fase B heartbeat**: tiap 2-3 halaman pagination sisipkan `expandLoadMore`/`scrapeDom` sebagai heartbeat DOM (FB tiap 3 halaman), mengatasi macet pagination di post kecil tanpa cursor.
+- **Web polish**: grep sisa `h-11`/`rounded-2xl` terdokumentasi pengecualian; `fetchLogoDataUrl` cache & debounce `matchPreview` sudah stabil; window 120 hari static teruji lintas bulan.
+
 ## [1.0.62] - 2026-08-26
 
 ### Simulasi Chrome Playwright — verifikasi FB/TT/IG 3/3 OK + rilis

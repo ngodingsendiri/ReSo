@@ -1,7 +1,7 @@
 {
   "name": "reso",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.84",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -56,3 +56,17 @@
     "typescript": "~5.8.2"
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

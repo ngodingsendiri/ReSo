@@ -1,6 +1,6 @@
 {
   "name": "reso-ekstention",
-  "version": "1.0.62",
+  "version": "1.0.84",
   "private": true,
   "description": "Ekstensi Chrome (Manifest V3) untuk mengekstrak nama komentator dari Facebook, TikTok & Instagram lalu menyalinnya ke Excel.",
   "type": "module",
@@ -14,3 +14,17 @@
     "node": ">=18"
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -744,22 +744,45 @@
           el.closest("button, a, [role='button'], [data-e2e]") || el;
         try {
           target.click();
-          await sleepWhile(500);
-          if (commentPanelOpen()) return true;
+          await sleepWhile(600);
+          if (commentPanelOpen()) {
+            // auto-expand View more jika panel terbuka tapi masih kosong (Fase A fallback)
+            try { const l = document.querySelector('[data-e2e="comment-list"], [class*="CommentList"]'); if (l) l.scrollTop = l.scrollHeight; } catch {}
+            return true;
+          }
         } catch {
           /* try next candidate */
         }
       }
     }
+    // Fase A fallback: panel masih kosong setelah 3 percobaan — coba klik "View more / Lihat selengkapnya" (TT kadang butuh klik bukan scroll)
+    try {
+      const fallbackSpans = document.querySelectorAll('span[dir="auto"], button, [role="button"]');
+      for (const el of fallbackSpans) {
+        const t = (el.innerText || el.textContent || "").trim();
+        if (!t || t.length > 80) continue;
+        if (!/view more|lihat selengkapnya|more comments|view.*replies|lihat.*balasan/i.test(t)) continue;
+        const target = el.closest("button, a, [role='button']") || el;
+        try { target.click(); await sleepWhile(800); if (commentPanelOpen()) return true; } catch {}
+      }
+    } catch {}
     const list = document.querySelector(
       '[data-e2e="comment-list"], [class*="CommentList"]'
     );
     if (list) {
       try {
         list.scrollTop = list.scrollHeight;
+        // coba sekali lagi klik View more setelah scroll
+        await sleepWhile(400);
+        const extra = document.querySelector('span[dir="auto"]');
+        if (extra && /view more|lihat selengkapnya/i.test(extra.innerText||"")) { try { extra.closest("button")?.click(); await sleepWhile(600);} catch{} }
       } catch {
         /* ignore */
       }
+    }
+    // Instagram-style: scroll halaman bila di feed (TT feed → video detail perlu scroll)
+    if (!commentPanelOpen()) {
+      try { window.scrollBy(0, 600); await sleepWhile(600); } catch {}
     }
     return commentPanelOpen();
   }
@@ -838,6 +861,10 @@
           (totalEstimate ? ` • ±${totalEstimate} komentar di video` : ""),
         videoHint: awemeId,
       });
+      // Fase B heartbeat TikTok: tiap 3 halaman scroll container komentar (otomatis tanpa user scroll manual)
+      if (pages % 3 === 0) {
+        try { const l = document.querySelector('[data-e2e="comment-list"], [class*="CommentList"]'); if (l) l.scrollTop = l.scrollHeight; } catch {}
+      }
 
       // Optional replies for this page's parents — budget terpisah 70 req/run.
       // S5-AUDIT: fairness per-parent — budget dibagi merata utk parent di

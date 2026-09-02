@@ -1100,8 +1100,44 @@
     let lastHref = location.href;
     let navTimer = null;
 
+    // Bandingkan URL "post" saja (path + story/reel id) — abaikan perubahan
+    // query/fragment/hash yang dipicu scroll reel (FB autoplay/route reel
+    // mengganti query tanpa pindah postingan). Tanpa ini, scroll container
+    // komentar reel yang panjang memicu onNavigation → run reset ("Halaman
+    // berubah") padahal postingan sama.
+    function canonicalPostHref(href) {
+      try {
+        const u = new URL(href);
+        // Ambil path + (untuk reel) id video agar tak terpengaruh query/fragment
+        const path = u.pathname.replace(/\/+$/, "");
+        return u.origin + path;
+      } catch {
+        return href;
+      }
+    }
+
     function onNavigation() {
-      if (location.href === lastHref) return;
+      if (canonicalPostHref(location.href) === canonicalPostHref(lastHref)) return;
+      // LOG: catat navigasi yang benar-benar mereset run (dibaca via getLog).
+      try {
+        const prev = canonicalPostHref(lastHref);
+        const now = canonicalPostHref(location.href);
+        const KEY = "fnk_fb_runlog_v1";
+        const raw = localStorage.getItem(KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(arr)) {
+          arr.push({
+            t: new Date().toISOString().slice(11, 23),
+            run: currentRunId ? String(currentRunId).slice(-6) : "-",
+            tag: "nav",
+            msg: "RESET: URL post berubah",
+            from: prev.slice(-45),
+            to: now.slice(-45),
+            running: status === "running" ? "yes" : "no",
+          });
+          localStorage.setItem(KEY, JSON.stringify(arr.slice(-300)));
+        }
+      } catch { /* ignore */ }
       lastHref = location.href;
       if (stopFinalizeTimer) {
         clearTimeout(stopFinalizeTimer);

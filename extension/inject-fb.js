@@ -25,6 +25,67 @@
       return false;
     }
   })();
+
+  // ---------------- RUN LOG (audit trail per run) ----------------
+  // Log ring-buffer setiap keputusan engine (mode, scroll, expand, navigasi,
+  // pagination, alasan berhenti) supaya masalah lapangan bisa dilacak TANPA
+  // menebak. Disimpan di localStorage `fnk_fb_runlog_v1` (maks 300 baris) dan
+  // bisa dibaca lewat `window.__RESO_FNK__.getLog()`.
+  const RUNLOG_KEY = "fnk_fb_runlog_v1";
+  const RUNLOG_MAX = 300;
+  let runLog = [];
+  try {
+    const raw = localStorage.getItem(RUNLOG_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(arr)) runLog = arr.slice(-RUNLOG_MAX);
+  } catch { /* ignore */ }
+
+  function flushLog() {
+    try {
+      localStorage.setItem(RUNLOG_KEY, JSON.stringify(runLog.slice(-RUNLOG_MAX)));
+    } catch { /* quota — abaikan */ }
+  }
+
+  /**
+   * Catat satu event engine.
+   * @param {string} tag kategori singkat (mis. "run", "scroll", "expand", "gql")
+   * @param {string} msg deskripsi
+   * @param {Record<string, unknown>} [extra] data ringkas (angka/string saja)
+   */
+  function logEvent(tag, msg, extra) {
+    try {
+      const entry = {
+        t: new Date().toISOString().slice(11, 23),
+        run: currentRunId ? String(currentRunId).slice(-6) : "-",
+        tag: String(tag).slice(0, 16),
+        msg: String(msg).slice(0, 180),
+      };
+      if (extra && typeof extra === "object") {
+        for (const [k, v] of Object.entries(extra)) {
+          if (v == null) continue;
+          const val = typeof v === "object" ? JSON.stringify(v).slice(0, 60) : String(v).slice(0, 60);
+          entry[String(k).slice(0, 12)] = val;
+        }
+      }
+      runLog.push(entry);
+      if (runLog.length > RUNLOG_MAX) runLog = runLog.slice(-RUNLOG_MAX);
+      flushLog();
+      if (DEBUG) {
+        // eslint-disable-next-line no-console
+        console.debug(`[ReSo:${entry.tag}] ${entry.msg}`, extra || "");
+      }
+    } catch { /* logging tidak boleh menggagalkan run */ }
+  }
+
+  function getRunLog(limit) {
+    const n = Number.isFinite(limit) && limit > 0 ? Math.min(limit, RUNLOG_MAX) : 120;
+    return runLog.slice(-n);
+  }
+
+  function clearRunLog() {
+    runLog = [];
+    try { localStorage.removeItem(RUNLOG_KEY); } catch { /* ignore */ }
+  }
   /** @type {string[]} */
   const gqlBuffer = [];
   const GQL_BUFFER_MAX = 50;
@@ -76,6 +137,17 @@
   /** @type {Element | null} */
   let postRoot = null;
   let engineMode = "idle"; // graphql | hybrid | dom
+
+  // Fix reel: komentar reel dirender di `complementary`/slider (LUAR postRoot) —
+  // scrape/expand wajib jatuh ke document bila postRoot tidak lagi memuat komentar.
+  function rootOrDocument() {
+    try {
+      if (typeof document !== "undefined" && postRoot && document.contains(postRoot) && postRoot.querySelectorAll('[role="article"]').length) {
+        return postRoot;
+      }
+    } catch { /* ignore */ }
+    return typeof document !== "undefined" ? document : null;
+  }
 
   // Muat template pagination tersimpan (doc_id) dari sesi sebelumnya — jadi
   // postingan baru bisa langsung paginate GraphQL tanpa buka komentar dulu.
@@ -955,16 +1027,26 @@
   // di-post yang sama di-load kembali (scoped ke feedback id, TTL 7 hari).
   const NAMES_STORE_KEY = "fnk_fb_names_v1";
 
+  // Preseed diperbaiki: simpan per-feedback-id (MAP), bukan satu entry global.
+  // Satu entry global bikin nama dari post/reel LAIN bocor ke rekap berikutnya
+  // (photo 17 komentar terekap 25 karena preseed reel 1379 sebelumnya). Kini hanya
+  // dimuat bila feedback id URL persis cocok dengan kunci.
   function loadPriorNames(urlIds) {
     try {
       const raw = localStorage.getItem(NAMES_STORE_KEY);
       if (!raw) return null;
       const entry = JSON.parse(raw);
-      if (!entry || !Array.isArray(entry.names) || !entry.fbid) return null;
+      if (!entry) return null;
       if (!(entry.at > 0 && Date.now() - entry.at < 7 * 86400_000)) return null;
+      const store = entry.map || (entry.fbid ? { [entry.fbid]: entry.names } : {});
       const ids = Array.isArray(urlIds) ? urlIds : [];
-      if (!ids.some((id) => fbIdsMatch(id, entry.fbid))) return null;
-      return entry.names.filter((n) => typeof n === "string" && n);
+      for (const fbid of Object.keys(store)) {
+        if (ids.some((id) => fbIdsMatch(id, fbid))) {
+          const names = store[fbid];
+          if (Array.isArray(names)) return names.filter((n) => typeof n === "string" && n);
+        }
+      }
+      return null;
     } catch {
       return null;
     }
@@ -973,9 +1055,19 @@
   function persistNames(fbid, names) {
     try {
       if (!fbid || !Array.isArray(names) || !names.length) return;
+      const raw = localStorage.getItem(NAMES_STORE_KEY);
+      let map = {};
+      try {
+        const prev = JSON.parse(raw);
+        map = prev && prev.map ? prev.map : prev && prev.fbid ? { [prev.fbid]: prev.names } : {};
+      } catch { /* ignore */ }
+      // Jangan menimpa fbid lain; cap 5 entry agar localStorage tidak membengkak.
+      map[fbid] = names.slice(0, 2000);
+      const keys = Object.keys(map);
+      if (keys.length > 5) delete map[keys[0]];
       localStorage.setItem(
         NAMES_STORE_KEY,
-        JSON.stringify({ fbid, names: names.slice(0, 2000), at: Date.now() })
+        JSON.stringify({ map, at: Date.now() })
       );
     } catch {
       /* ignore */
@@ -1885,9 +1977,21 @@
       }
 
       pages++;
-      // Fase B: heartbeat DOM tiap 3 halaman — bantu harvest nama yang sudah ter-render
-      if (pages % 3 === 0) {
-        try { scrapeDomNames(postRoot); } catch {}
+      // Fase B: heartbeat DOM tiap 2 halaman — harvest + auto-expand "Lihat komentar lain" (keluhan harus scroll manual). reel → rootOrDocument (complementary)
+      // Guard: di harness isolasi (tanpa document/window) helper DOM di-skip supaya tak crash.
+      if (pages % 2 === 0 && typeof document !== "undefined" && typeof window !== "undefined") {
+        const r = rootOrDocument();
+        try { scrapeDomNames(r); } catch {}
+        try {
+          const btns = findExpandButtons(r);
+          // JANGAN scrollIntoView / window.scrollBy: keduanya menggeser
+          // SEMUA ancestor termasuk feed → halaman pindah ke postingan lain →
+          // onNavigation → run reset. Klik saja; FB tetap merespons klik
+          // walau tombol di luar viewport.
+          for (const b of btns.slice(0, 4)) { try { b.click(); } catch {} }
+          const sc = findScrollContainer(r);
+          if (sc) sc.scrollTop = sc.scrollHeight;
+        } catch {}
       }
       // Budget guard: never paginate forever on huge threads
       if (pages > 120) {
@@ -2178,6 +2282,9 @@
   }
 
   function scrapeDomNames(root) {
+    // Scope ke container komentar bila di-scope; kalau tanpa scope / document,
+    // pakai postRoot atau document. Filter komentar berbasis aria-label yang
+    // menentukan kelayakan, bukan scope (deteksi otomatis container rapuh).
     const scope = root || postRoot || document;
     const before = nameMap.size;
 
@@ -2213,6 +2320,15 @@
           .map((b) => (b.innerText || "").toLowerCase())
           .join(" ");
         if (!/(like|suka)/.test(btns) || !/(reply|balas)/.test(btns)) return;
+      }
+      // Fallback 1: nama dari aria-label "Komentar oleh X" — penting untuk
+      // photo-viewer dialog di mana komentar [role=article] tidak selalu punya
+      // <a> link profil di dalamnya.
+      if (ariaRaw) {
+        const m = ariaRaw.match(/^(?:comment|reply|komentar|balasan|comentario|respuesta|resposta|r\u00e9ponse)\s+(?:by|oleh|dari|from|de|da|di)\s+(?:la\s+|o\s+|a\s+)?(.{1,80})/i);
+        if (m && m[1]) {
+          addName(m[1].split(/\s{2,}|\s+[·•]\s+/)[0]);
+        }
       }
       for (const a of art.querySelectorAll('a[role="link"], a[href]')) {
         const href = a.href || "";
@@ -2255,10 +2371,13 @@
 
   function findExpandButtons(root) {
     // EN + ID + ES/PT/FR — FB melayani locale lain sesuai akun/region.
+    // JANGAN sertakan "tampilkan"/"show" sendirian — terlalu generik dan
+    // match "Tampilkan lebih sedikit" (false positive yang mengacaukan guard).
     const soft =
-      /view more comments|see more comments|lihat komentar|previous comments|komentar sebelumnya|view more replies|lihat balasan|more comments|more replies|lihat selengkapnya|show more|tampilkan|ver m\u00e1s comentarios|m\u00e1s respuestas|ver mais coment\u00e1rios|ver mais respostas|afficher plus de commentaires|plus de r\u00e9ponses/i;
+      /view more comments|see more comments|lihat komentar|previous comments|komentar sebelumnya|view more replies|lihat balasan|tampilkan balasan|show replies|more comments|more replies|lihat selengkapnya|see more|show more comments|all comments|semua komentar|ver m\u00e1s comentarios|m\u00e1s respuestas|ver mais coment\u00e1rios|ver mais respostas|afficher plus de commentaires|plus de r\u00e9ponses/i;
     const out = [];
-    qsa('[role="button"], div[tabindex="0"], span[dir="auto"], a[role="link"]', root || document).forEach((el) => {
+    // Fix reel: tombol "Lihat komentar lain" di reel adalah <button> polos (tanpa role) — selector lama hanya role/span/a sehingga reel tak kebaca. Tambah button.
+    qsa('[role="button"], button, div[tabindex="0"], span[dir="auto"], a[role="link"]', root || document).forEach((el) => {
       if (!isVisible(el)) return;
       const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
         .replace(/\s+/g, " ")
@@ -2269,13 +2388,34 @@
   }
 
   async function tryOpenComments(scope) {
-    // Already open? (post article + nested comment articles)
-    if (scope && scope.querySelectorAll('[role="article"]').length > 1) return true;
+    // Preserve original early-return untuk test harness (scope >1 article → true tanpa klik)
+    if (scope && scope.querySelectorAll('[role="article"]').length > 1) {
+      // Real browser: auto-expand hidden "Lihat komentar lain" tanpa user klik manual (hanya bila helper tersedia)
+      try {
+        if (typeof findExpandButtons === 'function' && typeof findScrollContainer === 'function') {
+          const _root = scope || (typeof postRoot !== 'undefined' ? postRoot : null) || document;
+          const _isStopped = () => { try { return typeof stopFlag !== 'undefined' && stopFlag; } catch { return false; } };
+          for (let i = 0; i < 6 && !_isStopped(); i++) {
+            let btns; try { btns = findExpandButtons(_root); } catch { break; }
+            if (!btns.length) break;
+            let clicked = false;
+            for (const b of btns.slice(0, 3)) {
+              // Tanpa scrollIntoView (menggeser feed → run reset); klik langsung.
+              try { b.click(); clicked = true; await sleepWhile(400); } catch {}
+            }
+            if (!clicked) break;
+            await sleepWhile(600);
+            try { const sc = findScrollContainer(_root); if (sc) sc.scrollTop = sc.scrollHeight; } catch {}
+          }
+        }
+      } catch {}
+      return true;
+    }
     const COMMENT_COUNT = /^\d[\d.,\s]*(?:k|rb)?\s*(?:komentar|comments?|comentarios|coment\u00e1rios)\b/i;
     const VIEW_COMMENTS =
-      /view.*(?:comment|komentar)|lihat.*komentar|lihat\s+semua\s+komentar|ver.*(comment|komentari)|voir.*commentaire/i;
+      /view.*(?:comment|komentar)|lihat.*komentar|lihat\s+semua\s+komentar|ver.*(comment|komentari)|voir.*commentaire|\bkomentari\b|\bcomment\b/i;
     const els = qsa(
-      '[role="button"], a[role="link"], [role="tab"], [aria-label], span[dir="auto"]',
+      '[role="button"], button, a[role="link"], [role="tab"], [aria-label], span[dir="auto"]',
       scope || document
     );
     for (const el of els) {
@@ -2289,7 +2429,24 @@
         el.scrollIntoView({ block: "center" });
         el.click();
         await sleepWhile(700);
-        if (gqlTemplates.size > 0 || (scope || document).querySelectorAll('[role="article"]').length > 1) return true;
+        const _hasGql = (() => { try { return typeof gqlTemplates !== 'undefined' && gqlTemplates.size > 0; } catch { return false; } })();
+        const _hasArticles = (() => { try { return (scope || document).querySelectorAll('[role="article"]').length > 1; } catch { return false; } })();
+        if (_hasGql || _hasArticles) return true;
+        // Real browser auto-expand setelah terbuka (tanpa tunggu user) — guard helper
+        try {
+          if (typeof findExpandButtons === 'function') {
+            const _root = scope || (typeof postRoot !== 'undefined' ? postRoot : null) || document;
+            for (let k = 0; k < 3; k++) {
+              let btns; try { btns = findExpandButtons(_root); } catch { break; }
+              if (!btns.length) break;
+              for (const b of btns.slice(0, 2)) { try { b.click(); await sleepWhile(300); } catch {} }
+              const _isStopped = (() => { try { return typeof stopFlag !== 'undefined' && stopFlag; } catch { return false; } })();
+              if (_isStopped) break;
+            }
+            const _hasExpand = (() => { try { return findExpandButtons(_root).length > 0; } catch { return false; } })();
+            if (_hasExpand || _hasArticles) return true;
+          }
+        } catch {}
       } catch {
         /* ignore */
       }
@@ -2338,7 +2495,7 @@
     const SORT_ARIA_FALLBACK =
       /(?:sort|urutkan|urutan|ordenar|trier)\b[^]{0,40}(?:comment|komentar|comentari)|(?:comment|komentar|coment\u00e1rio)[^]{0,40}\b(?:sort|urutkan|urutan|ordenar|trier)/i;
     const ALL_COMMENTS =
-      /semua\s+komentar|all\s+comments|todos\s+los\s+comentarios|todos\s+os\s+coment\u00e1rios|tous\s+les\s+commentaires/i;
+      /^\s*(semua\s+komentar|all\s+comments|todos\s+los\s+comentarios|todos\s+os\s+coment\u00e1rios|tous\s+les\s+commentaires)\b/i;
 
     const isSortTrigger = (el) => {
       if (!isVisible(el)) return false;
@@ -2365,7 +2522,9 @@
     if (ALL_COMMENTS.test(current)) return;
 
     try {
-      sortButton.scrollIntoView({ block: "center" });
+      // JANGAN scrollIntoView di sini: pada dialog/permalink, scrollIntoView
+      // menggeser ancestor (termasuk feed) → halaman pindah postingan →
+      // onNavigation → run reset. Klik langsung; FB tetap membuka menu.
       sortButton.click();
 
       // 2) Menu muncul lewat PORTAL di document.body — tunggu sampai tampil.
@@ -2376,12 +2535,13 @@
       }
 
       // 3) Dari menu terbuka, pilih opsi "Semua Komentar" / "All comments".
+      // Fix: menu item FB kini membawa deskripsi panjang ("Paling relevan Tampilkan komentar teman...") >60 char — filter <60 lama menghalangi klik, menu hanya muncul tanpa terpilih (laporan user 36 komentar → 11).
       for (const el of qsa('[role="menuitem"], [role="option"]', menu)) {
         if (!isVisible(el)) continue;
         const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
           .replace(/\s+/g, " ")
           .trim();
-        if (t && t.length < 60 && ALL_COMMENTS.test(t)) {
+        if (t && t.length < 200 && ALL_COMMENTS.test(t)) {
           el.click();
           await sleepWhile(700);
           return;
@@ -2396,46 +2556,122 @@
   }
 
   /** Scrollable comment container (so we scroll the list, not the whole page). */
+  /**
+   * Cari container komentar yang bisa di-scroll. Hanya elemen yang BENAR-BENAR
+   * memuat `[role=article]` (komentar) yang boleh di-scroll — JANGAN pilih
+   * container feed/profil (sh besar tapi berisi banyak postingan) karena
+   * scroll di sana menggeser halaman ke postingan Berikutnya → memicu navigasi
+   * dan reset rekap ("Halaman berubah"). Ini akar bug "posisi postingan
+   * bergeser ke postingan kedua saat rekap jalan".
+   */
   function findScrollContainer(root) {
     if (!root) return null;
     const els = [root, ...root.querySelectorAll("*")];
+    let best = null;
+    let bestArts = 0;
     for (let i = 0; i < els.length && i < 3000; i++) {
       const el = els[i];
-      if (el.scrollHeight > el.clientHeight + 80) {
-        const st = getComputedStyle(el);
-        if (st.overflowY === "auto" || st.overflowY === "scroll") return el;
-      }
+      try {
+        // Wajib memuat komentar [role=article] — feed wrapper tidak memuat
+        // artikel komentar secara langsung, hanya banyak postingan.
+        const arts = el.querySelectorAll('[role="article"]').length;
+        if (arts > 0 && el.scrollHeight > el.clientHeight + 80) {
+          const st = getComputedStyle(el);
+          if (st.overflowY === "auto" || st.overflowY === "scroll") {
+            // Pilih container TERDALAM yang masih memuat SEMUA komentar
+            // (artikel terbanyak, tapi bila sama pilih yang scrollHeight lebih
+            // KECIL = lebih dalam/lebih spesifik). Memilih yang scrollHeight
+            // terbesar cenderung mengambil wrapper luar yang juga memuat feed →
+            // scroll di sana menggeser halaman ke postingan lain.
+            if (
+              arts > bestArts ||
+              (arts === bestArts && best && el.scrollHeight < best.scrollHeight)
+            ) {
+              bestArts = arts;
+              best = el;
+            }
+          }
+        }
+      } catch { /* ignore */ }
     }
-    return null;
+    return best;
   }
 
   async function expandDomLoop(maxMs) {
     const start = Date.now();
     const savedScrollY = window.scrollY;
-    const scroller = findScrollContainer(postRoot);
+    // Fix reel: komentar reel & photo album ada di container komentar (tanpa
+    // scoping ke postRoot yang isinya salah). Scrape tetap filter komentar via
+    // aria-label; scroller dicari di document agar container virtualized terjaring.
+    const root = document;
+    const scroller = findScrollContainer(document);
+    logEvent("dom", "expandDomLoop mulai", {
+      scroller: scroller ? `sh${scroller.scrollHeight}/ch${scroller.clientHeight}` : "none",
+      arts: scroller ? scroller.querySelectorAll('[role="article"]').length : 0,
+      names: nameMap.size,
+    });
     let idle = 0;
     let rounds = 0;
     while (running && !stopFlag && Date.now() - start < maxMs) {
       rounds++;
       const before = nameMap.size;
-      scrapeDomNames(postRoot);
+      scrapeDomNames(root);
       drainGqlBuffer();
-      const btns = findExpandButtons(postRoot);
-      for (const b of btns.slice(0, 4)) {
+      const btns = findExpandButtons(root);
+      if (btns.length) {
+        logEvent("expand", `klik ${Math.min(btns.length, 6)} tombol expand`, {
+          found: btns.length,
+          text: (btns[0].innerText || "").trim().slice(0, 40),
+        });
+      }
+      for (const b of btns.slice(0, 6)) {
         try {
+          // TANPA scrollIntoView — itu menggeser feed/ancestor → run reset.
           b.click();
         } catch {
           /* ignore */
         }
-        await sleepWhile(300);
+        await sleepWhile(400);
       }
+      // Scroll HANYA bila masih ada tombol "Lihat komentar lain" (masih ada
+      // batch tersembunyi). Di dialog SinglePost/album yang SEMUA komentar sudah
+      // dirender TANPA tombol expand, scroll justru menggeser dialog FB dan
+      // memicu onNavigation → run reset. Ini akar bug "scroll aneh & status
+      // postingan berubah".
+      const hasExpandBtn = findExpandButtons(root).length > 0;
       try {
-        // Scroll HANYA kontainer komentar dalam post — JANGAN pernah menggeser
-        // halaman (window.scrollBy): di feed/profil itu pindah ke postingan
-        // lain dan komentarnya ikut ter-rekap (kontaminasi lintas post).
-        if (scroller) scroller.scrollTop += 400;
-      } catch {
-        /* ignore */
+        if (scroller && hasExpandBtn) {
+          // Scroll SEKALI ke bawah (scrollTop = scrollHeight) — bukan loop
+          // `+=800` yang memantul (container FB me-reset ke atas) dan idle
+          // tanpa hasil. Setelah mentok bawah, set flag agar tidak scroll lagi.
+          const beforeTop = scroller.scrollTop;
+          if (!scroller.__reso_scrolledOnce) {
+            scroller.__reso_scrolledOnce = true;
+            scroller.scrollTop = scroller.scrollHeight;
+            logEvent("scroll", "scroll pertama ke bawah", {
+              from: beforeTop,
+              to: scroller.scrollTop,
+              sh: scroller.scrollHeight,
+              ch: scroller.clientHeight,
+            });
+          }
+          const atBottom =
+            scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 40;
+          if (!atBottom) {
+            scroller.scrollTop = scroller.scrollHeight;
+            logEvent("scroll", "scroll lanjut (belum di bawah)", {
+              from: beforeTop,
+              to: scroller.scrollTop,
+              sh: scroller.scrollHeight,
+            });
+          }
+        } else if (!scroller) {
+          if (rounds === 1) logEvent("scroll", "TIDAK scroll: container komentar tidak ditemukan");
+        } else if (!hasExpandBtn) {
+          if (rounds === 1) logEvent("scroll", "TIDAK scroll: tidak ada tombol expand (semua komentar sudah dimuat)");
+        }
+      } catch (e) {
+        logEvent("scroll", "error scroll", { err: String(e?.message || e).slice(0, 60) });
       }
       post("PROGRESS", {
         names: snapshot(),
@@ -2444,12 +2680,52 @@
       });
       if (nameMap.size === before) idle++;
       else idle = 0;
-      if (nameMap.size === 0 && idle >= 18) break;
-      if (nameMap.size > 0 && idle >= 10) break;
+      if (nameMap.size !== before) {
+        logEvent("dom", `nama bertambah`, { from: before, to: nameMap.size, round: rounds });
+      }
+      if (nameMap.size === 0 && idle >= 18) {
+        logEvent("dom", "break: 18 putaran tanpa nama sama sekali", { rounds });
+        break;
+      }
+      if (nameMap.size > 0 && idle >= 12) {
+        // Setelah scroll ke bawah (scrolledOnce) dan sudah lama tidak ada nama
+        // baru → batch sudah habis ter-load. Jangan break dini sebelum scroll
+        // sekali (reel masih perlu scroll bera tahap untuk ter-load batch lazy).
+        const alreadyScrolled = (() => {
+          try { return !!scroller?.__reso_scrolledOnce; } catch { return true; }
+        })();
+        if (alreadyScrolled) {
+          logEvent("dom", "break: idle 12 & sudah scroll", { names: nameMap.size, rounds });
+          break;
+        }
+        const atBottom = (() => {
+          try {
+            if (!scroller) return true;
+            return scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 20;
+          } catch { return true; }
+        })();
+        const remaining = findExpandButtons(document);
+        if (atBottom && remaining.length === 0) {
+          logEvent("dom", "break: di bawah & tanpa tombol expand", { names: nameMap.size, rounds });
+          break;
+        }
+        // Tidak akan pernah scroll (tanpa tombol expand) tapi juga tidak
+        // atBottom → loop akan berputar sia-sia sampai budget habis.
+        // Berhenti: DOM sudah tidak menghasilkan nama baru 12 putaran.
+        if (!scroller || remaining.length === 0) {
+          logEvent("dom", "break: idle 12 & tak ada jalur expand/scroll lagi", {
+            names: nameMap.size,
+            rounds,
+            scroller: scroller ? "ada" : "none",
+          });
+          break;
+        }
+      }
       if (!(await sleepWhile(500))) break;
     }
     // Restore scroll position after DOM expansion
     try { window.scrollTo(0, savedScrollY); } catch { /* ignore */ }
+    logEvent("dom", "expandDomLoop selesai", { names: nameMap.size, rounds, ms: Date.now() - start });
     return nameMap.size ? "complete" : "idle";
   }
 
@@ -2509,6 +2785,12 @@
     includeReplies = options.includeReplies !== false;
     engineMode = "hybrid";
     options._startedAt = Date.now();
+    logEvent("run", "RUN START", {
+      url: location.pathname.slice(0, 60),
+      replies: includeReplies,
+      ids: feedbackIdsFromUrl().slice(0, 2).join(","),
+      arts: document.querySelectorAll('[role="article"]').length,
+    });
     postRoot = findPostRoot();
     if (postRoot) {
       try {
@@ -2544,16 +2826,22 @@
 
     try {
       // 1) Ensure comments are loading so we capture GraphQL templates
-      await tryOpenComments(postRoot);
+      const openOk = await tryOpenComments(postRoot);
+      logEvent("open", "tryOpenComments", {
+        ok: openOk,
+        arts: document.querySelectorAll('[role="article"]').length,
+      });
       // 1a) Paksa "Semua Komentar" (bukan "Paling relevan") supaya DOM fallback
       //     & capture melihat SEMUA komentar — tanpa perlu user mengganti
       //     dropdown sortir secara manual. Beri waktu section komentar
       //     ter-render dulu (tombol sortir baru muncul setelah komentar terbuka).
       await sleepWhile(600);
-      await setAllCommentsSort(postRoot);
+      await setAllCommentsSort(rootOrDocument());
+      logEvent("sort", "setAllCommentsSort dijalankan");
       await sleepWhile(800);
       drainGqlBuffer();
-      scrapeDomNames(postRoot);
+      scrapeDomNames(rootOrDocument());
+      logEvent("scrape", "scrape awal", { names: nameMap.size });
 
       // 1b) Synthetic template langsung dari feedback id di URL (permalink).
       //     Selalu ditambahkan saat URL memberi id — bukan hanya saat tidak ada
@@ -2584,14 +2872,14 @@
           postHint: "capture",
         });
         for (let i = 0; i < 12 && !stopFlag && gqlTemplates.size === 0; i++) {
-          for (const b of findExpandButtons(postRoot).slice(0, 3)) {
+          for (const b of findExpandButtons(rootOrDocument()).slice(0, 3)) {
             try {
               b.click();
             } catch {
               /* ignore */
             }
           }
-          scrapeDomNames(postRoot);
+          scrapeDomNames(rootOrDocument());
           drainGqlBuffer();
           await sleepWhile(700);
           post("PROGRESS", {
@@ -2612,9 +2900,16 @@
 
       // 3) Primary: GraphQL pagination (synthetic dari URL + template capture)
       if (gqlTemplates.size > 0 && !stopFlag) {
+        logEvent("gql", "mulai paginateGraphql", { tpl: gqlTemplates.size, budget: gqlBudget });
         const g = await paginateGraphql(gqlBudget);
         finalReason = g.reason || "complete";
         engineMode = g.mode === "graphql" ? "graphql" : engineMode;
+        logEvent("gql", "paginateGraphql selesai", {
+          reason: finalReason,
+          mode: g.mode,
+          names: nameMap.size,
+          err: g.error ? String(g.error).slice(0, 50) : undefined,
+        });
         if (g.error) {
           post("PROGRESS", {
             names: snapshot(),
@@ -2622,6 +2917,8 @@
             postHint: "error",
           });
         }
+      } else if (!stopFlag) {
+        logEvent("gql", "SKIP paginateGraphql (tanpa template)", { tpl: gqlTemplates.size });
       }
 
       // 4) Secondary: always brief DOM harvest; deeper when GraphQL yielded
@@ -2656,9 +2953,9 @@
         }
       }
 
-      // 5) Final harvest — scope ke postRoot (anti kontaminasi postingan lain)
+      // 5) Final harvest — rootOrDocument (reel: komentar di complementary; anti kontaminasi tetap terjaga via scope yang memuat komentar)
       drainGqlBuffer();
-      scrapeDomNames(postRoot);
+      scrapeDomNames(rootOrDocument());
 
       if (stopFlag) finalReason = "stopped";
       if (nameMap.size > 0 && finalReason === "idle") finalReason = "complete";
@@ -2710,8 +3007,17 @@
           stopReason: finalReason,
           postHint: `${engineMode}${tip}`,
         });
+        logEvent("run", "RUN DONE", {
+          reason: finalReason,
+          mode: engineMode,
+          names: names.length,
+          est: lastRunTotalCount,
+          tpl: gqlTemplates.size,
+          ms: Date.now() - (options._startedAt || Date.now()),
+        });
       }
     } catch (err) {
+      logEvent("run", "RUN ERROR", { err: String(err?.message || err).slice(0, 80) });
       if (currentRunId === myRunId) {
         post("ERROR", {
           message: String(err?.message || err),
@@ -2757,6 +3063,13 @@
           stopExtract();
         },
         ping: () => ({ ok: true, version: VERSION, running }),
+        // Audit trail: log keputusan engine per run (mode, scroll, expand,
+        // navigasi, alasan berhenti) — dibaca oleh background/agen diagnosa.
+        getLog: (limit) => getRunLog(limit),
+        clearLog: () => {
+          clearRunLog();
+          return { ok: true };
+        },
       }),
     });
   } catch {
@@ -2765,6 +3078,11 @@
       start: runExtract,
       stop: stopExtract,
       ping: () => ({ ok: true, version: VERSION, running }),
+      getLog: (limit) => getRunLog(limit),
+      clearLog: () => {
+        clearRunLog();
+        return { ok: true };
+      },
     };
   }
 

@@ -1003,10 +1003,17 @@
    */
   async function tryOpenComments() {
     if (commentDialogOpen()) {
-      scrollCommentContainer();
-      // Dialog sudah terbuka — tetap klik tombol load-more bila ada (IG
-      // kadang tidak memuat batch berikutnya hanya dengan scroll).
-      await expandLoadMore();
+      try { scrollCommentContainer(); } catch {}
+      // Dialog sudah terbuka — klik load-more otomatis 3x (keluhan harus buka manual semua komentar IG) — guard untuk harness
+      try {
+        if (typeof expandLoadMore === 'function') {
+          for (let k = 0; k < 3 && !stopFlag; k++) {
+            const c = await expandLoadMore();
+            if (!c) break;
+            await sleepWhile(400);
+          }
+        }
+      } catch {}
       return true;
     }
     const candidates = [
@@ -1031,8 +1038,21 @@
           el;
         try {
           target.click();
-          await sleepWhile(600);
-          if (commentDialogOpen()) return true;
+          await sleepWhile(700);
+          if (commentDialogOpen()) {
+            // auto-expand langsung 2x setelah terbuka (tanpa tunggu user scroll) — guard harness
+            try {
+              if (typeof expandLoadMore === 'function') {
+                for (let k = 0; k < 2 && !stopFlag; k++) {
+                  const c = await expandLoadMore();
+                  if (!c) break;
+                  await sleepWhile(400);
+                }
+              }
+            } catch {}
+            try { scrollCommentContainer(); } catch {}
+            return true;
+          }
         } catch {
           /* try next candidate */
         }
@@ -1057,8 +1077,19 @@
         const target = el.closest("button, a, [role='button']") || el;
         try {
           target.click();
-          await sleepWhile(600);
-          if (commentDialogOpen()) return true;
+          await sleepWhile(700);
+          if (commentDialogOpen()) {
+            try {
+              if (typeof expandLoadMore === 'function') {
+                for (let k = 0; k < 2 && !stopFlag; k++) {
+                  const c = await expandLoadMore();
+                  if (!c) break;
+                  await sleepWhile(400);
+                }
+              }
+            } catch {}
+            return true;
+          }
         } catch {
           /* try next */
         }
@@ -1066,8 +1097,18 @@
     } catch {
       /* ignore */
     }
-    // If no dialog, at least scroll the page (inline comments on some layouts)
-    window.scrollBy(0, 500);
+    // IG feed butuh scroll halaman dulu agar tombol komentar muncul (Fase A)
+    for (let s = 0; s < 3 && !stopFlag; s++) {
+      window.scrollBy(0, 600);
+      await sleepWhile(600);
+      // coba lagi candidates setelah scroll
+      const afterScroll = document.querySelectorAll('svg[aria-label*="comment" i], svg[aria-label*="komentar" i]');
+      for (const el of afterScroll) {
+        const target = el.closest("button, a, [role='button']") || el;
+        try { target.click(); await sleepWhile(600); if (commentDialogOpen()) return true; } catch {}
+      }
+      if (commentDialogOpen()) return true;
+    }
     return commentDialogOpen();
   }
 
@@ -1206,6 +1247,11 @@
       if (page.batchSize > 0) rememberGoodTemplate(templateUrl);
       scrapeDomUsernames();
       heartbeat(`Mengumpulkan… ${nameMap.size} username (halaman ${pages})`);
+      // Fase B heartbeat: tiap 2 halaman expand load-more + scroll container (otomatisasi scroll IG) — guard harness
+      if (pages % 2 === 0) {
+        try { if (typeof expandLoadMore === 'function') await expandLoadMore(); } catch {}
+        try { if (typeof scrollCommentContainer === 'function') scrollCommentContainer(); } catch {}
+      }
 
       // Optional replies (inline child comments) — capped per-run so replies
       // can never starve top-level pagination or blow the safety budget.
