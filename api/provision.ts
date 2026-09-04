@@ -9,6 +9,7 @@
 
 import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 import { dinasUid } from '../src/lib/engagement-api.js';
+import { fetchWithTimeout } from '../src/lib/fetch-with-timeout.js';
 
 const PROJECT = firebaseConfig.projectId as string;
 const API_KEY = firebaseConfig.apiKey as string;
@@ -23,13 +24,14 @@ function json(res: unknown, status: number, data: unknown) {
 
 // ---- Verifikasi idToken ----
 async function verifyIdToken(idToken: string): Promise<{ uid: string; email: string; emailVerified: boolean }> {
-  const r = await fetch(
+  const r = await fetchWithTimeout(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(API_KEY)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idToken }),
     },
+    8000,
   );
   const data = (await r.json().catch(() => ({}))) as { users?: Array<{ localId?: string; email?: string; emailVerified?: boolean }> };
   if (!r.ok || !data.users?.length || !data.users[0].localId) {
@@ -82,11 +84,15 @@ export default async function handler(req: unknown, res: unknown) {
     };
 
     // Tulis marker admins/{uid} — rules mengizinkan karena request.auth.uid == dinasUid.
-    const marker = await fetch(markerUrl, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(markerBody),
-    });
+    const marker = await fetchWithTimeout(
+      markerUrl,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(markerBody),
+      },
+      10000,
+    );
 
     if (!marker.ok) {
       const text = await marker.text().catch(() => '');

@@ -83,6 +83,20 @@ export function InputModal({
 
   const prevDateRef = useRef(date);
   const notifiedDirtyRef = useRef<string | null>(null);
+  // Tarikan Meta API yang sedang jalan (controller + timer) — dibatalkan saat
+  // modal ditutup supaya fetch yang menggantung tidak berlanjut di balik layar.
+  const metaFetchRef = useRef<{ controller: AbortController; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
+
+  // Modal ditutup → hentikan tarikan Meta yang masih berjalan (kalau ada).
+  useEffect(() => {
+    if (open) return;
+    const cur = metaFetchRef.current;
+    if (cur) {
+      clearTimeout(cur.timeoutId);
+      cur.controller.abort();
+      metaFetchRef.current = null;
+    }
+  }, [open]);
 
   // Matching preview ditahan (debounce) — hanya dihitung selagi modal terbuka.
   const debouncedIgRawInput = useDebouncedValue(igRawInput);
@@ -165,7 +179,11 @@ export function InputModal({
   const handleFetchRecentMeta = async () => {
     setIsFetchingMeta(true);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    // timedOut membedakan abort karena timeout (pesan jelas) vs abort karena
+    // modal ditutup (diam saja).
+    let timedOut = false;
+    const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, 60000);
+    metaFetchRef.current = { controller, timeoutId };
 
     try {
       const token = metaToken.trim();
@@ -293,6 +311,9 @@ export function InputModal({
         toast.success(`Ditemukan ${igPostCount} post IG & ${fbPostCount} post FB. Berhasil menarik ${commenters.length} komentar IG ke dalam form.`);
       }
     } catch (err: unknown) {
+      // Abort karena modal ditutup → bukan error; tunggu saja (finally tetap
+      // membersihkan). Abort karena timeout → pesan batas waktu.
+      if (err instanceof Error && err.name === 'AbortError' && !timedOut) return;
       const message =
         err instanceof Error && err.name === 'AbortError'
           ? 'Permintaan Meta API melebihi batas waktu (60 detik). Coba lagi.'
@@ -302,6 +323,7 @@ export function InputModal({
       toast.error(message);
     } finally {
       clearTimeout(timeoutId);
+      if (metaFetchRef.current?.controller === controller) metaFetchRef.current = null;
       setIsFetchingMeta(false);
     }
   };

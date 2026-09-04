@@ -28,6 +28,7 @@ import {
   type ExtPlatform,
 } from '../src/lib/engagement-api.js';
 import type { MatchableEmployee } from '../src/lib/matching.js';
+import { fetchWithTimeout } from '../src/lib/fetch-with-timeout.js';
 
 const PROJECT = firebaseConfig.projectId as string;
 const API_KEY = firebaseConfig.apiKey as string;
@@ -102,13 +103,14 @@ function enc(v: unknown): Record<string, unknown> {
 
 // ---- Auth ----
 async function verifyIdToken(idToken: string): Promise<{ uid: string; email: string; emailVerified: boolean }> {
-  const r = await fetch(
+  const r = await fetchWithTimeout(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(API_KEY)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idToken }),
     },
+    8000,
   );
   const data = (await r.json().catch(() => ({}))) as { users?: Array<{ localId?: string; email?: string; emailVerified?: boolean }> };
   if (!r.ok || !data.users?.length || !data.users[0].localId) {
@@ -121,9 +123,11 @@ async function verifyIdToken(idToken: string): Promise<{ uid: string; email: str
 async function isAdminUser(uid: string, email: string, idToken: string, fsBase: string): Promise<boolean> {
   if (ADMIN_EMAILS.includes(email)) return true;
   // Marker provision ditulis ke admins/{lowercase uid} (lihat api/provision.ts).
-  const r = await fetch(`${fsBase}/admins/${encodeURIComponent(dinasUid(uid))}`, {
-    headers: { Authorization: `Bearer ${idToken}` },
-  });
+  const r = await fetchWithTimeout(
+    `${fsBase}/admins/${encodeURIComponent(dinasUid(uid))}`,
+    { headers: { Authorization: `Bearer ${idToken}` } },
+    8000,
+  );
   if (r.ok) return true;
   // Open registration: Firebase rules sudah membatasi dinas/{uid} hanya
   // untuk pemilik uid — jadi user terverifikasi selalu boleh tulis dinas-nya
@@ -138,9 +142,11 @@ async function fetchEmployees(idToken: string, fsBase: string): Promise<Matchabl
   do {
     const qs = new URLSearchParams({ pageSize: '1000' });
     if (pageToken) qs.set('pageToken', pageToken);
-    const r = await fetch(`${fsBase}/employees?${qs.toString()}`, {
-      headers: { Authorization: `Bearer ${idToken}` },
-    });
+    const r = await fetchWithTimeout(
+      `${fsBase}/employees?${qs.toString()}`,
+      { headers: { Authorization: `Bearer ${idToken}` } },
+      10000,
+    );
     if (!r.ok) {
       // 404 = dinas/{uid} belum ada (provision belum selesai) → beri
       // pesan jelas supaya extension me-retry lewat antrian, bukan error mentah.
@@ -170,9 +176,11 @@ async function fetchEmployees(idToken: string, fsBase: string): Promise<Matchabl
 }
 
 async function fetchEngagementDoc(idToken: string, date: string, fsBase: string): Promise<Record<string, unknown> | null> {
-  const r = await fetch(`${fsBase}/dailyEngagement/${encodeURIComponent(date)}`, {
-    headers: { Authorization: `Bearer ${idToken}` },
-  });
+  const r = await fetchWithTimeout(
+    `${fsBase}/dailyEngagement/${encodeURIComponent(date)}`,
+    { headers: { Authorization: `Bearer ${idToken}` } },
+    10000,
+  );
   if (r.status === 404) return null;
   if (!r.ok) {
     throw Object.assign(new Error('Gagal membaca rekap harian.'), { status: 502 });
@@ -190,18 +198,18 @@ async function writeEngagement(idToken: string, date: string, patch: Record<stri
     'Content-Type': 'application/json',
     Authorization: `Bearer ${idToken}`,
   };
-  let r = await fetch(`${fsBase}/dailyEngagement/${encodeURIComponent(date)}?${updateMask}`, {
-    method: 'PATCH',
-    headers,
-    body,
-  });
+  let r = await fetchWithTimeout(
+    `${fsBase}/dailyEngagement/${encodeURIComponent(date)}?${updateMask}`,
+    { method: 'PATCH', headers, body },
+    10000,
+  );
   if (r.status === 404) {
     // Dokumen belum ada → buat lewat POST (documentId = tanggal).
-    r = await fetch(`${fsBase}/dailyEngagement?documentId=${encodeURIComponent(date)}`, {
-      method: 'POST',
-      headers,
-      body,
-    });
+    r = await fetchWithTimeout(
+      `${fsBase}/dailyEngagement?documentId=${encodeURIComponent(date)}`,
+      { method: 'POST', headers, body },
+      10000,
+    );
   }
   if (!r.ok) {
     const text = await r.text().catch(() => '');

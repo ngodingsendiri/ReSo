@@ -11,13 +11,14 @@
     "test:matching": "tsx src/lib/matching.test.ts",
     "test:stress": "tsx src/lib/extreme-stress.test.ts",
     "test:api": "tsx src/lib/engagement-api.test.ts && tsx src/lib/engagement-api.handler.test.ts",
+    "test:net": "tsx src/lib/fetch-with-timeout.test.ts",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "ext:build": "cd extension && npm run build",
     "ext:test": "cd extension && npm test",
     "ext:zip": "cd extension && npm run zip",
     "ext:check": "cd extension && npm run check",
-    "test": "npm run test:matching && npm run test:api && npm run test:handoff && npm run ext:test",
+    "test": "npm run test:matching && npm run test:api && npm run test:net && npm run test:handoff && npm run ext:test",
     "test:handoff": "tsx src/lib/token-handoff.test.ts"
   },
   "dependencies": {

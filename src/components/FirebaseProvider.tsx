@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, userDb } from '../lib/firebase';
 import { doc, setDoc, getDoc, serverTimestamp, type Firestore } from 'firebase/firestore';
+import { fetchWithTimeout } from '../lib/fetch-with-timeout';
 
 interface AuthContextType {
   user: User | null;
@@ -33,20 +34,37 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // dinas/{uid} di level komponen (dinasCollection/dinasDoc).
   const db = useMemo(() => (user ? userDb(user.uid) : null), [user]);
 
+  // Provision yang sedang berjalan — dipakai ulang bila dipanggil lagi
+  // (auto-provision login + tombol "Siapkan" di Settings bersamaan hanya
+  // menghasilkan SATU request, tanpa race saling timpa).
+  const provisionInFlightRef = useRef<Promise<string | null> | null>(null);
+
   const runProvision = async (u: User): Promise<string | null> => {
-    try {
-      const idToken = await u.getIdToken();
-      const provRes = await fetch('/api/provision', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (!provRes.ok) {
-        const body = (await provRes.json().catch(() => ({}))) as { error?: string };
-        return body?.error || `Gagal menyiapkan database (${provRes.status}).`;
+    if (provisionInFlightRef.current) return provisionInFlightRef.current;
+    // Batas 10 dtk (sinkron dengan limit default Vercel) — fetch yang macet
+    // berhenti pasti, bukan menggantung selamanya (lihat fetch-with-timeout.ts).
+    const p = (async (): Promise<string | null> => {
+      try {
+        const idToken = await u.getIdToken();
+        const provRes = await fetchWithTimeout(
+          '/api/provision',
+          { method: 'POST', headers: { Authorization: `Bearer ${idToken}` } },
+          10000
+        );
+        if (!provRes.ok) {
+          const body = (await provRes.json().catch(() => ({}))) as { error?: string };
+          return body?.error || `Gagal menyiapkan database (${provRes.status}).`;
+        }
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
       }
-      return null;
-    } catch (e) {
-      return e instanceof Error ? e.message : String(e);
+    })();
+    provisionInFlightRef.current = p;
+    try {
+      return await p;
+    } finally {
+      if (provisionInFlightRef.current === p) provisionInFlightRef.current = null;
     }
   };
 
@@ -73,16 +91,18 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return;
         }
 
-        // Provision otomatis (tulis marker dinas/{uid}/admins/{uid}) via /api/provision.
-        // NON-BLOCKING: kalau gagal, user tetap masuk tapi error tampil + bisa
-        // retry via tombol "Siapkan database" di Settings.
-        const provErr = await runProvision(user);
-        if (cancelled) return;
-        setProvisionError(provErr);
-
+        // Provision otomatis (tulis marker dinas/{uid}/admins/{uid}) via
+        // /api/provision — BENAR-BENAR NON-BLOCKING. Sebelumnya `await
+        // runProvision` diletakkan DI DEPAN `setUser`/`setLoading(false)`:
+        // fetch yang macet mengunci layar loading sampai timeout eksternal.
+        // Kini login selalu lanjut dulu; hasil provision (gagal/berhasil)
+        // tampil belakangan via setProvisionError + tombol retry di Settings.
         setUser(user);
         setError(null);
         setLoading(false);
+        void runProvision(user).then((provErr) => {
+          if (!cancelled) setProvisionError(provErr);
+        });
 
         // Sync user ke Firestore (top-level users/{uid}) secara lazy
         const uDb = userDb(user.uid);

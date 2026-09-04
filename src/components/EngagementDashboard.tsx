@@ -28,7 +28,7 @@ import { useAuth } from './FirebaseProvider';
 import { useAppLogo } from '../hooks/useAppLogo';
 import { useDialogA11y } from '../hooks/useDialogA11y';
 import { logout, dinasCollection, dinasDoc } from '../lib/firebase';
-import { onSnapshot, query, orderBy, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion, runTransaction } from 'firebase/firestore';
+import { onSnapshot, query, orderBy, setDoc, serverTimestamp, writeBatch, where, updateDoc, arrayUnion } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { getLocalISODate, parseLocalISODate } from '../lib/date';
 import { matchEmployeesToEngagement, matchEngagementDetail, engagedIdsEqual } from '../lib/matching';
@@ -256,12 +256,18 @@ export default function EngagementDashboard() {
     if (!unverifiedAutoFilledDates.length) return;
     setIsVerifyingAll(true);
     try {
-      await runTransaction(db, async (transaction) => {
-        for (const date of unverifiedAutoFilledDates) {
+      // Tanpa read di dalamnya, batch cukup (setara transaksi). Di-chunk 500
+      // per batch — batas tulis per transaksi/batch Firestore — supaya ratusan
+      // tanggal tidak gagal total karena satu transaksi raksasa.
+      const CHUNK = 500;
+      for (let i = 0; i < unverifiedAutoFilledDates.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        for (const date of unverifiedAutoFilledDates.slice(i, i + CHUNK)) {
           const ref = dinasDoc(db, user.uid, 'dailyEngagement', date);
-          transaction.set(ref, { date, verifiedAt: serverTimestamp() }, { merge: true });
+          batch.set(ref, { date, verifiedAt: serverTimestamp() }, { merge: true });
         }
-      });
+        await batch.commit();
+      }
       toast.success(`${unverifiedAutoFilledDates.length} rekap otomatis ditandai terverifikasi.`);
     } catch (error: unknown) {
       console.error('Error verifying auto-filled rekaps:', error);

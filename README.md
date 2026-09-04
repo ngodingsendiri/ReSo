@@ -6,6 +6,9 @@ Dokumen acuan:
 
 - [`specify.md`](./specify.md) — tujuan & domain produk
 - [`constitution.md`](./constitution.md) — aturan pengembangan & deploy
+- [`WEB_AUDIT.md`](./WEB_AUDIT.md) — audit ketangguhan web (anti-hang, race, scroll)
+- [`EXTENSION_AUDIT.md`](./EXTENSION_AUDIT.md) — audit ekstensi ReSoEx
+- [`EFFICIENCY_AUDIT.md`](./EFFICIENCY_AUDIT.md) — audit efisiensi (bundle, render, Firestore)
 
 ## Stack
 

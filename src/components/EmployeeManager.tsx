@@ -255,12 +255,15 @@ export default function EmployeeManager({ employees }: EmployeeManagerProps) {
     const nameTrim = formData.name.trim();
     try {
       await runTransaction(db, async (tx) => {
-        // Cek duplikat NIP secara atomic di dalam transaction
+        // Cek duplikat NIP. CATATAN KEJUJURAN: SDK web Firestore TIDAK
+        // mendukung query di dalam snapshot transaksi — `getDocs` di sini
+        // adalah read BIASA (di luar snapshot tx), jadi cek ini TIDAK atomic:
+        // dua admin menambah NIP yang sama bersamaan bisa dua-duanya lolos
+        // (TOCTOU). Risiko kecil untuk skala pemakaian saat ini; solusi tegas
+        // = documentId deterministik dari NIP (uniqueness dijamin Firestore)
+        // — lihat WEB_AUDIT.md W6. Tulis tetap atomic (tx.set/tx.update).
         const q = query(dinasCollection(db, user.uid, 'employees'), where('nip', '==', nipTrim));
         const snap = await getDocs(q);
-        // Firestore transaction get untuk query tidak didukung di web SDK — gunakan getDocs di luar tx
-        // Fallback: cek snapshot di dalam tx via reads yang sudah ada tidak mungkin, jadi cek di sini
-        // dan tulis atomically. Race window sangat kecil (tx membatasi concurrent writes).
         const duplicate = snap.docs.find(d => d.id !== editingId);
         if (duplicate) throw new Error('NIP duplikat: sudah dipakai pegawai lain');
         if (editingId) {
