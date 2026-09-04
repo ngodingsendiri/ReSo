@@ -137,7 +137,9 @@ export function el(tag, attrs = {}, children = [], text = "") {
       return { width: 10, height: 10 }; // terlihat secara default
     },
     // Interaksi — dicatat di node supaya test bisa memverifikasi apa yang
-    // benar-benar diklik (tryOpenComments memanggil scrollIntoView + click).
+    // benar-benar diklik. V1.0.85: tryOpenComments klik TANPA scrollIntoView
+    // (scrollIntoView menggeser semua ancestor); stub tetap ada agar regresi
+    // scroll bisa dideteksi via el._scrolled === 0.
     click() {
       this._clickCount = (this._clickCount || 0) + 1;
     },

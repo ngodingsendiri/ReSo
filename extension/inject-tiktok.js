@@ -558,22 +558,36 @@
     }
   }
 
-  async function fetchJson(url) {
+  async function fetchJson(url, opts = {}) {
     requestBudget += 1;
     let res;
+    let text = "";
+    // V1.0.86 (audit tangguh): fetch TANPA timeout = run bisa hang selamanya
+    // saat koneksi menggantung (deadline hanya membatasi retry, bukan await).
+    // AbortController: timeout 12 dtk (override via opts.timeoutMs utk tes) +
+    // abort langsung saat Stop ditekan (stopFlag dicek tiap 200 ms).
+    const ctl = new AbortController();
+    const fetchTimer = setTimeout(() => ctl.abort(), opts.timeoutMs || 12_000);
+    const stopWatch = setInterval(() => {
+      if (stopFlag) ctl.abort();
+    }, 200);
     try {
       res = await fetch(url, {
         credentials: "include",
         headers: {
           Accept: "application/json, text/plain, */*",
         },
+        signal: ctl.signal,
       });
+      text = await res.text();
     } catch (err) {
       const e = new Error("Jaringan terganggu — coba lagi.");
       e.kind = "network";
       throw e;
+    } finally {
+      clearTimeout(fetchTimer);
+      clearInterval(stopWatch);
     }
-    const text = await res.text();
     if (!res.ok) {
       if (res.status === 429) {
         const ra = Number(res.headers.get("retry-after"));
@@ -780,10 +794,10 @@
         /* ignore */
       }
     }
-    // Instagram-style: scroll halaman bila di feed (TT feed → video detail perlu scroll)
-    if (!commentPanelOpen()) {
-      try { window.scrollBy(0, 600); await sleepWhile(600); } catch {}
-    }
+    // V1.0.86 parity FB: JANGAN scroll halaman (window.scrollBy menggeser
+    // viewport user). Panel komentar TT terbuka via klik ikon komentar — di
+    // halaman video (use case utama) ikon selalu terlihat; klik ulang di
+    // atas sudah menangani kasus lain.
     return commentPanelOpen();
   }
 
@@ -1094,9 +1108,10 @@
             } catch {
               /* ignore */
             }
-          } else {
-            window.scrollBy(0, 300);
           }
+          // V1.0.86 parity FB: tanpa container komentar, JANGAN scroll
+          // halaman — tryOpenComments sudah mencoba membuka panel via klik.
+          // Scroll halaman di feed = viewport user bergeser (keluhan lama FB).
           post("PROGRESS", {
             names: snapshot(),
             message: `Mengumpulkan… ${nameMap.size} nama (mode scroll)`,

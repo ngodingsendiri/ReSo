@@ -1118,6 +1118,25 @@
 
     function onNavigation() {
       if (canonicalPostHref(location.href) === canonicalPostHref(lastHref)) return;
+      // Navigasi SPA yang masih menunjuk ke POST YANG SAMA (mis. feed →
+      // permalink post yang sama, /photos/<id> → /posts/<id>, /reel/<id> →
+      // /watch?v=) TIDAK boleh membunuh run yang sedang berjalan. Bandingkan
+      // feedback id hasil extractFbFeedbackIds (blok FBURLS): bila ada irisan
+      // id → hanya rebase referensi URL, run tetap lanjut.
+      const samePost = (() => {
+        try {
+          const prevIds = extractFbFeedbackIds(lastHref);
+          const nextIds = extractFbFeedbackIds(location.href);
+          if (!prevIds.length || !nextIds.length) return false;
+          return nextIds.some((id) => prevIds.includes(id));
+        } catch {
+          return false;
+        }
+      })();
+      if (samePost) {
+        lastHref = location.href;
+        return; // post sama — run tetap berjalan, hanya rebase URL
+      }
       // LOG: catat navigasi yang benar-benar mereset run (dibaca via getLog).
       try {
         const prev = canonicalPostHref(lastHref);

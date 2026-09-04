@@ -1109,6 +1109,8 @@ function makeFbScraper() {
     extract("addName"),
     extract("qsa"),
     extract("isVisible"),
+    extract("isBehindModal"),
+    extract("isModalOpen"),
     extract("scrapeDomNames"),
     "return { scrapeDomNames, names: () => [...nameMap.values()] };",
   ].join("\n");
@@ -1363,18 +1365,22 @@ test("findExpandButtons FB: whitespace dinormalisasi sebelum regex (\n → spasi
 // Call site ekspansi nyata: sebelum mode scroll/GraphQL, engine membuka panel
 // komentar saat post BELUM terbuka — scan elemen berlabel jumlah komentar
 // ("12 komentar") atau ajakan lihat komentar ("Lihat semua komentar"), lalu
-// scrollIntoView + click + sleep, dan berhenti true bila gqlTemplates terisi.
+// click + sleep, dan berhenti true bila gqlTemplates terisi.
 // Alur asli: scope sudah terbuka (>1 role=article) → true tanpa klik; selain
 // itu qsa(selector lebar) → isVisible → regex COMMENT_COUNT/VIEW_COMMENTS
-// (batas 120) → scrollIntoView + click → sleepWhile(700) → template? → true.
-// Fungsi ASLI dieksekusi; `sleepWhile` di-stub (test bisa menyuntik template
-// ke `gqlTemplates` saat sleep via setSleep), click/scrollIntoView dicatat di
-// fixture (el._clickCount / el._scrolled).
+// (batas 120) → click langsung → sleepWhile(700) → template? → true.
+// V1.0.85: klik TANPA scrollIntoView (scrollIntoView menggeser SEMUA ancestor
+// scrollable termasuk feed → halaman pindah postingan lain). Fungsi ASLI
+// dieksekusi; `sleepWhile` di-stub (test bisa menyuntik template ke
+// `gqlTemplates` saat sleep via setSleep), click dicatat di fixture
+// (el._clickCount); `el._scrolled` (panggilan scrollIntoView) harus 0.
 
 function makeFbOpener() {
   const fnSrc = [
     extract("qsa"),
     extract("isVisible"),
+    extract("isBehindModal"),
+    extract("isModalOpen"),
     "const gqlTemplates = new Map();",
     "let sleepWhile = async () => {};",
     extract("tryOpenComments"),
@@ -1424,7 +1430,11 @@ test("tryOpenComments FB: jumlah komentar (COMMENT_COUNT) memicu klik, template 
   assert.equal(clicks(b1), 1);
   assert.equal(clicks(b2), 1);
   assert.equal(clicks(b3), 1);
-  assert.ok(b1._scrolled >= 1 && b2._scrolled >= 1 && b3._scrolled >= 1, "scrollIntoView dipanggil sebelum klik");
+  // V1.0.85: klik langsung TANPA scrollIntoView — menggeser semua ancestor
+  // (feed) membuat halaman pindah postingan; FB merespons klik off-viewport.
+  assert.equal(b1._scrolled || 0, 0, "tanpa scrollIntoView sebelum klik");
+  assert.equal(b2._scrolled || 0, 0, "tanpa scrollIntoView sebelum klik");
+  assert.equal(b3._scrolled || 0, 0, "tanpa scrollIntoView sebelum klik");
 });
 
 test("tryOpenComments FB: VIEW_COMMENTS ('Lihat semua komentar'/'View all comments') memicu klik", async () => {
@@ -1504,6 +1514,94 @@ test("tryOpenComments FB: tanpa scope → document; aria-label dihitung sebagai 
     globalThis.document = realDoc;
     globalThis.getComputedStyle = realCss;
   }
+});
+
+// ===================== V1.0.85: scroll safety (rekap tanpa geser viewport) =====================
+test("tryOpenComments FB: elemen di belakang dialog (aria-hidden) TIDAK diklik saat modal terbuka", async () => {
+  const dialog = el("div", { role: "dialog" }, [], "dialog");
+  const behind = el("div", { "aria-hidden": "true" }, [
+    el("div", { role: "button" }, [], "12 komentar"),
+  ]);
+  const front = el("div", {}, [
+    el("div", { role: "button" }, [], "Lihat semua komentar"),
+  ]);
+  const doc = el("div", {}, [dialog, behind, front]);
+  const h = makeFbOpener();
+  const ok = await runOpen(h, doc);
+  assert.equal(ok, false);
+  const behindBtn = behind.children[0];
+  const frontBtn = front.children[0];
+  assert.equal(clicks(behindBtn), 0, "post di belakang dialog tidak boleh diklik");
+  assert.equal(clicks(frontBtn), 1, "elemen aktif tetap diproses");
+});
+
+test("tryOpenComments FB: tanpa modal terbuka, konten aria-hidden tetap tidak diblokir guard", async () => {
+  // Tanpa [role=dialog] yang terlihat, modalOpen=false → guard inaktif dan
+  // elemen aria-hidden tetap boleh diproses (perilaku lama, tanpa regresi).
+  const hidden = el("div", { "aria-hidden": "true" }, [
+    el("div", { role: "button" }, [], "12 komentar"),
+  ]);
+  const doc = el("div", {}, [hidden]);
+  const h = makeFbOpener();
+  const ok = await runOpen(h, doc);
+  assert.equal(ok, false);
+  assert.equal(clicks(hidden.children[0]), 1, "tanpa modal, klik tetap berjalan");
+});
+
+test("scrapeDom FB: konten di belakang dialog (aria-hidden) tidak di-harvest saat modal terbuka", () => {
+  const doc = el("div", {}, [
+    el("div", { role: "dialog" }, [], "dialog"),
+    el("div", { "aria-hidden": "true" }, [
+      el("div", { "aria-label": "Comment by Behind Post" }, [], ""),
+    ]),
+    el("div", { "aria-label": "Comment by Nyata" }, [], ""),
+  ]);
+  const { added, names } = runScrape(null, doc);
+  assert.equal(added, 1, "hanya komentar aktif yang di-harvest");
+  assert.deepEqual([...names], ["Nyata"]);
+});
+
+test("scroll safety FB: tidak ada pemanggilan scrollIntoView AKTIF tersisa di engine", () => {
+  // Hanya komentar yang boleh menyebut scrollIntoView — kode aktif harus nol.
+  const active = src
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.includes("scrollIntoView(") && !l.startsWith("//") && !l.includes("*"));
+  assert.equal(active.length, 0, "scrollIntoView aktif harus nol: " + active.join(" | "));
+});
+
+test("scroll safety FB: heartbeat GraphQL tidak menyentuh scroll container", () => {
+  // Fase B (heartbeat tiap 2 halaman) tidak boleh memuat scrollTop/scrollIntoView
+  // — replay GraphQL tidak butuh scroll; nama datang dari respons.
+  const i0 = src.indexOf(
+    "if (pages % 2 === 0 && typeof document !== \"undefined\" && typeof window !== \"undefined\") {"
+  );
+  const i1 = src.indexOf("// Budget guard: never paginate forever on huge threads");
+  assert.ok(i0 >= 0 && i1 > i0, "blok heartbeat tidak ditemukan");
+  const heartbeat = src.slice(i0, i1);
+  assert.ok(!/scrollTop/.test(heartbeat), "heartbeat tidak boleh menyentuh scrollTop");
+  assert.ok(!/scrollIntoView\(/.test(heartbeat), "heartbeat tidak boleh scrollIntoView");
+});
+
+test("scroll safety FB: runExtract memakai watchUserScroll + restore bersyarat", () => {
+  assert.ok(src.includes("watchUserScroll(true)"), "run harus mengaktifkan pantauan scroll user");
+  assert.ok(
+    src.includes("if (!userScrolledDuringRun)"),
+    "restore window harus dibatalkan bila user scroll manual"
+  );
+  assert.ok(src.includes("watchUserScroll(false)"), "run harus membersihkan listener di akhir");
+  assert.ok(src.includes("restoreScrollAnchor()"), "overflow-anchor container harus dipulihkan");
+});
+
+test("scroll safety FB: expandDomLoop tidak menyentuh container kolom halaman & memulihkan posisi", () => {
+  assert.ok(
+    src.includes("if (scroller && !scrollerIsPage && hasExpandBtn)"),
+    "scroll container hanya bila bukan kolom halaman"
+  );
+  assert.ok(
+    src.includes("scroller.scrollTop = savedScrollerTop"),
+    "posisi container komentar harus dipulihkan setelah loop"
+  );
 });
 
 // ===================== setAllCommentsSort (paksa dropdown "Semua Komentar") =====================

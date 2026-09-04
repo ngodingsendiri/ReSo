@@ -1024,3 +1024,135 @@ respons halaman dibuang. Kini kedua bentuk dicocokkan.
   setelah satu run sukses di sesi mana pun, doc_id terbaru tersimpan otomatis.
 - Variabel sintetik versi berbeda doc_id: probe memvalidasi per kandidat.
 - Verifikasi di Facebook asli tetap wajib (post viral, tanpa ganti sortir).
+
+---
+
+## 22. Audit Scroll Rekap FB — rekap tanpa menggeser viewport (v1.0.85, 2026-09-04)
+
+Pemicu: "setiap di buat rekap sebelum selesai postingannya, kayak ke-scroll
+berubah". Audit menyeluruh operasi scroll di `inject-fb.js` (v1.0.84) + riset web.
+
+### Akar masalah (dibaca dari kode v1.0.84 — bukan tebakan)
+
+| # | Lokasi | Masalah |
+|---|---|---|
+| **A** | `tryOpenComments` (satu-satunya `scrollIntoView({block:"center"})` tersisa) | Dieksekusi saat rekap mulai & komentar post BELUM terbuka (≤1 `[role=article]`) — persis kondisi "belum selesai/settled". `Element.scrollIntoView()` menggeser **SEMUA ancestor scrollable** termasuk feed → halaman melompat ke postingan lain. CHANGELOG v1.0.83 mengklaim semua sudah dihapus, tapi kode + tes (`_scrolled >= 1`) masih menyimpannya. |
+| **B** | heartbeat `paginateGraphql` (Fase B, tiap 2 halaman) | `scroller.scrollTop = scrollHeight` tanpa syarat → daftar komentar auto-scroll ke bawah saat replay GraphQL (yang tak butuh scroll) & tidak pernah dipulihkan. |
+| **C** | `expandDomLoop` | Scroll container komentar di-guard `hasExpandBtn` + `__reso_scrolledOnce`, tapi `scrollTop` container tidak dikembalikan (hanya `window.scrollTo` di akhir). |
+| **D** | `runExtract` `finally` | Restore `window.scrollY` memaksa snap balik walau user scroll manual di tengah run. |
+| **E** | `content-fb.js` `onNavigation` | Reset bila `canonicalPostHref` berubah — navigasi SPA ke post yang SAMA (feed → permalink) membunuh run & hasil ("Halaman berubah"). |
+| **F** | `scrapeDomNames`/`findExpandButtons`/`findScrollContainer` | Saat dialog komentar terbuka di atas feed, konten `[aria-hidden=true]` di belakang dialog masih di-scan → risiko klik/harvest postingan lain. |
+
+### Riset web yang mendukung (2026)
+1. **`Element.scrollIntoView()` scrolls the element's ancestor containers**
+   (MDN) — mekanisme persis masalah A; solusi standar: klik tanpa scroll atau
+   scroll manual hanya nearest scrollable container.
+2. **Scroll anchoring (`overflow-anchor`)** (MDN/css-tricks): saat kita set
+   `scrollTop` programatik lalu konten di atas viewport berubah (klik "Lihat
+   komentar lain" menyisipkan konten), browser menyesuaikan posisi untuk
+   menjaga anchor → terasa "halaman bergoyang". Container yang di-scroll
+   programatik di-set `overflow-anchor:none` inline dan dipulihkan di akhir.
+3. **Replay GraphQL tidak butuh scroll** — DOM scroll hanya untuk fallback dan
+   post tanpa template; prinsip: *jangan scroll kalau tidak harus*.
+4. Verifikasi lapangan di browser asli tetap wajib (DOM FB berubah-ubah) —
+   pakai runlog `fnk_fb_runlog_v1` + `window.__RESO_FNK__.getLog()`.
+
+### Keputusan desain (v1.0.85)
+- **Klik tanpa scroll** di semua fase pembuka komentar; fallback scroll hanya
+  di nearest scrollable container (`scrollElIntoViewportMinimal`), sekali,
+  hanya bila klik tak membuka apa pun.
+- **`isPageScroller`** = container selebar ≥70% viewport, tinggi ≥90%, menempel
+  atas → kolom halaman; TIDAK pernah disentuh. Scroll hanya container komentar
+  dalam (dialog/complementary/virtualized) & hanya saat ada tombol expand.
+- **Snapshot & restore**: window `scrollY` DAN `scrollTop` container komentar
+  disimpan di awal fase & dipulihkan — kecuali `userScrolledDuringRun`.
+- **`watchUserScroll`** (wheel/touch/keyboard, capture): restore dibatalkan bila
+  user scroll manual — posisi user dihormati, tidak di-snap.
+- **`overflow-anchor:none`** pada container yang di-scroll, dipulihkan di akhir
+  run (`restoreScrollAnchor`).
+- **Modal-aware**: `modalOpen = isModalOpen()` hanya dihitung sekali per fungsi;
+  saat true, subtree `[aria-hidden=true]` dilewati. Tanpa modal, perilaku lama
+  (guard inaktif) → tanpa regresi.
+- **onNavigation id-based**: reset hanya bila post benar-benar berbeda.
+
+### Catatan parity (tindak lanjut, DI LUAR scope fase ini)
+- ~~`inject-ig.js` masih `window.scrollBy(0, 400/600)` & `inject-tiktok.js`
+  `window.scrollBy(0, 300/600)` untuk membuka komentar — pola lama FB.~~
+  **✅ Dibereskan v1.0.86** (seksi 23): seluruh `window.scrollBy` aktif dihapus
+  dari TT/IG; scroll hanya container komentar (dialog/list).
+
+### Verifikasi lapangan wajib (tidak bisa dilakukan dari sini)
+1. Post baru di grup → langsung Rekap+Kirim → halaman tidak bergeser, run tidak
+   mati "Halaman berubah", hasil terkirim.
+2. Permalink post biasa, post feed, reel, dan dialog → runlog tanpa `nav RESET`
+   dan tanpa scroll liar; posisi window + daftar komentar kembali setelah run.
+3. Scroll manual di tengah run → tidak ada snap balik di akhir.
+
+## 23. Audit Ketangguhan Lintas Platform — fetch anti-hang, parity scroll, start anti-TOCTOU (v1.0.86, 2026-09-04)
+
+Pemicu: "audit semua nya, buat lebih tangguh, audit logika dan lakukan riset".
+Audit menyeluruh 3 platform (inject-fb/ig/tiktok, content-*, background,
+shared) + riset web 2026. Baseline: 526/526 test hijau.
+
+### Temuan (dibaca dari kode — bukan tebakan)
+
+| # | Lokasi | Masalah | Status |
+|---|---|---|---|
+| **A1** | `graphqlReplay` (inject-fb.js), `fetchJson` (inject-tiktok.js, inject-ig.js) | **Fetch TANPA timeout**: koneksi menggantung → `await fetch` tak pernah settle → run hang selamanya. `deadline` hanya membatasi retry, bukan await; tombol Stop pun tak bisa membatalkan (stopFlag hanya dicek di `sleepWhile`). | ✅ AbortController: timeout FB 15 dtk / TT-IG 12 dtk + abort saat stop (tick 200 ms); abort → `kind:"network"` → jalur retry/error yang ada |
+| **A2** | `fetchJson` TT (res.text di luar try) | Abort saat body read = rejection tak tertangkap. | ✅ `res.text()` masuk try + timer di-clear di `finally` |
+| **A3** | `inject-ig.js` (`scrollCommentContainer` 0,400; loop feed 0,600) & `inject-tiktok.js` (tryOpenComments 0,600; paginate fallback 0,300) | Parity scroll v1.0.85 belum diterapkan ke TT/IG — `window.scrollBy` aktif menggeser halaman saat rekap (keluhan yang sama seperti FB). | ✅ Semua `window.scrollBy` aktif dihapus; scroll hanya container komentar (dialog/list) untuk lazy-load; pembukaan panel via klik |
+| **A4** | `startFacebook`/`startTikTok`/`startInstagram` (background.js) | TOCTOU double-start: jalur popup/shortcut tidak lewat `withStateLock` (jalur ENGINE_CMD sudah) — dua pemicu bersamaan bisa saling menimpa `running`. | ✅ Dibungkus `withStateLock` (inti di-*Locked) |
+| **A5** | `graphqlReplayWithBackoff` FB (cabang network retry) | Hasil `sleepWhile` tidak dicek — Stop saat menunggu retry berakhir error jaringan, bukan `stopped`. | ✅ Dicek → `kind:"stopped"` |
+| A6 | content script `sendBg`, `acceptFromInject`, `origin` check, antrian ReSo (lock+quota), recovery orphan run, backoff 429/Retry-After, diagnosis login/checkpoint, cooldown, budget request | Sudah tangguh dari audit sebelumnya (F1-F5/H1-H5 dll). | ✓ (dipertahankan, tidak diubah) |
+
+### Riset web yang mendukung (2026)
+1. **MV3 fetch tanpa timeout = risiko hang** — pola standar: AbortController
+   dengan timeout eksplisit; sudah dipakai `shared.js` (F2, 15 dtk) untuk
+   kiriman ke ReSo, baru sekarang diterapkan ke engine (temuan A1). Simulasi
+   `scripts/chrome-simulation.mjs` sudah lama memakai batas 12-15 dtk pada
+   stub fetch-nya — angka timeout engine disinkronkan dengan itu.
+2. **Internal GraphQL FB 2026 "breaks silently"** (riset scraper: query internal
+   Meta tidak punya jaminan stabilitas — biasanya *kembali kosong tanpa error*):
+   pertahanan yang sudah ada tetap relevan — deteksi `incomplete` (loop keluar
+   tanpa `has_next_page:false`), estimasi `findTotalCount` vs hasil, guard idle,
+   dan fallback DOM berlapis (selector 2026 sudah ditambahkan v1.0.6x).
+3. **DOM FB/TT/IG berubah tanpa pemberitahuan** — verifikasi lapangan di
+   browser asli tetap wajib untuk setiap rilis (checklist di bawah).
+4. **Timeout nilai aman**: 15 dtk FB / 12 dtk TT-IG — di bawah batas kesabaran
+   user, di atas latensi normal pagination; retry cepat 1× untuk blip jaringan
+   sudah ada di ketiga engine (tidak berubah).
+
+### Keputusan desain (v1.0.86)
+- **Abort = error jaringan, bukan reason baru**: `AbortError` dipetakan ke
+  `kind:"network"` agar memakai jalur retry/error yang sudah teruji (FB/TT
+  retry 1× cepat; IG throw langsung di cabang abort). Tidak ada state machine
+  baru.
+- **Stop = abort**: `setInterval` 200 ms memeriksa `stopFlag` dan memanggil
+  `ctl.abort()` — Stop selalu responsif bahkan saat fetch menggantung;
+  interval di-clear di `finally` (tanpa kebocoran timer).
+- **TT/IG scroll**: hapus `window.scrollBy` sepenuhnya (parity FB v1.0.85 —
+  klik dulu; fallback scroll hanya nearest container bila perlu). Scroll
+  container komentar (dialog/list) dipertahankan karena lazy-load TT/IG
+  memang butuh itu — tapi tidak pernah menyentuh window.
+- **Start serial**: wrapper tipis `withStateLock(platform, () => startXLocked(...))`
+  — tanpa refactor besar, jalur ENGINE_CMD tetap memakai lock yang sama
+  (tidak ada deadlock: lock tidak re-entrant dipakai berlapis di jalur sama).
+
+### Tes (total 532/532 pass, +6)
+- Kontrak F1: ketiga engine wajib `new AbortController()`, `signal: ctl.signal`,
+  timeout (15_000/12_000), `clearTimeout(fetchTimer)`, `if (stopFlag) ctl.abort()`.
+- Fungsional IG & TT: fetch stub yang TIDAK PERNAH settle → timeout kecil
+  (`timeoutMs: 60`) meng-abort <2 dtk → `kind:"network"` (bukan hang); IG
+  dengan `stopFlag=true` → abort <2 dtk (bukan nunggu timeout default 12 dtk).
+- Parity scroll TT/IG: nol baris `window.scrollBy(` aktif di kedua engine.
+- Kontrak A4: ketiga start handler memanggil `withStateLock("<platform>", ...)`.
+
+### Verifikasi lapangan wajib (tidak bisa dilakukan dari sini)
+1. Matikan internet / throttle di tengah run FB, TT, IG → run berhenti ≤~15 dtk
+   dengan pesan "Jaringan terganggu", bukan menggantung; Stop langsung bekerja.
+2. Rekap di video TT & post/reel IG → halaman tidak bergeser (ikon komentar
+   diklik, tanpa `window.scrollBy`).
+3. Shortcut Ctrl+Shift+E + klik Proses nyaris bersamaan → hanya satu run aktif.
+
+Aktifkan diagnosa: `localStorage.rsx_debug="1"` lalu refresh; baca keputusan
+engine via `window.__RESO_FNK__.getLog(100)` / `.clearLog()`.

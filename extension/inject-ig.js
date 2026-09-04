@@ -807,6 +807,18 @@
       requestBudget += 1;
       let res;
       let text = "";
+      // V1.0.86 (audit tangguh): fetch TANPA timeout = run bisa hang selamanya
+      // saat koneksi menggantung (deadline hanya membatasi retry, bukan await).
+      // AbortController: timeout 12 dtk (override via ctx.timeoutMs utk tes) +
+      // abort langsung saat Stop ditekan (stopFlag dicek tiap 200 ms).
+      const ctl = new AbortController();
+      const fetchTimer = setTimeout(
+        () => ctl.abort(),
+        ctx.timeoutMs || 12_000
+      );
+      const stopWatch = setInterval(() => {
+        if (stopFlag) ctl.abort();
+      }, 200);
       try {
         const headers = {
           Accept: "application/json, text/plain, */*",
@@ -819,15 +831,28 @@
         };
         const csrf = csrfToken();
         if (csrf) headers["X-CSRFToken"] = csrf;
-        res = await fetch(url, { credentials: "include", headers });
+        res = await fetch(url, {
+          credentials: "include",
+          headers,
+          signal: ctl.signal,
+        });
         text = await res.text();
       } catch (e) {
+        // Abort (timeout / Stop) = blip jaringan — hentikan tanpa retry panjang
+        if (e && e.name === "AbortError") {
+          const err = new Error("Jaringan terganggu — coba lagi.");
+          err.kind = "network";
+          throw err;
+        }
         // Network-level failure (offline, throttled tab, etc.)
         if (attempt <= 1 && canWait(1500)) {
           await sleepWhile(1500);
           if (running && !stopFlag) continue;
         }
         throw e;
+      } finally {
+        clearTimeout(fetchTimer);
+        clearInterval(stopWatch);
       }
 
       if (res.status === 429) {
@@ -939,15 +964,15 @@
 
   function scrollCommentContainer() {
     const dlg = document.querySelector('[role="dialog"]');
-    if (dlg) {
-      try {
-        dlg.scrollTop = dlg.scrollHeight;
-      } catch {
-        /* ignore */
-      }
-      return;
+    if (!dlg) return;
+    // V1.0.86 parity FB: scroll HANYA container dialog komentar — tidak pernah
+    // window.scrollBy (menggeser halaman/feed → kontaminasi & viewport user
+    // bergeser).
+    try {
+      dlg.scrollTop = dlg.scrollHeight;
+    } catch {
+      /* ignore */
     }
-    window.scrollBy(0, 400);
   }
 
   /**
@@ -1097,11 +1122,12 @@
     } catch {
       /* ignore */
     }
-    // IG feed butuh scroll halaman dulu agar tombol komentar muncul (Fase A)
+    // V1.0.86 parity FB: JANGAN scroll halaman (window.scrollBy menggeser
+    // viewport user). Retry klik saja — di halaman post/reel (use case utama)
+    // ikon komentar sudah terlihat; tanpa scroll, feed tidak lagi "melompat".
     for (let s = 0; s < 3 && !stopFlag; s++) {
-      window.scrollBy(0, 600);
       await sleepWhile(600);
-      // coba lagi candidates setelah scroll
+      // coba lagi candidates setelah jeda
       const afterScroll = document.querySelectorAll('svg[aria-label*="comment" i], svg[aria-label*="komentar" i]');
       for (const el of afterScroll) {
         const target = el.closest("button, a, [role='button']") || el;

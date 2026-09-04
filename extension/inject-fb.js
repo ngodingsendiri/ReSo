@@ -1449,6 +1449,16 @@
 
     const url = template.url || "https://www.facebook.com/api/graphql/";
     let res;
+    let text = "";
+    // V1.0.86 (audit tangguh): fetch TANPA timeout = run bisa hang selamanya
+    // saat koneksi menggantung — deadline hanya membatasi retry, bukan await.
+    // AbortController: timeout 15 dtk + abort langsung saat Stop ditekan
+    // (stopFlag dicek tiap 200 ms) agar Stop selalu responsif.
+    const ctl = new AbortController();
+    const fetchTimer = setTimeout(() => ctl.abort(), 15_000);
+    const stopWatch = setInterval(() => {
+      if (stopFlag) ctl.abort();
+    }, 200);
     try {
       res = await fetch(url, {
         method: "POST",
@@ -1460,11 +1470,16 @@
           Accept: "*/*",
         },
         body: body.toString(),
+        signal: ctl.signal,
       });
+      text = await res.text();
     } catch (err) {
       const e = new Error("Jaringan terganggu — coba lagi.");
       e.kind = "network";
       throw e;
+    } finally {
+      clearTimeout(fetchTimer);
+      clearInterval(stopWatch);
     }
     // Sesi kadaluarsa: FB redirect ke halaman login
     if (res.redirected && /login/i.test(res.url)) {
@@ -1472,7 +1487,6 @@
       e.kind = "no_login";
       throw e;
     }
-    const text = await res.text();
     // HTTP 200 tapi isi HTML login (token kadaluarsa) — bukan data komentar
     if (/<html[\s>]/i.test(text) && /login|masuk/i.test(text)) {
       const e = new Error("Sesi Facebook tidak aktif — login lalu Proses lagi.");
@@ -1591,7 +1605,13 @@
         if (kind === "network" && attempt === 0) {
           attempt++;
           if (Date.now() + 1500 > deadline) throw err;
-          await sleepWhile(1200);
+          // Stop ditekan saat menunggu retry → hentikan dengan reason benar
+          // ("stopped"), bukan error jaringan yang menyesatkan.
+          if (!(await sleepWhile(1200))) {
+            const e = new Error("Dihentikan");
+            e.kind = "stopped";
+            throw e;
+          }
           continue;
         }
         throw err;
@@ -1979,18 +1999,20 @@
       pages++;
       // Fase B: heartbeat DOM tiap 2 halaman — harvest + auto-expand "Lihat komentar lain" (keluhan harus scroll manual). reel → rootOrDocument (complementary)
       // Guard: di harness isolasi (tanpa document/window) helper DOM di-skip supaya tak crash.
+      // V1.0.85: TANPA scroll container di sini — replay GraphQL tidak butuh
+      // scroll (nama datang dari respons, bukan visibilitas); scroll list yang
+      // kasat mata hanya mengecoh & menggeser posisi user. Klik expand saja;
+      // scroll container (bila satu-satunya cara) ditangani fase expandDomLoop
+      // dengan guard + restore posisi.
       if (pages % 2 === 0 && typeof document !== "undefined" && typeof window !== "undefined") {
         const r = rootOrDocument();
         try { scrapeDomNames(r); } catch {}
         try {
           const btns = findExpandButtons(r);
-          // JANGAN scrollIntoView / window.scrollBy: keduanya menggeser
-          // SEMUA ancestor termasuk feed → halaman pindah ke postingan lain →
-          // onNavigation → run reset. Klik saja; FB tetap merespons klik
-          // walau tombol di luar viewport.
+          // JANGAN scrollIntoView / window.scrollBy / scroll container: semua
+          // menggeser halaman/list secara kasat mata → user kehilangan posisi.
+          // Klik saja; FB tetap merespons klik walau tombol di luar viewport.
           for (const b of btns.slice(0, 4)) { try { b.click(); } catch {} }
-          const sc = findScrollContainer(r);
-          if (sc) sc.scrollTop = sc.scrollHeight;
         } catch {}
       }
       // Budget guard: never paginate forever on huge threads
@@ -2212,6 +2234,158 @@
   }
 
   // ---------------- DOM fallback (kept as secondary) ----------------
+  // ---------------- Scroll safety (v1.0.85: rekap tanpa menggeser viewport) ----------------
+  // Utilitas agar operasi scroll engine: (1) TIDAK pernah menggeser kolom
+  // halaman/feed (hanya container komentar dalam yang boleh di-scroll),
+  // (2) menonaktifkan scroll-anchoring browser pada container yang kita
+  // scroll programatik (anchoring melawan & membuat "halaman bergoyang" saat
+  // konten di atas viewport berubah), dan (3) memulihkan posisi window +
+  // container setelah run — KECUALI user scroll manual di tengah run.
+  let userScrolledDuringRun = false;
+  let scrollWatchersActive = false;
+  /** Container yang sedang kita set overflow-anchor:none (dipulihkan akhir run). */
+  let anchorDisabledEl = null;
+
+  function onUserScrollGesture() {
+    userScrolledDuringRun = true;
+  }
+  function onUserScrollKey(e) {
+    if (
+      e &&
+      ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(e.key)
+    ) {
+      userScrolledDuringRun = true;
+    }
+  }
+  /** Aktif/nonaktifkan pantauan scroll manual user (wheel/touch/keyboard). */
+  function watchUserScroll(active) {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (active && !scrollWatchersActive) {
+      userScrolledDuringRun = false;
+      scrollWatchersActive = true;
+      try {
+        window.addEventListener("wheel", onUserScrollGesture, { passive: true });
+        window.addEventListener("touchmove", onUserScrollGesture, { passive: true });
+        window.addEventListener("keydown", onUserScrollKey, true);
+      } catch { /* ignore */ }
+    } else if (!active && scrollWatchersActive) {
+      scrollWatchersActive = false;
+      try {
+        window.removeEventListener("wheel", onUserScrollGesture);
+        window.removeEventListener("touchmove", onUserScrollGesture);
+        window.removeEventListener("keydown", onUserScrollKey, true);
+      } catch { /* ignore */ }
+    }
+  }
+
+  /**
+   * Apakah elemen adalah kolom halaman utama (scroll di sana = scroll halaman,
+   * bukan scroll daftar komentar). Container seperti ini TIDAK boleh disentuh.
+   */
+  function isPageScroller(sc) {
+    if (!sc) return false;
+    try {
+      if (
+        sc === document.scrollingElement ||
+        sc === document.documentElement ||
+        sc === document.body
+      )
+        return true;
+      const vh = window.innerHeight || 800;
+      const vw = window.innerWidth || 1200;
+      const r = sc.getBoundingClientRect();
+      // Kolom utama: selebar ~viewport & menempel atas (feed/permalink/grup).
+      if (r.width >= vw * 0.7 && r.height >= vh * 0.9 && Math.abs(r.top) <= 60)
+        return true;
+    } catch { /* ignore */ }
+    return false;
+  }
+
+  /** Nearest ancestor yang BENAR-BENAR scrollable (overflow auto/scroll). */
+  function nearestScrollable(el) {
+    let n = el ? el.parentElement : null;
+    while (n && n !== document.body && n !== document.documentElement) {
+      try {
+        const st = getComputedStyle(n);
+        const oy = st.overflowY;
+        if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight + 8)
+          return n;
+      } catch { /* ignore */ }
+      n = n.parentElement;
+    }
+    return null;
+  }
+
+  /**
+   * Geser sc (nearest scrollable container) SEAGAK MINIMAL mungkin agar el
+   * terlihat — tidak pernah menyentuh window/feed. Mengembalikan delta.
+   */
+  function scrollElIntoViewportMinimal(el, sc) {
+    if (!el || !sc || typeof sc.scrollTop !== "number") return 0;
+    try {
+      const cTop = sc.getBoundingClientRect().top;
+      const eTop = el.getBoundingClientRect().top;
+      const eBot = el.getBoundingClientRect().bottom;
+      const cBot = cTop + sc.clientHeight;
+      let delta = 0;
+      if (eTop < cTop + 60) delta = eTop - (cTop + 60);
+      else if (eBot > cBot - 60) delta = eBot - (cBot - 60);
+      if (delta !== 0) {
+        disableScrollAnchor(sc);
+        sc.scrollTop += delta;
+      }
+      return delta;
+    } catch { /* ignore */ }
+    return 0;
+  }
+
+  /** Nonaktifkan scroll-anchoring browser pada container yang kita scroll. */
+  function disableScrollAnchor(sc) {
+    if (!sc || sc === anchorDisabledEl) return;
+    try {
+      if (anchorDisabledEl) anchorDisabledEl.style.removeProperty("overflow-anchor");
+    } catch { /* ignore */ }
+    anchorDisabledEl = sc;
+    try { sc.style.setProperty("overflow-anchor", "none"); } catch { /* ignore */ }
+  }
+  /** Pulihkan overflow-anchor container yang kita nonaktifkan (akhir run). */
+  function restoreScrollAnchor() {
+    if (!anchorDisabledEl) return;
+    try { anchorDisabledEl.style.removeProperty("overflow-anchor"); } catch { /* ignore */ }
+    anchorDisabledEl = null;
+  }
+
+  /**
+   * Elemen di dalam subtree [aria-hidden=true] — di FB ini = konten di
+   * belakang dialog/modal (post lain di feed). Jangan di-harvest/di-scroll
+   * bila modal sedang terbuka (hindari kontaminasi nama post lain).
+   */
+  function isBehindModal(el) {
+    try {
+      let n = el;
+      while (n) {
+        const nt = n.nodeType;
+        // Hanya elemen (nodeType 1) yang dicek; fixture test tanpa nodeType
+        // tetap boleh berjalan (nodeType undefined disamakan elemen).
+        if (nt !== 1 && nt !== undefined) break;
+        if (n.getAttribute && n.getAttribute("aria-hidden") === "true") return true;
+        n = n.parentElement;
+      }
+    } catch { /* ignore */ }
+    return false;
+  }
+
+  /** Apakah ada dialog/modal FB yang sedang terbuka (konten belakang di-hidden). */
+  function isModalOpen() {
+    try {
+      if (typeof document === "undefined" || typeof isVisible === "undefined") return false;
+      return !!qsa('[role="dialog"], [aria-modal="true"]', document).some(
+        (d) => isVisible(d)
+      );
+    } catch { /* ignore */ }
+    return false;
+  }
+
   function qsa(sel, root) {
     try {
       return [...(root || document).querySelectorAll(sel)];
@@ -2287,6 +2461,10 @@
     // menentukan kelayakan, bukan scope (deteksi otomatis container rapuh).
     const scope = root || postRoot || document;
     const before = nameMap.size;
+    const modalOpen =
+      typeof isModalOpen === "function" &&
+      typeof isBehindModal === "function" &&
+      !!isModalOpen();
 
     // L4.1-AUDIT: EN + ID + ES/PT/FR (connector "de/da/di" untuk bentuk
     // "Comentario de X", "Resposta da X", dsb.)
@@ -2295,6 +2473,7 @@
       /^(.+?)\s+(?:commented|berkomentar|replied|membalas|coment\u00f3|comentou|r\u00e9pondu|a comment\u00e9|membalas)\b/i,
     ];
     qsa("[aria-label]", scope).forEach((el) => {
+      if (modalOpen && isBehindModal(el)) return;
       const label = el.getAttribute("aria-label") || "";
       if (label.length < 3 || label.length > 160) return;
       for (const re of labelPatterns) {
@@ -2307,6 +2486,7 @@
     });
 
     qsa('[role="article"]', scope).forEach((art) => {
+      if (modalOpen && isBehindModal(art)) return;
       const ariaRaw = art.getAttribute("aria-label") || "";
       if (/^(post by|posting by|post oleh|status by|shared by)\b/i.test(ariaRaw.trim()))
         return;
@@ -2342,6 +2522,7 @@
     });
 
     qsa('[role="button"]', scope).forEach((btn) => {
+      if (modalOpen && isBehindModal(btn)) return;
       if (!isVisible(btn)) return;
       const t = `${btn.innerText || ""} ${btn.getAttribute("aria-label") || ""}`
         .trim()
@@ -2376,9 +2557,14 @@
     const soft =
       /view more comments|see more comments|lihat komentar|previous comments|komentar sebelumnya|view more replies|lihat balasan|tampilkan balasan|show replies|more comments|more replies|lihat selengkapnya|see more|show more comments|all comments|semua komentar|ver m\u00e1s comentarios|m\u00e1s respuestas|ver mais coment\u00e1rios|ver mais respostas|afficher plus de commentaires|plus de r\u00e9ponses/i;
     const out = [];
+    const modalOpen =
+      typeof isModalOpen === "function" &&
+      typeof isBehindModal === "function" &&
+      !!isModalOpen();
     // Fix reel: tombol "Lihat komentar lain" di reel adalah <button> polos (tanpa role) — selector lama hanya role/span/a sehingga reel tak kebaca. Tambah button.
     qsa('[role="button"], button, div[tabindex="0"], span[dir="auto"], a[role="link"]', root || document).forEach((el) => {
       if (!isVisible(el)) return;
+      if (modalOpen && isBehindModal(el)) return;
       const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
         .replace(/\s+/g, " ")
         .trim();
@@ -2405,7 +2591,10 @@
             }
             if (!clicked) break;
             await sleepWhile(600);
-            try { const sc = findScrollContainer(_root); if (sc) sc.scrollTop = sc.scrollHeight; } catch {}
+            // (v1.0.85) Tanpa scroll container di sini — komentar sudah terbuka
+            // & expand sudah diklik. Scroll daftar yang kasat mata hanya
+            // menggeser posisi user; scroll container (bila satu-satunya cara
+            // memuat batch lazy) ditangani expandDomLoop dengan guard + restore.
           }
         }
       } catch {}
@@ -2418,19 +2607,42 @@
       '[role="button"], button, a[role="link"], [role="tab"], [aria-label], span[dir="auto"]',
       scope || document
     );
+    const modalOpen =
+      typeof isModalOpen === "function" &&
+      typeof isBehindModal === "function" &&
+      !!isModalOpen();
     for (const el of els) {
       if (!isVisible(el)) continue;
+      if (modalOpen && isBehindModal(el)) continue;
       const t = `${el.innerText || ""} ${el.getAttribute("aria-label") || ""}`
         .replace(/\s+/g, " ")
         .trim();
       if (!t || t.length > 120) continue;
       if (!COMMENT_COUNT.test(t) && !VIEW_COMMENTS.test(t)) continue;
       try {
-        el.scrollIntoView({ block: "center" });
+        // V1.0.85: JANGAN scrollIntoView — ia menggeser SEMUA ancestor
+        // scrollable (termasuk feed) → halaman pindah postingan lain & user
+        // kehilangan posisi. Klik langsung; FB merespons klik walau tombol di
+        // luar viewport (validasi v1.0.83). Bila klik pertama tak membuka apa
+        // pun, fallback scroll MINIMAL hanya di nearest scrollable container
+        // (bukan window/feed), lalu coba sekali lagi.
         el.click();
         await sleepWhile(700);
-        const _hasGql = (() => { try { return typeof gqlTemplates !== 'undefined' && gqlTemplates.size > 0; } catch { return false; } })();
-        const _hasArticles = (() => { try { return (scope || document).querySelectorAll('[role="article"]').length > 1; } catch { return false; } })();
+        let _hasGql = (() => { try { return typeof gqlTemplates !== 'undefined' && gqlTemplates.size > 0; } catch { return false; } })();
+        let _hasArticles = (() => { try { return (scope || document).querySelectorAll('[role="article"]').length > 1; } catch { return false; } })();
+        if (!_hasGql && !_hasArticles) {
+          const _sc =
+            typeof nearestScrollable === "function" ? nearestScrollable(el) : null;
+          if (_sc && typeof scrollElIntoViewportMinimal === "function") {
+            try {
+              scrollElIntoViewportMinimal(el, _sc);
+              el.click();
+              await sleepWhile(700);
+            } catch { /* ignore */ }
+            _hasGql = (() => { try { return typeof gqlTemplates !== 'undefined' && gqlTemplates.size > 0; } catch { return false; } })();
+            _hasArticles = (() => { try { return (scope || document).querySelectorAll('[role="article"]').length > 1; } catch { return false; } })();
+          }
+        }
         if (_hasGql || _hasArticles) return true;
         // Real browser auto-expand setelah terbuka (tanpa tunggu user) — guard helper
         try {
@@ -2567,10 +2779,17 @@
   function findScrollContainer(root) {
     if (!root) return null;
     const els = [root, ...root.querySelectorAll("*")];
+    let modalOpen = false;
+    if (typeof isModalOpen === "function" && typeof isBehindModal === "function") {
+      try { modalOpen = !!isModalOpen(); } catch { /* ignore */ }
+    }
     let best = null;
     let bestArts = 0;
     for (let i = 0; i < els.length && i < 3000; i++) {
       const el = els[i];
+      // Konten di belakang dialog/modal (post lain) jangan dipilih sebagai
+      // scroller — scroll di sana bisa menggeser feed saat modal terbuka.
+      if (modalOpen && isBehindModal(el)) continue;
       try {
         // Wajib memuat komentar [role=article] — feed wrapper tidak memuat
         // artikel komentar secara langsung, hanya banyak postingan.
@@ -2605,9 +2824,17 @@
     // aria-label; scroller dicari di document agar container virtualized terjaring.
     const root = document;
     const scroller = findScrollContainer(document);
+    // V1.0.85: simpan posisi container komentar (bukan hanya window) agar bisa
+    // dipulihkan setelah loop; dan JANGAN sentuh container yang merupakan
+    // kolom halaman (scroll di sana = geser viewport user ke postingan lain).
+    const savedScrollerTop =
+      scroller && typeof scroller.scrollTop === "number" ? scroller.scrollTop : 0;
+    const scrollerIsPage = isPageScroller(scroller);
+    if (scroller && !scrollerIsPage) disableScrollAnchor(scroller);
     logEvent("dom", "expandDomLoop mulai", {
       scroller: scroller ? `sh${scroller.scrollHeight}/ch${scroller.clientHeight}` : "none",
       arts: scroller ? scroller.querySelectorAll('[role="article"]').length : 0,
+      page: scrollerIsPage ? "kolom-halaman" : "no",
       names: nameMap.size,
     });
     let idle = 0;
@@ -2640,7 +2867,7 @@
       // postingan berubah".
       const hasExpandBtn = findExpandButtons(root).length > 0;
       try {
-        if (scroller && hasExpandBtn) {
+        if (scroller && !scrollerIsPage && hasExpandBtn) {
           // Scroll SEKALI ke bawah (scrollTop = scrollHeight) — bukan loop
           // `+=800` yang memantul (container FB me-reset ke atas) dan idle
           // tanpa hasil. Setelah mentok bawah, set flag agar tidak scroll lagi.
@@ -2667,6 +2894,8 @@
           }
         } else if (!scroller) {
           if (rounds === 1) logEvent("scroll", "TIDAK scroll: container komentar tidak ditemukan");
+        } else if (scrollerIsPage) {
+          if (rounds === 1) logEvent("scroll", "TIDAK scroll: container = kolom halaman (hindari geser viewport)");
         } else if (!hasExpandBtn) {
           if (rounds === 1) logEvent("scroll", "TIDAK scroll: tidak ada tombol expand (semua komentar sudah dimuat)");
         }
@@ -2723,8 +2952,19 @@
       }
       if (!(await sleepWhile(500))) break;
     }
-    // Restore scroll position after DOM expansion
-    try { window.scrollTo(0, savedScrollY); } catch { /* ignore */ }
+    // Restore posisi window + container komentar — KECUALI user scroll manual
+    // di tengah run (hormati posisi mereka, jangan snap paksa).
+    if (!userScrolledDuringRun) {
+      try { window.scrollTo(0, savedScrollY); } catch { /* ignore */ }
+      try {
+        if (scroller && !scrollerIsPage && typeof scroller.scrollTop === "number") {
+          scroller.scrollTop = savedScrollerTop;
+        }
+      } catch { /* ignore */ }
+    } else {
+      logEvent("scroll", "TIDAK restore expandDomLoop: user scroll manual selama run");
+    }
+    restoreScrollAnchor();
     logEvent("dom", "expandDomLoop selesai", { names: nameMap.size, rounds, ms: Date.now() - start });
     return nameMap.size ? "complete" : "idle";
   }
@@ -2815,6 +3055,10 @@
     // Simpan posisi scroll agar di akhir run halaman kembali ke postingan
     // yang sama (bukan melayang ke postingan di atas/bawahnya).
     const savedScrollY = window.scrollY;
+    // V1.0.85: pantau scroll manual user selama run. Bila user sengaja pindah
+    // posisi di tengah run, restore di akhir DIBATALKAN (hormati user) —
+    // jangan snap paksa kembali ke posisi awal.
+    watchUserScroll(true);
 
     post("PROGRESS", {
       names: snapshot(),
@@ -3033,12 +3277,19 @@
         } catch {
           /* ignore */
         }
-        // Kembalikan posisi scroll ke titik sebelum run dimulai.
-        try {
-          window.scrollTo(0, savedScrollY);
-        } catch {
-          /* ignore */
+        // Kembalikan posisi scroll ke titik sebelum run dimulai — KECUALI user
+        // scroll manual selama run berjalan (hormati posisi mereka).
+        if (!userScrolledDuringRun) {
+          try {
+            window.scrollTo(0, savedScrollY);
+          } catch {
+            /* ignore */
+          }
+        } else {
+          logEvent("scroll", "TIDAK restore run: user scroll manual selama run");
         }
+        watchUserScroll(false);
+        restoreScrollAnchor();
       }
     }
   }

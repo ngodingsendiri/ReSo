@@ -372,3 +372,169 @@ test("ARCH IG: fetchJson — response 403 → blocked error (tidak crash)", asyn
     globalThis.location = realLocation;
   }
 });
+
+// ===================== V1.0.86 — fetch anti-hang (AbortController) =====================
+
+/** Fetch stub yang TIDAK PERNAH settle — hanya lepas lewat abort signal. */
+function hangingFetch() {
+  return (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () =>
+        reject(Object.assign(new Error("The user aborted a request."), { name: "AbortError" }))
+      );
+    });
+}
+
+test("kontrak F1: ketiga engine fetch wajib AbortController + signal + timeout + abort-saat-stop (anti-hang)", () => {
+  for (const [name, src, timeout] of [
+    ["inject-fb.js", FB_SRC, "15_000"],
+    ["inject-tiktok.js", TT_SRC, "12_000"],
+    ["inject-ig.js", IG_SRC, "12_000"],
+  ]) {
+    assert.ok(src.includes("new AbortController()"), `${name}: wajib AbortController`);
+    assert.ok(src.includes("signal: ctl.signal"), `${name}: wajib signal: ctl.signal`);
+    assert.ok(src.includes(timeout), `${name}: wajib timeout ${timeout}`);
+    assert.ok(src.includes("clearTimeout(fetchTimer)"), `${name}: wajib bersihkan timer`);
+    assert.ok(src.includes("if (stopFlag) ctl.abort();"), `${name}: wajib abort saat stop`);
+  }
+});
+
+test("ARCH IG: fetchJson — fetch menggantung → timeout abort → error jaringan (tidak hang)", async () => {
+  const { fetchJson } = new Function([
+    "let requestBudget = 0;",
+    "let running = true;",
+    "let stopFlag = false;",
+    "const BUDGET = 500;",
+    "const IG_APP_ID = '936619743392459';",
+    "const sleepWhile = async () => true;",
+    extractIg("csrfToken"),
+    extractIg("parseRetryAfter"),
+    extractIg("fetchJson"),
+    "return { fetchJson };",
+  ].join("\n"))();
+  const realDoc = globalThis.document;
+  const realFetch = globalThis.fetch;
+  const realLocation = globalThis.location;
+  globalThis.document = { cookie: "csrftoken=abc; sessionid=xyz" };
+  globalThis.location = { origin: "https://www.instagram.com" };
+  globalThis.fetch = hangingFetch();
+  try {
+    const t0 = Date.now();
+    await assert.rejects(
+      () =>
+        fetchJson("https://www.instagram.com/api/v1/media/123/comments/", {
+          timeoutMs: 60,
+        }),
+      (err) => err && err.kind === "network",
+      "abort timeout → error jaringan"
+    );
+    assert.ok(Date.now() - t0 < 2000, "harus abort cepat (<2 dtk), bukan hang");
+  } finally {
+    globalThis.document = realDoc;
+    globalThis.fetch = realFetch;
+    globalThis.location = realLocation;
+  }
+});
+
+test("ARCH IG: fetchJson — Stop ditekan saat fetch menggantung → abort cepat (bukan nunggu timeout 12 dtk)", async () => {
+  const { fetchJson, setStop } = new Function([
+    "let requestBudget = 0;",
+    "let running = true;",
+    "let stopFlag = false;",
+    "const setStop = (v) => { stopFlag = v; };",
+    "const BUDGET = 500;",
+    "const IG_APP_ID = '936619743392459';",
+    "const sleepWhile = async () => true;",
+    extractIg("csrfToken"),
+    extractIg("parseRetryAfter"),
+    extractIg("fetchJson"),
+    "return { fetchJson, setStop };",
+  ].join("\n"))();
+  const realDoc = globalThis.document;
+  const realFetch = globalThis.fetch;
+  const realLocation = globalThis.location;
+  globalThis.document = { cookie: "csrftoken=abc; sessionid=xyz" };
+  globalThis.location = { origin: "https://www.instagram.com" };
+  globalThis.fetch = hangingFetch();
+  try {
+    const t0 = Date.now();
+    setStop(true);
+    // Tanpa abort-saat-stop, ini baru selesai setelah timeout default 12 dtk.
+    await assert.rejects(
+      () => fetchJson("https://www.instagram.com/api/v1/media/123/comments/"),
+      (err) => err && err.kind === "network",
+      "stop → abort → error jaringan"
+    );
+    assert.ok(Date.now() - t0 < 2000, "Stop harus membatalkan fetch <2 dtk, bukan nunggu timeout");
+  } finally {
+    globalThis.document = realDoc;
+    globalThis.fetch = realFetch;
+    globalThis.location = realLocation;
+  }
+});
+
+test("ARCH TT: fetchJson — fetch menggantung → timeout abort → error jaringan (tidak hang)", async () => {
+  const { fetchJson } = new Function([
+    "let requestBudget = 0;",
+    "let stopFlag = false;",
+    extractTt("fetchJson"),
+    "return { fetchJson };",
+  ].join("\n"))();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = hangingFetch();
+  try {
+    const t0 = Date.now();
+    await assert.rejects(
+      () =>
+        fetchJson("https://www.tiktok.com/api/comment/list/?aweme_id=111&count=30&cursor=0", {
+          timeoutMs: 60,
+        }),
+      (err) => err && err.kind === "network",
+      "abort timeout → error jaringan"
+    );
+    assert.ok(Date.now() - t0 < 2000, "harus abort cepat (<2 dtk), bukan hang");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// ===================== V1.0.86 — parity scroll TT/IG (tanpa scroll halaman) =====================
+
+test("scroll parity TT/IG: tanpa window.scrollBy AKTIF di engine (v1.0.86)", () => {
+  for (const [name, src] of [
+    ["inject-tiktok.js", TT_SRC],
+    ["inject-ig.js", IG_SRC],
+  ]) {
+    const active = src
+      .split("\n")
+      .filter(
+        (l) =>
+          l.includes("window.scrollBy(") &&
+          !l.trim().startsWith("//") &&
+          !l.includes("*")
+      );
+    assert.equal(
+      active.length,
+      0,
+      `${name}: window.scrollBy aktif harus nol: ${active.join(" | ")}`
+    );
+  }
+});
+
+// ===================== V1.0.86 — start popup/shortcut anti-TOCTOU =====================
+
+test("kontrak A4: startFacebook/startTikTok/startInstagram di-serialize via withStateLock", () => {
+  const src = readFileSync(join(ROOT, "background.js"), "utf8");
+  assert.ok(
+    src.includes('withStateLock("facebook", () => startFacebookLocked(tab, msg))'),
+    "startFacebook wajib lewat withStateLock"
+  );
+  assert.ok(
+    src.includes('withStateLock("tiktok", () => startTikTokLocked(tab, msg))'),
+    "startTikTok wajib lewat withStateLock"
+  );
+  assert.ok(
+    src.includes('withStateLock("instagram", () => startInstagramLocked(tab, msg))'),
+    "startInstagram wajib lewat withStateLock"
+  );
+});

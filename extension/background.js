@@ -1417,7 +1417,16 @@ async function stopActiveRun(platform) {
   if (finalState.names?.length) persistResult(platform, finalState).catch(() => {});
 }
 
+/**
+ * Start dari popup/shortcut — seluruh alur di-serialize via withStateLock
+ * (V1.0.86, anti-TOCTOU): dua pemicu bersamaan (shortcut + klik popup) tidak
+ * boleh dua-duanya membaca `idle` lalu saling menimpa setState `running`.
+ */
 async function startFacebook(tab, msg) {
+  return withStateLock("facebook", () => startFacebookLocked(tab, msg));
+}
+
+async function startFacebookLocked(tab, msg) {
   const includeReplies = msg.includeReplies !== false;
   const runId = newRunId();
 
@@ -1494,6 +1503,10 @@ async function startFacebook(tab, msg) {
 }
 
 async function startTikTok(tab, msg) {
+  return withStateLock("tiktok", () => startTikTokLocked(tab, msg));
+}
+
+async function startTikTokLocked(tab, msg) {
   // TikTok guest masih bisa (DOM + synthetic guest) — jangan hard-block seperti
   // IG. Cek sessionid/sessionid_ss; guest tetap lanjut, engine yang memutuskan
   // apakah perlu login (401/HTML → no_login di engine).
@@ -1580,6 +1593,10 @@ async function startTikTok(tab, msg) {
 }
 
 async function startInstagram(tab, msg) {
+  return withStateLock("instagram", () => startInstagramLocked(tab, msg));
+}
+
+async function startInstagramLocked(tab, msg) {
   // Pre-check login so popup/shortcut/context-menu fail fast with a clear
   // message instead of a wasted run (IG gates every API call on sessionid).
   try {
